@@ -7,12 +7,12 @@ default:
 
 # Backend: lint, format check and type check
 lint:
-    cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy
+    cd backend && uv run python -m ruff check . && uv run python -m ruff format --check . && uv run python -m mypy
 
 # Backend: auto-format and auto-fix
 fmt:
-    cd backend && uv run ruff format . && uv run ruff check --fix .
+    cd backend && uv run python -m ruff format . && uv run python -m ruff check --fix .
 
 # Backend: tests
 test:
-    cd backend && uv run pytest
+    cd backend && uv run python -m pytest

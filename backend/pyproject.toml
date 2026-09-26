@@ -39,6 +39,7 @@ addopts = "-q --strict-markers"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "httpx2>=2.13.1",
     "mypy>=2.3.1",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
