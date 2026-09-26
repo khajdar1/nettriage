@@ -1,0 +1,35 @@
+# Directors' deck source (published as a private artifact; not part of the repo)
+presentation/
+
+# Brainstorming companion files
+.superpowers/
+
+# Secrets and local state: never commit
+.env
+.env.*
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Build output
+build/
+dist/
+
+# Terraform
+.terraform.lock.hcl.bak
+crash.log
+*.tfplan
