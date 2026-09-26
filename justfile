@@ -37,3 +37,7 @@ edge-test:
 tf-check:
     terraform fmt -check -recursive infra
     for d in infra/bootstrap infra/modules/app infra/modules/edge; do (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
+
+# CI hygiene: every workflow action pinned to a SHA
+pin-check:
+    uv run --project backend python tools/check_pinned_actions.py .github/workflows

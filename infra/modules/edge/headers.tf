@@ -15,6 +15,7 @@ locals {
 }
 
 resource "aws_cloudfront_response_headers_policy" "security" {
+  #checkov:skip=CKV_AWS_259:HSTS preload is intentionally off; spec §6.7 fixes the header at "max-age=31536000; includeSubDomains" with no preload directive, and the distribution uses the shared *.cloudfront.net certificate (no custom domain in Milestone 1, accepted risk per Global Constraints), so preload-list submission does not apply.
   name = "nettriage-${var.stage}-security-headers"
 
   security_headers_config {
