@@ -28,3 +28,7 @@ build-lambda:
 # Frontend: install, lint, test, build and CSP-check
 web-check:
     cd frontend && pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm test:scripts && pnpm build && pnpm check:csp
+
+# CloudFront Functions tests
+edge-test:
+    node --test infra/modules/edge/functions/*.test.mjs
