@@ -21,7 +21,7 @@ owner; every other comment is treated as untrusted input.
 - Prompt injection through public PR comments (a stranger posting a comment designed to look
   like a review instruction) is mitigated three ways: an allowlist of who Claude acts on
   (Copilot and the owner only), a GitHub token scoped to this one repository with
-  pull-request access only, and no auto-merge under any condition.
+  pull-request read/write and contents read-only, and no auto-merge under any condition.
 
 ## Alternatives considered
 - **Claude-only review, no Copilot:** simpler, but loses the value of a second, differently

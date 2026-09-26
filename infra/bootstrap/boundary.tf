@@ -5,7 +5,7 @@
 # that the boundary design requires. Narrowing it would either break the ceiling (denying actions the deploy role
 # legitimately needs) or just move the same "Allow *" shape into the boundary's own guardrail statement.
 resource "aws_iam_policy" "dev_boundary" {
-  #checkov:skip=CKV_AWS_286:Permissions boundary, not a grant (ruling R20); the boundary's NotAction ceiling is itself the guardrail that closes IAM privilege escalation, ADR-verified in the app module's tests.
+  #checkov:skip=CKV_AWS_286:Permissions boundary, not a grant (ruling R20); it caps what roles the dev deploy identity creates may do, it never grants access on its own.
   #checkov:skip=CKV_AWS_287:Permissions boundary, not a grant (ruling R20); credentials exposure is bounded by whatever the role's own attached policy actually grants.
   #checkov:skip=CKV_AWS_288:Permissions boundary, not a grant (ruling R20); data exfiltration is bounded by the role's own attached policy, not this ceiling.
   #checkov:skip=CKV_AWS_289:Permissions boundary, not a grant (ruling R20); the boundary's job is to deny IAM/org/account/billing/budgets/CE, not to add per-resource constraints on everything else.

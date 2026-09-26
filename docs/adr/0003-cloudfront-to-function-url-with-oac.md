@@ -15,8 +15,8 @@ Function URL configured for `AWS_IAM` auth. There is no API Gateway in the reque
 ## Consequences
 - Cost is $0, and the Function URL already supports `RESPONSE_STREAM` invoke mode for
   Milestone 2; Milestone 1 uses `BUFFERED`.
-- A direct call to the Function URL, without a valid CloudFront signature, gets `403`. Only
-  the CloudFront distribution's resource policy can invoke the function.
+- A direct call to the Function URL, without a valid CloudFront signature, gets `403`. The
+  function's resource policy allows only this CloudFront distribution to invoke it.
 - Requests with a body must carry an `x-amz-content-sha256` header for the signature to
   verify; the frontend's API client computes it.
 - There is no API-gateway-level throttling, so request limits are enforced in the application
@@ -24,5 +24,4 @@ Function URL configured for `AWS_IAM` auth. There is no API Gateway in the reque
 
 ## Alternatives considered
 - **API Gateway HTTP API:** about $1 per million requests, and no response streaming.
-- **API Gateway REST API:** about $3.50 per million requests, with more configuration and no
-  streaming either.
+- **API Gateway REST API:** about $3.50 per million requests, with more configuration.

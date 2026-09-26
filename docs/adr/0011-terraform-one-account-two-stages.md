@@ -19,8 +19,9 @@ through GitHub OIDC, assuming short-lived roles scoped per stage and per job.
 - Staying in one account means no AWS Organizations and no forfeited Free Tier credits, so
   stages are isolated by naming convention, by separate IAM roles, and by separate Terraform
   state keys rather than by account boundary.
-- No long-lived AWS access keys exist anywhere in the project; every CI job assumes a
-  role through OIDC for the duration of that job.
+- No long-lived AWS access keys exist anywhere in the project; the CI jobs that touch AWS
+  (the PR plan job and the dev deploy job) assume a role through GitHub OIDC for the
+  duration of that job.
 - Because a deploy role in a single account can, in principle, create a new IAM role and
   attach it broader permissions than its own, roles that CI deploys create must carry a
   stage permissions boundary (`nettriage-dev-boundary`), so a deploy role can never create a
