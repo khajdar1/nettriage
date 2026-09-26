@@ -1,10 +1,12 @@
 import json
 import logging
 import logging.config
+from dataclasses import dataclass
 
 import pytest
 import uvicorn.config
 from opentelemetry.sdk.trace import TracerProvider
+from pydantic import BaseModel
 
 from nettriage.platform.config import Settings
 from nettriage.platform.logging import REDACTED, JsonFormatter, configure_logging
@@ -71,6 +73,33 @@ def test_sensitive_nested_fields_are_redacted_case_insensitively() -> None:
     line = _format(_record("event", details={"user": {"Email": "a@b.c"}, "count": 3}))
 
     assert line["details"] == {"user": {"Email": REDACTED}, "count": 3}
+
+
+class _UserModel(BaseModel):
+    email: str
+    name: str
+
+
+@dataclass
+class _UserRecord:
+    email: str
+    name: str
+
+
+def test_pydantic_models_in_extra_are_redacted() -> None:
+    user = _UserModel(email="user@example.com", name="Ada")
+    line = _format(_record("event", user=user))
+
+    assert line["user"] == {"email": REDACTED, "name": "Ada"}
+    assert "user@example.com" not in json.dumps(line)
+
+
+def test_dataclasses_in_extra_are_redacted() -> None:
+    user = _UserRecord(email="user@example.com", name="Ada")
+    line = _format(_record("event", user=user))
+
+    assert line["user"] == {"email": REDACTED, "name": "Ada"}
+    assert "user@example.com" not in json.dumps(line)
 
 
 def test_configure_logging_routes_uvicorns_loggers_through_the_json_formatter(

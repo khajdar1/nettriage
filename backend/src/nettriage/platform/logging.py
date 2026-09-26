@@ -1,11 +1,14 @@
 """JSON log lines with trace correlation and redaction of sensitive fields."""
 
+import dataclasses
 import json
 import logging
 import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
+
+from pydantic import BaseModel
 
 from nettriage.platform.config import Settings
 from nettriage.platform.trace_context import current_span_id, current_trace_id
@@ -37,6 +40,10 @@ _STANDARD_ATTRS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asct
 
 
 def redact(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        value = value.model_dump()
+    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
+        value = dataclasses.asdict(value)
     if isinstance(value, Mapping):
         return {
             key: REDACTED if str(key).lower() in SENSITIVE_KEYS else redact(item)
