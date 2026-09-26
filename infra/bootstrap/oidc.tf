@@ -51,7 +51,10 @@ resource "aws_iam_role_policy" "gha_plan_no_secrets" {
   })
 }
 
-# Dev deploys: PowerUser (no IAM), plus IAM limited to nettriage-dev-* roles.
+# Dev deploys: PowerUser, plus IAM limited to nettriage-dev-* roles. Any role this
+# identity creates or grants a policy to must carry the nettriage-dev-boundary
+# permissions boundary, so it can never escalate to full IAM, Organizations, account,
+# billing or budget access via a role of its own making.
 # Tightened with IAM Access Analyzer policy generation in Plan 7.
 resource "aws_iam_role" "gha_deploy_dev" {
   name               = "nettriage-gha-deploy-dev"
@@ -73,13 +76,23 @@ resource "aws_iam_role_policy" "gha_deploy_dev_scope" {
         Sid    = "ManageStageRoles"
         Effect = "Allow"
         Action = [
-          "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:UpdateRole",
+          "iam:DeleteRole", "iam:GetRole", "iam:UpdateRole",
           "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy",
-          "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy", "iam:ListRolePolicies",
-          "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
+          "iam:GetRolePolicy", "iam:DeleteRolePolicy", "iam:ListRolePolicies",
+          "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
           "iam:ListInstanceProfilesForRole",
         ]
         Resource = "arn:aws:iam::${local.account_id}:role/nettriage-dev-*"
+      },
+      {
+        Sid    = "GrantOnlyWithinBoundary"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy",
+          "iam:PutRolePermissionsBoundary",
+        ]
+        Resource  = "arn:aws:iam::${local.account_id}:role/nettriage-dev-*"
+        Condition = { StringEquals = { "iam:PermissionsBoundary" = aws_iam_policy.dev_boundary.arn } }
       },
       {
         Sid       = "PassStageRolesToLambda"

@@ -70,3 +70,20 @@ run "budget_alerts_at_one_and_three_dollars" {
     error_message = "Expected alerts at $1 actual, $3 actual and $3 forecast."
   }
 }
+
+run "dev_deploy_roles_stay_within_a_permissions_boundary" {
+  command = apply
+
+  assert {
+    condition     = aws_iam_policy.dev_boundary.name == "nettriage-dev-boundary"
+    error_message = "The dev boundary policy must be named nettriage-dev-boundary."
+  }
+  assert {
+    condition     = strcontains(aws_iam_policy.dev_boundary.policy, "iam:*")
+    error_message = "The boundary must exclude IAM actions via NotAction."
+  }
+  assert {
+    condition     = strcontains(aws_iam_role_policy.gha_deploy_dev_scope.policy, "iam:PermissionsBoundary")
+    error_message = "Granting a role to the dev deploy identity must require attaching the permissions boundary."
+  }
+}
