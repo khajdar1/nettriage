@@ -58,3 +58,20 @@ test("files keep their path", () => {
 test("API paths are never rewritten to index.html", () => {
   assert.equal(spaRewrite(event("/api/does-not-exist")).uri, "/api/does-not-exist");
 });
+
+test("401 response includes Problem Details body", () => {
+  const response = apiEdgeCheck(event("/api/v1/me"));
+  assert.equal(response.body.encoding, "text");
+  const body = JSON.parse(response.body.data);
+  assert.equal(body.status, 401);
+  assert.equal(body.title, "Unauthorized");
+  assert.equal(body.type, "about:blank");
+  assert.equal(body.instance, "/api/v1/me");
+  assert("trace_id" in body);
+});
+
+test("401 response escapes special characters in instance URI", () => {
+  const response = apiEdgeCheck(event('/api/v1/"x'));
+  const body = JSON.parse(response.body.data);
+  assert.equal(body.instance, '/api/v1/"x');
+});

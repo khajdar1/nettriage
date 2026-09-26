@@ -32,6 +32,7 @@ function handler(event) {
     headers: {
       'content-type': { value: 'application/problem+json' },
       'cache-control': { value: 'no-store' }
-    }
+    },
+    body: { encoding: 'text', data: JSON.stringify({ type: 'about:blank', title: 'Unauthorized', status: 401, detail: null, instance: request.uri, trace_id: null }) }
   };
 }
