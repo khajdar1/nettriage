@@ -77,3 +77,9 @@ def configure_logging(settings: Settings, level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    # uvicorn's own dictConfig gives these loggers their own handlers and propagate=False;
+    # strip both so uvicorn's records reach the root JSON handler too.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers = []
+        uvicorn_logger.propagate = True
