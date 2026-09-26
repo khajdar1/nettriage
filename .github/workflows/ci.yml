@@ -21,11 +21,11 @@ jobs:
       - name: Lint, type-check and test
         working-directory: backend
         run: |
-          uv sync --frozen
-          uv run ruff check .
-          uv run ruff format --check .
-          uv run mypy
-          uv run pytest
+          uv sync --locked
+          uv run --locked ruff check .
+          uv run --locked ruff format --check .
+          uv run --locked mypy
+          uv run --locked pytest
 
   package:
     runs-on: ubuntu-24.04
@@ -33,11 +33,11 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - name: Test the tools
-        run: uv run --project backend python -m pytest tools/tests
+        run: uv run --locked --project backend python -m pytest tools/tests
       - name: Check that every action is pinned to a commit SHA
-        run: uv run --project backend python tools/check_pinned_actions.py .github/workflows
+        run: uv run --locked --project backend python tools/check_pinned_actions.py .github/workflows
       - name: Build the Lambda package
-        run: uv run --project backend python tools/build_lambda.py --out dist/backend.zip
+        run: uv run --locked --project backend python tools/build_lambda.py --out dist/backend.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: backend-zip
@@ -190,16 +190,16 @@ jobs:
         with:
           name: web-dist
           path: web
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: ${{ vars.GHA_DEPLOY_DEV_ROLE_ARN }}
-          aws-region: us-east-1
-          mask-aws-account-id: true
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "<2.0.0"
           terraform_wrapper: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.GHA_DEPLOY_DEV_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
       - name: Apply infrastructure
         working-directory: infra/envs/dev
         env:
@@ -219,11 +219,13 @@ jobs:
           BUCKET=$(jq -r .web_bucket.value "$RUNNER_TEMP/outputs.json")
           DISTRIBUTION=$(jq -r .distribution_id.value "$RUNNER_TEMP/outputs.json")
           aws s3 sync web/assets "s3://$BUCKET/assets" --cache-control "public,max-age=31536000,immutable"
-          aws s3 sync web "s3://$BUCKET" --exclude "assets/*" --cache-control "no-cache" --delete
+          aws s3 sync web "s3://$BUCKET" --exclude "assets/*" --exclude "demo/*" --cache-control "no-cache" --delete
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths "/index.html" "/"
       - name: Smoke test
         run: |
-          uv run --project backend python tools/smoke.py \
+          # The smoke test only calls the public CloudFront domain and the Function URL directly; it needs no AWS access.
+          unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+          uv run --locked --project backend python tools/smoke.py \
             --base-url "https://$(jq -r .cloudfront_domain.value "$RUNNER_TEMP/outputs.json")" \
             --function-url "$(jq -r .function_url.value "$RUNNER_TEMP/outputs.json")" \
             --version "${{ github.sha }}"
