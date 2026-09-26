@@ -72,3 +72,13 @@ run "rejects_an_x86_adapter_layer" {
 
   expect_failures = [var.lwa_layer_arn]
 }
+
+run "rejects_a_non_https_otlp_endpoint" {
+  command = plan
+
+  variables {
+    grafana_otlp_endpoint = "http://example.com/otlp"
+  }
+
+  expect_failures = [var.grafana_otlp_endpoint]
+}

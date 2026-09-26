@@ -38,6 +38,11 @@ variable "otel_collector_layer_arn" {
 variable "grafana_otlp_endpoint" {
   type        = string
   description = "Grafana Cloud OTLP endpoint (not secret)."
+
+  validation {
+    condition     = can(regex("^https://", var.grafana_otlp_endpoint))
+    error_message = "Use the Grafana Cloud OTLP https endpoint."
+  }
 }
 
 variable "grafana_otlp_auth" {
