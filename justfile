@@ -32,3 +32,8 @@ web-check:
 # CloudFront Functions tests
 edge-test:
     node --test infra/modules/edge/functions/*.test.mjs
+
+# Terraform: format, validate and test every stack
+tf-check:
+    terraform fmt -check -recursive infra
+    for d in infra/bootstrap infra/modules/app infra/modules/edge; do (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
