@@ -1,0 +1,11 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #0f1b2a;
+  background: #f4f5f1;
+}
+
+.landing {
+  max-width: 40rem;
+  margin: 20vh auto;
+  padding: 0 1rem;
+}

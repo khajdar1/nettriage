@@ -24,3 +24,7 @@ tools-test:
 # Build the Lambda zip (arm64, python3.14) into dist/backend.zip
 build-lambda:
     uv run --project backend python tools/build_lambda.py --out dist/backend.zip
+
+# Frontend: install, lint, test, build and CSP-check
+web-check:
+    cd frontend && pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm test:scripts && pnpm build && pnpm check:csp
