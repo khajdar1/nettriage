@@ -16,3 +16,11 @@ fmt:
 # Backend: tests
 test:
     cd backend && uv run python -m pytest
+
+# Tools: tests for the build, smoke and pinned-actions scripts
+tools-test:
+    uv run --project backend python -m pytest tools/tests
+
+# Build the Lambda zip (arm64, python3.14) into dist/backend.zip
+build-lambda:
+    uv run --project backend python tools/build_lambda.py --out dist/backend.zip

@@ -1,0 +1,27 @@
+# OpenTelemetry Lambda collector (extension layer). The app exports OTLP to localhost:4318.
+# The decouple processor lets the function return before the export to Grafana Cloud finishes.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: localhost:4318
+
+processors:
+  decouple: {}
+
+exporters:
+  otlphttp/grafana:
+    endpoint: ${env:GRAFANA_OTLP_ENDPOINT}
+    headers:
+      Authorization: Basic ${env:GRAFANA_OTLP_AUTH}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [decouple]
+      exporters: [otlphttp/grafana]
+    metrics:
+      receivers: [otlp]
+      processors: [decouple]
+      exporters: [otlphttp/grafana]
