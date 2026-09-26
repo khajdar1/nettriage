@@ -66,8 +66,8 @@ run "budget_alerts_at_one_and_three_dollars" {
   command = apply
 
   assert {
-    condition     = length(aws_budgets_budget.monthly.notification) == 3
-    error_message = "Expected alerts at $1 actual, $3 actual and $3 forecast."
+    condition     = length(aws_budgets_budget.monthly.notification) == 4
+    error_message = "Expected alerts at $1 and $3, actual and forecast (spec §6.7)."
   }
 }
 
@@ -82,8 +82,42 @@ run "dev_deploy_roles_stay_within_a_permissions_boundary" {
     condition     = strcontains(aws_iam_policy.dev_boundary.policy, "iam:*")
     error_message = "The boundary must exclude IAM actions via NotAction."
   }
+
+  # Structural assertions on the deploy role's own policy (ruling R24-A): a substring check
+  # for "iam:PermissionsBoundary" would also pass if that condition sat on the wrong statement,
+  # or covered only some of the boundary-gated actions. Decode the policy and check each
+  # statement directly. `flatten([s.Action])` normalizes Action, which AWS lets be a bare
+  # string or a list of strings.
   assert {
-    condition     = strcontains(aws_iam_role_policy.gha_deploy_dev_scope.policy, "iam:PermissionsBoundary")
-    error_message = "Granting a role to the dev deploy identity must require attaching the permissions boundary."
+    condition = alltrue([
+      for s in jsondecode(aws_iam_role_policy.gha_deploy_dev_scope.policy).Statement : (
+        s.Effect != "Allow" ||
+        length(setintersection(flatten([s.Action]), [
+          "iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary",
+        ])) == 0 ||
+        try(s.Condition.StringEquals["iam:PermissionsBoundary"], null) == aws_iam_policy.dev_boundary.arn
+      )
+    ])
+    error_message = "Every Allow statement granting iam:CreateRole, iam:PutRolePolicy, iam:AttachRolePolicy or iam:PutRolePermissionsBoundary must condition on the dev boundary policy's ARN."
+  }
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_role_policy.gha_deploy_dev_scope.policy).Statement :
+      s.Effect == "Allow" && length(setintersection(flatten([s.Action]), [
+        "iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary",
+      ])) > 0
+    ])
+    error_message = "At least one Allow statement must grant the boundary-gated role-management actions (the previous assertion must not pass vacuously)."
+  }
+  assert {
+    condition = alltrue([
+      for s in jsondecode(aws_iam_role_policy.gha_deploy_dev_scope.policy).Statement : (
+        s.Effect != "Allow" ||
+        length(setintersection(flatten([s.Action]), [
+          "iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion", "iam:CreateUser", "iam:CreateAccessKey",
+        ])) == 0
+      )
+    ])
+    error_message = "No Allow statement may grant iam:DeleteRolePermissionsBoundary, iam:CreatePolicyVersion, iam:CreateUser or iam:CreateAccessKey (each would let the deploy role escape or replace its own boundary)."
   }
 }

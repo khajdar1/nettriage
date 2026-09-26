@@ -28,6 +28,14 @@ resource "aws_budgets_budget" "monthly" {
     notification_type          = "FORECASTED"
     subscriber_email_addresses = [var.budget_email]
   }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 1
+    threshold_type             = "ABSOLUTE_VALUE"
+    notification_type          = "FORECASTED"
+    subscriber_email_addresses = [var.budget_email]
+  }
 }
 
 # Attach an alert with a $1 threshold to the account's existing services monitor
