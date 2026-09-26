@@ -47,6 +47,15 @@ def test_spa_fallback_swallowing_api_errors_is_caught() -> None:
     assert checks_for(broken)["api 404 stays problem+json"] is False
 
 
+def test_edge_401_without_problem_details_is_caught() -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/me":
+            return httpx.Response(401, headers={"content-type": "text/html"}, content=b"<html>")
+        return healthy(request)
+
+    assert checks_for(broken)["edge rejects api call without session"] is False
+
+
 def test_function_url_reachable_directly_is_caught() -> None:
     def open_url(request: httpx.Request) -> httpx.Response:
         if request.url.host == "fn.example":
