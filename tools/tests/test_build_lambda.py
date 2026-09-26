@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.build_lambda import PackageError, validate_zip, write_zip
+from tools.build_lambda import PackageError, remove_console_scripts, validate_zip, write_zip
 
 
 def make_package(
@@ -94,3 +94,34 @@ def test_zip_is_reproducible(tmp_path: Path) -> None:
     write_zip(package, second)
 
     assert first.read_bytes() == second.read_bytes()
+
+
+def test_exe_console_scripts_are_rejected(tmp_path: Path) -> None:
+    out = build(tmp_path, extra={"bin/fastapi.exe": b"MZ"})
+
+    with pytest.raises(PackageError, match="wrong-platform"):
+        validate_zip(out)
+
+
+def test_remove_console_scripts_drops_launchers_and_lock(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    files = {
+        "bin/fastapi.exe": b"MZ",
+        "bin/uvicorn.exe": b"MZ",
+        "Scripts/idna.exe": b"MZ",
+        ".lock": b"",
+        "nettriage/entrypoints/api/main.py": b"app = None\n",
+        "fastapi-1.0.dist-info/WHEEL": b"Wheel-Version: 1.0\nTag: py3-none-any\n",
+    }
+    for name, content in files.items():
+        path = package / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    remove_console_scripts(package)
+
+    assert not (package / "bin").exists()
+    assert not (package / "Scripts").exists()
+    assert not (package / ".lock").exists()
+    assert (package / "nettriage/entrypoints/api/main.py").read_bytes() == b"app = None\n"
+    assert (package / "fastapi-1.0.dist-info/WHEEL").exists()

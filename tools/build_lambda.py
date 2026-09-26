@@ -36,6 +36,14 @@ class PackageError(Exception):
     """The package would not run on Lambda."""
 
 
+def remove_console_scripts(package: Path) -> None:
+    """Drop uv/pip's console-script launchers, written for the build host's platform
+    (not --python-platform), and the install .lock file; run.sh never invokes them."""
+    for junk in GENERATED_SCRIPT_DIRS:
+        shutil.rmtree(package / junk, ignore_errors=True)
+    (package / ".lock").unlink(missing_ok=True)
+
+
 def stage_package(build_dir: Path) -> Path:
     """Install Lambda-platform wheels and copy the app into build_dir/package."""
     if build_dir.exists():
@@ -54,9 +62,7 @@ def stage_package(build_dir: Path) -> Path:
          "--requirement", str(requirements)],
         check=True,
     )
-    for junk in GENERATED_SCRIPT_DIRS:
-        shutil.rmtree(package / junk, ignore_errors=True)
-    (package / ".lock").unlink(missing_ok=True)
+    remove_console_scripts(package)
     shutil.copytree(
         BACKEND / "src" / "nettriage",
         package / "nettriage",
