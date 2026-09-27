@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 export function findCspViolations(html) {
   const problems = [];
-  for (const [, attrs, body] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+  for (const [, attrs, body] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)) {
     if (!/\bsrc\s*=/.test(attrs) || body.trim() !== "") {
       problems.push("inline <script>");
     }

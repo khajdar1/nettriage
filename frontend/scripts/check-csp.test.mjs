@@ -19,3 +19,10 @@ test("inline styles and event handlers fail", () => {
     "inline event handler",
   ]);
 });
+
+test("inline scripts with unusual closing tags fail", () => {
+  assert.deepEqual(findCspViolations("<script>alert(1)</script >"), ["inline <script>"]);
+  assert.deepEqual(findCspViolations("<script>alert(1)</script\n>"), ["inline <script>"]);
+  assert.deepEqual(findCspViolations('<script>alert(1)</script foo="bar">'), ["inline <script>"]);
+  assert.deepEqual(findCspViolations("<SCRIPT>alert(1)</SCRIPT >"), ["inline <script>"]);
+});
