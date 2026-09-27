@@ -2,7 +2,7 @@ import pytest
 
 from tools.deploy import session
 from tools.deploy.runner import CommandError
-from tools.tests.deploy_fakes import SESSION, FakeRun
+from tools.tests.deploy_fakes import SESSION, TOOLS_CREDENTIAL_PROCESS, FakeRun
 
 
 def test_session_credentials_and_stockholm_reach_the_environment(
@@ -10,18 +10,70 @@ def test_session_credentials_and_stockholm_reach_the_environment(
 ) -> None:
     monkeypatch.setenv("AWS_PROFILE", "someone-else")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIALONGLIVED")
-    run = FakeRun().on("aws", "configure", "export-credentials", returns=SESSION)
+    run = (
+        FakeRun()
+        .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns=f"{TOOLS_CREDENTIAL_PROCESS}\n")
+    )
 
     env = session.aws_env(run, "nettriage")
 
     assert run.calls[0].args == [
         "aws", "configure", "export-credentials", "--profile", "nettriage", "--format", "process",
     ]
-    assert env["AWS_ACCESS_KEY_ID"] == "ASIAEXAMPLE"
-    assert env["AWS_SESSION_TOKEN"] == "example-session"
+    assert env["AWS_PROFILE"] == "nettriage-tools"
     assert env["AWS_REGION"] == "eu-north-1"
     assert env["AWS_DEFAULT_REGION"] == "eu-north-1"
-    assert "AWS_PROFILE" not in env
+    assert "AWS_ACCESS_KEY_ID" not in env
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert "AWS_SESSION_TOKEN" not in env
+
+
+def test_a_missing_tools_profile_is_created(capsys: pytest.CaptureFixture[str]) -> None:
+    run = (
+        FakeRun()
+        .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns=1)
+        .on("aws", "configure", "set")
+    )
+
+    session.aws_env(run, "nettriage")
+
+    [set_process] = run.called("aws", "configure", "set", "credential_process")
+    assert set_process.args == [
+        "aws", "configure", "set", "credential_process", TOOLS_CREDENTIAL_PROCESS,
+        "--profile", "nettriage-tools",
+    ]
+    [set_region] = run.called("aws", "configure", "set", "region")
+    assert set_region.args == [
+        "aws", "configure", "set", "region", "eu-north-1", "--profile", "nettriage-tools",
+    ]
+    assert "Created AWS profile 'nettriage-tools'" in capsys.readouterr().out
+
+
+def test_a_different_tools_profile_is_replaced() -> None:
+    run = (
+        FakeRun()
+        .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns="something-else\n")
+        .on("aws", "configure", "set")
+    )
+
+    session.aws_env(run, "nettriage")
+
+    assert len(run.called("aws", "configure", "set")) == 2
+
+
+def test_an_existing_correct_tools_profile_is_untouched() -> None:
+    run = (
+        FakeRun()
+        .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns=f"{TOOLS_CREDENTIAL_PROCESS}\n")
+    )
+
+    session.aws_env(run, "nettriage")
+
+    assert run.called("aws", "configure", "set") == []
 
 
 def test_long_lived_keys_are_refused() -> None:

@@ -82,11 +82,16 @@ SESSION = json.dumps(
 )
 
 
+TOOLS_CREDENTIAL_PROCESS = "aws configure export-credentials --profile nettriage --format process"
+
+
 def signed_in() -> FakeRun:
-    """A runner whose owner is signed in to account 123456789012."""
+    """A runner whose owner is signed in to account 123456789012, with the nettriage-tools
+    helper profile already set up so aws_env's `aws configure get` check succeeds without change."""
     return (
         FakeRun()
         .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns=f"{TOOLS_CREDENTIAL_PROCESS}\n")
         .on("aws", "sts", "get-caller-identity", returns="123456789012\n")
     )
 

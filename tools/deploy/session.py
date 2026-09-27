@@ -11,10 +11,15 @@ from tools.deploy.runner import CommandError, Runner
 
 
 def aws_env(run: Runner, profile: str) -> dict[str, str]:
-    """This process's environment plus the profile's temporary credentials, in eu-north-1.
+    """This process's environment plus a profile that refreshes credentials as they expire.
 
-    Inherited AWS_* variables are dropped, so only the owner's session reaches AWS. Profiles
-    holding long-lived access keys are refused (spec §6.8: no long-lived keys).
+    The owner's short-lived `aws login` session is validated once (malformed output or
+    long-lived keys are refused with a sign-in hint). A helper profile "<profile>-tools" is
+    then ensured in the owner's AWS config, with a `credential_process` that re-runs
+    `aws configure export-credentials` on every AWS/Terraform call. `aws login` sessions last
+    only 15 minutes, and a first deploy (CloudFront creation, the owner reading the plan) can
+    outlast one, so the returned environment names that profile instead of exporting static
+    keys: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN never appear in it.
     """
     try:
         raw = run(
@@ -34,23 +39,35 @@ def aws_env(run: Runner, profile: str) -> dict[str, str]:
         raise CommandError(
             f"No usable AWS session for profile '{profile}'. Sign in with: aws login --profile {profile}"
         )
-    session_token = creds.get("SessionToken")
-    if not session_token:
+    if not creds.get("SessionToken"):
         raise CommandError(
             f"Profile '{profile}' uses long-lived access keys. Use a short-lived session instead: "
             f"aws login --profile {profile}"
         )
+    _ensure_tools_profile(run, profile)
     env = {key: value for key, value in os.environ.items() if not key.startswith("AWS_")}
     env.update(
         {
-            "AWS_ACCESS_KEY_ID": creds["AccessKeyId"],
-            "AWS_SECRET_ACCESS_KEY": creds["SecretAccessKey"],
-            "AWS_SESSION_TOKEN": session_token,
+            "AWS_PROFILE": f"{profile}-tools",
             "AWS_REGION": REGION,
             "AWS_DEFAULT_REGION": REGION,
         }
     )
     return env
+
+
+def _ensure_tools_profile(run: Runner, profile: str) -> None:
+    """Create or fix the helper profile whose credential_process refreshes the session."""
+    tools_profile = f"{profile}-tools"
+    expected = f"aws configure export-credentials --profile {profile} --format process"
+    current = run(
+        ["aws", "configure", "get", "credential_process", "--profile", tools_profile], check=False
+    )
+    if current.returncode == 0 and current.stdout.strip() == expected:
+        return
+    run(["aws", "configure", "set", "credential_process", expected, "--profile", tools_profile])
+    run(["aws", "configure", "set", "region", REGION, "--profile", tools_profile])
+    print(f"Created AWS profile '{tools_profile}', which refreshes your '{profile}' session for long commands.")
 
 
 def account_id(run: Runner, env: Mapping[str, str]) -> str:
