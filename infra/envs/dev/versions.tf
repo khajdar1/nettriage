@@ -8,12 +8,12 @@ terraform {
     }
   }
 
-  # bucket, key, region and use_lockfile are passed with -backend-config (see Task 12).
+  # bucket, key, region and use_lockfile are passed with -backend-config by tools/deploy.
   backend "s3" {}
 }
 
 provider "aws" {
-  region = "us-east-1"
+  region = "eu-north-1"
 
   default_tags {
     tags = {

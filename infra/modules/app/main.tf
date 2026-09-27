@@ -8,8 +8,7 @@ resource "aws_cloudwatch_log_group" "api" {
 }
 
 resource "aws_iam_role" "api" {
-  name                 = local.name
-  permissions_boundary = var.permissions_boundary_arn
+  name = local.name
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

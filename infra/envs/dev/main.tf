@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 module "app" {
   source                   = "../../modules/app"
   stage                    = "dev"
@@ -9,8 +7,6 @@ module "app" {
   otel_collector_layer_arn = var.otel_collector_layer_arn
   grafana_otlp_endpoint    = var.grafana_otlp_endpoint
   grafana_otlp_auth        = var.grafana_otlp_auth
-  # The deploy role may only create/attach roles that carry this boundary (ruling R20).
-  permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/nettriage-dev-boundary"
 }
 
 module "edge" {

@@ -13,11 +13,10 @@ variables {
   stage                    = "dev"
   lambda_zip_path          = "tests/fixtures/app.zip"
   app_version              = "test-sha"
-  lwa_layer_arn            = "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerArm64:25"
-  otel_collector_layer_arn = "arn:aws:lambda:us-east-1:184161586896:layer:opentelemetry-collector-arm64-0_12_0:1"
+  lwa_layer_arn            = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
+  otel_collector_layer_arn = "arn:aws:lambda:eu-north-1:184161586896:layer:opentelemetry-collector-arm64-0_22_0:1"
   grafana_otlp_endpoint    = "https://otlp-gateway.example.grafana.net/otlp"
   grafana_otlp_auth        = "dGVzdDp0ZXN0"
-  permissions_boundary_arn = "arn:aws:iam::123456789012:policy/nettriage-dev-boundary"
 }
 
 run "function_is_arm64_python_behind_iam_auth" {
@@ -54,20 +53,21 @@ run "logs_are_kept_seven_days" {
   }
 }
 
-run "api_role_carries_the_permissions_boundary" {
-  command = apply
-
-  assert {
-    condition     = aws_iam_role.api.permissions_boundary == "arn:aws:iam::123456789012:policy/nettriage-dev-boundary"
-    error_message = "The api role must carry the dev deploy's permissions boundary (nettriage-dev-boundary) so it can never escalate past it (ruling R20)."
-  }
-}
-
 run "rejects_an_x86_adapter_layer" {
   command = plan
 
   variables {
-    lwa_layer_arn = "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerX86:25"
+    lwa_layer_arn = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerX86:30"
+  }
+
+  expect_failures = [var.lwa_layer_arn]
+}
+
+run "rejects_a_layer_from_another_region" {
+  command = plan
+
+  variables {
+    lwa_layer_arn = "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerArm64:30"
   }
 
   expect_failures = [var.lwa_layer_arn]

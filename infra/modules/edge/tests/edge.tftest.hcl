@@ -18,7 +18,7 @@ mock_provider "aws" {
 
 variables {
   stage             = "dev"
-  api_origin_domain = "abc123.lambda-url.us-east-1.on.aws"
+  api_origin_domain = "abc123.lambda-url.eu-north-1.on.aws"
 }
 
 run "csp_matches_the_spec_exactly" {
@@ -34,11 +34,11 @@ run "extra_connect_sources_are_appended" {
   command = apply
 
   variables {
-    csp_connect_src_extra = ["https://nettriage-dev-uploads.s3.us-east-1.amazonaws.com"]
+    csp_connect_src_extra = ["https://nettriage-dev-uploads.s3.eu-north-1.amazonaws.com"]
   }
 
   assert {
-    condition     = strcontains(output.csp, "connect-src 'self' https://nettriage-dev-uploads.s3.us-east-1.amazonaws.com;")
+    condition     = strcontains(output.csp, "connect-src 'self' https://nettriage-dev-uploads.s3.eu-north-1.amazonaws.com;")
     error_message = "Extra connect-src origins must follow 'self'."
   }
 }
