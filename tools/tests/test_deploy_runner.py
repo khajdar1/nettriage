@@ -26,3 +26,12 @@ def test_unchecked_failure_returns_the_exit_code() -> None:
 def test_missing_program_is_explained() -> None:
     with pytest.raises(CommandError, match="isn't installed"):
         run(["nettriage-no-such-program"])
+
+
+def test_redacted_values_never_reach_the_error_message() -> None:
+    script = "import sys; sys.stderr.write('Invalid value: tok-123\\n'); sys.exit(2)"
+    with pytest.raises(CommandError) as err:
+        run([sys.executable, "-c", script], redact=["tok-123"])
+    message = str(err.value)
+    assert "tok-123" not in message
+    assert "***" in message

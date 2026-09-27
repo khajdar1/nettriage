@@ -33,6 +33,7 @@ def store_otlp_auth(run: Runner, env: Mapping[str, str], stage: str, value: str)
         ["aws", "ssm", "put-parameter", "--name", otlp_auth_parameter(stage),
          "--type", "SecureString", "--overwrite", "--value", value.strip()],
         env=env,
+        redact=[value.strip()],
     )
 
 

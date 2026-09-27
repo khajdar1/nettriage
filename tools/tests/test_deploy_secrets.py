@@ -32,6 +32,7 @@ def test_token_is_stored_as_a_securestring() -> None:
     assert args[args.index("--name") + 1] == PARAMETER
     assert args[args.index("--type") + 1] == "SecureString"
     assert "--overwrite" in args
+    assert run.calls[0].redact == ("dG9rZW4=",)
 
 
 def test_empty_value_is_never_stored() -> None:

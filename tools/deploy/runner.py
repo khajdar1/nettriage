@@ -28,6 +28,7 @@ class Runner(Protocol):
         cwd: Path | None = None,
         interactive: bool = False,
         check: bool = True,
+        redact: Sequence[str] = (),
     ) -> Result: ...
 
 
@@ -38,6 +39,7 @@ def run(
     cwd: Path | None = None,
     interactive: bool = False,
     check: bool = True,
+    redact: Sequence[str] = (),
 ) -> Result:
     """Run a command. Interactive commands share the terminal (terraform apply asks for "yes").
 
@@ -59,6 +61,7 @@ def run(
         raise CommandError(f"`{args[0]}` isn't installed or isn't on PATH.") from None
     if check and completed.returncode != 0:
         tail = "" if interactive else _last_line(completed.stderr)
+        tail = _redact_values(tail, redact)
         what = " ".join(args[:2])
         reason = f": {tail}" if tail else "."
         raise CommandError(f"`{what}` failed with exit code {completed.returncode}{reason}")
@@ -68,3 +71,12 @@ def run(
 def _last_line(text: str | None) -> str:
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
     return lines[-1] if lines else ""
+
+
+def _redact_values(text: str, redact: Sequence[str]) -> str:
+    """Replace non-empty redact values in text with ***."""
+    result = text
+    for value in redact:
+        if value:
+            result = result.replace(value, "***")
+    return result

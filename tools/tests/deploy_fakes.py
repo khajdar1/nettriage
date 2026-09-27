@@ -16,6 +16,7 @@ class Call:
     env: Mapping[str, str] | None
     cwd: Path | None
     interactive: bool
+    redact: tuple[str, ...]
 
 
 # A rule's answer: stdout text; an exit code (for check=False probes); an exception to raise;
@@ -42,8 +43,9 @@ class FakeRun:
         cwd: Path | None = None,
         interactive: bool = False,
         check: bool = True,
+        redact: Sequence[str] = (),
     ) -> Result:
-        call = Call(list(args), env, cwd, interactive)
+        call = Call(list(args), env, cwd, interactive, tuple(redact))
         self.calls.append(call)
         for prefix, answer in self.rules:
             if tuple(call.args[: len(prefix)]) != prefix:
