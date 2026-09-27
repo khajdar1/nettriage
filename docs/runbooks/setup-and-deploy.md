@@ -172,14 +172,14 @@ just deploy-dev
 ```
 Wait until the `ci` and `codeql` runs for the merge commit are green on GitHub first. The
 command:
-1. runs the preflight;
-2. refuses anything but a clean `main` that matches GitHub and whose CI and CodeQL passed;
+1. refuses anything but a clean `main` that matches GitHub and whose CI and CodeQL passed;
+2. runs the preflight;
 3. downloads that commit's CI-built artifacts;
 4. shows the Terraform plan, and you type `yes`;
 5. publishes the site;
 6. runs the smoke tests.
 
-If step 1's preflight has a `FAIL` line, the command stops with
+If step 2's preflight has a `FAIL` line, the command stops with
 `STOP: Preflight failed; nothing was deployed.`; fix it (see Part C) and run `just deploy-dev`
 again.
 
@@ -223,11 +223,10 @@ passes, then run B2 again.
 | `FAIL  Grafana token in SSM` | Run `just store-grafana-token dev` |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
 | `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
-| `STOP: CI hasn't finished for <sha> …` | Push the branch, wait for the `ci` workflow, then plan again |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |
 | `STOP: Deploys run from main …`, `… uncommitted changes …` or `… differs from GitHub's main …` | Follow the command in the message |
-| `STOP: No ci.yml or codeql.yml run found for <sha> (push). Push it and wait for CI.` | Push the branch (if you haven't already), wait for both workflows to run for it, then deploy again |
-| `STOP: ci.yml or codeql.yml for <sha> is still in_progress…` or `concluded 'failure'…` | Wait for CI, or fix it; only green commits deploy |
+| `STOP: No ci.yml or codeql.yml run found for <sha>…` | Push the branch (if you haven't already), wait for the workflow(s) to run for it, then plan or deploy again. `just plan-dev` only checks `ci.yml`; `just deploy-dev` checks both |
+| `STOP: ci.yml or codeql.yml for <sha> is still in_progress…` or `concluded 'failure'…` | Wait for CI, or fix it; only green commits are planned or deployed. Applies to `just plan-dev` (`ci.yml` only) and `just deploy-dev` (both) |
 | `STOP: The checkout changed during the deploy …` | Something changed the branch or the tree while the deploy was checking CI and downloading artifacts; nothing was applied. Check the tree, then run `just deploy-dev` again |
 | `STOP: Couldn't download … CI artifacts expire after 7 days …` | On GitHub, re-run the `ci` workflow for that commit, then deploy again |
 | `STOP: Smoke tests failed …` | Read the `FAIL` lines. Send them to Claude, or roll back |

@@ -18,11 +18,11 @@ Split CI from CD.
   a workflow asks for an OIDC token, uses an AWS action or references AWS credentials, or if
   Terraform defines a GitHub OIDC trust.
 - The owner deploys from their machine with a short-lived `aws login` session. `just deploy-dev`
-  runs the preflight checks, accepts only a clean `main` checkout equal to GitHub's `main` whose
-  `ci` and `codeql` runs succeeded, downloads that commit's CI artifacts, applies Terraform
+  accepts only a clean `main` checkout equal to GitHub's `main` whose `ci` and `codeql` runs
+  succeeded, runs the preflight checks, downloads that commit's CI artifacts, applies Terraform
   (the owner confirms the plan), publishes the site and runs the smoke tests.
-- `just plan-dev` plans a pushed PR commit with its CI artifacts and posts the planned
-  changes, addresses only, to the PR.
+- `just plan-dev` plans only a commit whose `ci` run succeeded, with its CI artifacts, and posts
+  the planned changes, addresses only, to the PR.
 - Deploy secrets live in SSM Parameter Store as SecureStrings and are read at deploy time.
 
 ## Consequences

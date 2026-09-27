@@ -801,7 +801,7 @@ nettriage/
 │   └── tests/             unit/ integration/ security/ evals/
 ├── frontend/
 ├── infra/                 modules/ and envs/dev, envs/prod
-├── tools/                 deploy.py (preflight, plan, deploy), scenarios/, demo_export/, attack_loader/, eval_runner/
+├── tools/                 deploy/ (preflight, plan, deploy), scenarios/, demo_export/, attack_loader/, eval_runner/
 ├── docs/                  architecture.md, adr/, threat-model.md, runbooks/ (incl. setup-and-deploy.md), slo.md, data-handling.md, cost.md, superpowers/
 ├── .github/               workflows/, CODEOWNERS, dependabot.yml
 ├── justfile, docker-compose.yml, README.md, SECURITY.md, LICENSE (Apache-2.0)
