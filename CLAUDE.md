@@ -6,7 +6,12 @@
 - `presentation/` is the private directors' deck source. It is git-ignored; never commit it.
 
 ## Commands
-Run `just` to list tasks. Backend commands run inside `backend/` with `uv run …`.
+Run `just` to list tasks. Backend commands run inside `backend/` with `uv run …`. On the owner's
+Windows machine, run Python tools as modules (`uv run python -m pytest`); host policy blocks
+some uv launchers.
+Deploys are owner actions (`docs/runbooks/setup-and-deploy.md`). Claude may run `just preflight`
+and `just plan-dev` when the owner asks, but never runs `aws login`, `just bootstrap`,
+`just store-grafana-token` or `just deploy-*`.
 
 ## Working with the owner
 - Ask instead of assuming: when a requirement or decision is ambiguous, ask a clear question.
@@ -20,7 +25,9 @@ Run `just` to list tasks. Backend commands run inside `backend/` with `uv run �
 - API errors are RFC 9457 Problem Details. Logs are JSON and never contain secrets,
   tokens, cookies, emails, session IDs, invitation tokens, raw upload lines, prompts or
   model outputs.
-- Infrastructure changes go through Terraform and CI, never through console clicks.
+- Infrastructure changes go through Terraform, reviewed in a PR and applied with
+  `just deploy-<stage>`, never through console clicks. CI holds no cloud access (ADR 0013).
+  Regional resources live in eu-north-1.
 
 ## PR review loop (spec §11.6)
 1. Open the PR and let CI run.

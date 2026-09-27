@@ -1,7 +1,7 @@
 """Post-deploy smoke checks for a NetTriage stage.
 
 Usage: python tools/smoke.py --base-url https://dxxxx.cloudfront.net \
-         --function-url https://xxxx.lambda-url.us-east-1.on.aws/ --version <git sha>
+         --function-url https://xxxx.lambda-url.eu-north-1.on.aws/ --version <git sha>
 """
 
 from __future__ import annotations

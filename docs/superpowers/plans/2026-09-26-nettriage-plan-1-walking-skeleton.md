@@ -12,6 +12,8 @@
 
 **Plan series:** This is Plan 1 of 7 for Milestone 1: (1) walking skeleton, (2) detection engine, (3) data, identity and access, (4) upload pipeline, (5) AI triage, (6) frontend, (7) operations and launch. Each later plan is written after the previous one is merged.
 
+> **Superseded in part (2026-09-27):** the account's AWS-managed policies rule out GitHub OIDC and us-east-1 (spec Revision 2). Task 8 Steps 6–7, Task 10 Step 6's values, Task 11 Step 6, Task 12 and Task 14 Steps 5–8 are replaced by [Plan 1b](2026-09-27-nettriage-plan-1b-account-adaptation.md) and [docs/runbooks/setup-and-deploy.md](../../runbooks/setup-and-deploy.md).
+
 ## Global Constraints
 
 - Python **3.14**; Lambda runtime **`python3.14`**, architecture **`arm64`**. Fall back to `python3.13` only if a dependency has no 3.14 arm64 wheel (§13.2).

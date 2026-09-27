@@ -1,7 +1,7 @@
 # 0002: Neon Postgres for relational data
 
 - Status: Accepted
-- Date: 2026-09-26
+- Date: 2026-09-26 (region updated 2026-09-27)
 
 ## Context
 The data model needs foreign-key constraints, row-level security for tenant isolation, and
@@ -11,8 +11,9 @@ worst case around $44; Aurora DSQL is free but has no pgvector, no triggers and 
 extensions, which the data model relies on.
 
 ## Decision
-Use Neon's free tier, in region aws-us-east-1, restricted to standard Postgres features so
-the database stays portable to Aurora or RDS if the free tier is ever outgrown.
+Use Neon's free tier, in region aws-eu-central-1 (Frankfurt), the closest Neon region to the
+API in eu-north-1 (spec Revision 2, D2). Only standard Postgres features are used, so the
+database stays portable to Aurora or RDS if the free tier is ever outgrown.
 
 ## Consequences
 - Cost is $0. Hitting a limit pauses the database rather than generating a bill.
