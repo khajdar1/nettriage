@@ -35,10 +35,10 @@ Regional resources run in eu-north-1 (Stockholm); CloudFront serves the app worl
 Prerequisites: uv, Node LTS with pnpm, Terraform, just (see the plan's prerequisites).
 
 ```bash
-just            # list tasks
-just lint test  # backend checks
-just web-check  # frontend lint, tests, build and CSP check
-just tf-check   # Terraform format, validate and tests
+just             # list tasks
+just lint test   # backend checks
+just web-check   # frontend lint, tests, build and CSP check
+just tf-check    # Terraform format, validate and tests
 just cloud-check # CI holds no cloud access
 ```
 
