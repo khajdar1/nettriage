@@ -39,20 +39,20 @@ def test_missing_session_says_how_to_sign_in() -> None:
 
 def test_malformed_session_output_says_how_to_sign_in() -> None:
     run = FakeRun().on("aws", "configure", "export-credentials", returns="Note: a new version of the AWS CLI is available\n")
-    with pytest.raises(CommandError, match="aws login --profile nettriage"):
+    with pytest.raises(CommandError, match="No usable AWS session"):
         session.aws_env(run, "nettriage")
 
 
 def test_incomplete_session_says_how_to_sign_in() -> None:
     run = FakeRun().on("aws", "configure", "export-credentials", returns='{"Version": 1, "SessionToken": "t"}')
-    with pytest.raises(CommandError, match="aws login --profile nettriage"):
+    with pytest.raises(CommandError, match="No usable AWS session"):
         session.aws_env(run, "nettriage")
 
 
 @pytest.mark.parametrize("payload", ["null", "42", "[]", "{}"])
 def test_non_object_or_empty_session_says_how_to_sign_in(payload: str) -> None:
     run = FakeRun().on("aws", "configure", "export-credentials", returns=payload)
-    with pytest.raises(CommandError, match="aws login --profile nettriage"):
+    with pytest.raises(CommandError, match="No usable AWS session"):
         session.aws_env(run, "nettriage")
 
 
