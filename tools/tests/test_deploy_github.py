@@ -58,3 +58,21 @@ def test_a_branch_without_a_pr_is_explained(tmp_path: Path) -> None:
     run = FakeRun().on("gh", "pr", "comment", returns=CommandError("no pull requests found"))
     with pytest.raises(CommandError, match="--no-comment"):
         github.comment_on_pr(run, tmp_path / "plan.md")
+
+
+def test_download_failures_keep_their_cause(tmp_path: Path) -> None:
+    run = FakeRun().on("gh", "run", "download", returns=CommandError("`gh` isn't installed or isn't on PATH."))
+    with pytest.raises(CommandError) as exc_info:
+        github.download(run, 7, "backend-zip", tmp_path)
+    msg = str(exc_info.value)
+    assert "isn't installed" in msg
+    assert "expire after 7 days" in msg
+
+
+def test_comment_failures_keep_their_cause(tmp_path: Path) -> None:
+    run = FakeRun().on("gh", "pr", "comment", returns=CommandError("HTTP 401: Bad credentials"))
+    with pytest.raises(CommandError) as exc_info:
+        github.comment_on_pr(run, tmp_path / "plan.md")
+    msg = str(exc_info.value)
+    assert "401" in msg
+    assert "--no-comment" in msg

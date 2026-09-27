@@ -47,8 +47,8 @@ def download(run: Runner, run_id: int, name: str, dest: Path) -> Path:
         run(["gh", "run", "download", str(run_id), "--name", name, "--dir", str(dest)])
     except CommandError as exc:
         raise CommandError(
-            f"Couldn't download '{name}' from run {run_id}. CI artifacts expire after 7 days: "
-            "re-run the workflow on GitHub, then try again."
+            f"Couldn't download '{name}' from run {run_id}: {exc} CI artifacts expire after 7 days: "
+            "if they expired, re-run the workflow on GitHub, then try again."
         ) from exc
     return dest
 
@@ -57,4 +57,4 @@ def comment_on_pr(run: Runner, body_file: Path) -> None:
     try:
         run(["gh", "pr", "comment", "--body-file", str(body_file)])
     except CommandError as exc:
-        raise CommandError("This branch has no open PR to comment on; open one, or plan with --no-comment.") from exc
+        raise CommandError(f"Couldn't comment on this branch's PR: {exc} If the branch has no open PR, open one, or plan with --no-comment.") from exc
