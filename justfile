@@ -41,3 +41,7 @@ tf-check:
 # CI hygiene: every workflow action pinned to a SHA
 pin-check:
     uv run --project backend python tools/check_pinned_actions.py .github/workflows
+
+# CI hygiene: no workflow or Terraform gives CI access to AWS (ADR 0013)
+cloud-check:
+    uv run --project backend python tools/check_no_cloud_access.py .
