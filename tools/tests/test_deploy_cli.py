@@ -217,9 +217,16 @@ def test_plan_with_no_comment_leaves_the_pr_alone(stage_dir: Path) -> None:
     assert run.called("gh", "pr", "comment") == []
 
 
-def test_plan_without_a_finished_ci_run_stops(stage_dir: Path) -> None:
+def test_plan_refuses_a_missing_ci_run(stage_dir: Path) -> None:
     run = planning(runs())
-    with pytest.raises(CommandError, match="CI hasn't finished"):
+    with pytest.raises(CommandError, match="No ci.yml run found"):
+        cli.plan(run, {}, "dev", post_comment=True)
+    assert run.called("terraform") == []
+
+
+def test_plan_refuses_a_completed_but_failed_ci_run(stage_dir: Path) -> None:
+    run = planning(runs((5, "completed", "failure", "pull_request")))
+    with pytest.raises(CommandError, match="only green commits are planned or deployed"):
         cli.plan(run, {}, "dev", post_comment=True)
     assert run.called("terraform") == []
 

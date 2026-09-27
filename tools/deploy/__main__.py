@@ -98,9 +98,7 @@ def plan_comment(stage: str, sha: str, changes: list[str]) -> str:
 
 def plan(run: Runner, env: Mapping[str, str], stage: str, post_comment: bool) -> list[str]:
     sha = gitguards.head_sha(run)
-    ci = github.latest_run(run, config.CI_WORKFLOW, sha)
-    if ci is None or ci.status != "completed":
-        raise CommandError(f"CI hasn't finished for {sha[:7]}. Push the branch, wait for the ci workflow, then plan again.")
+    ci = github.require_success(run, config.CI_WORKFLOW, sha)
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:

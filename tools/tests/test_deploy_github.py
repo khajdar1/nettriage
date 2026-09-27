@@ -40,6 +40,28 @@ def test_green_run_is_returned() -> None:
     assert github.require_success(run, "ci.yml", SHA, event="push").run_id == 7
 
 
+def test_failed_run_message_says_planned_or_deployed() -> None:
+    run = FakeRun().on("gh", "run", "list", returns=runs((1, "completed", "failure", "push")))
+    with pytest.raises(CommandError, match="only green commits are planned or deployed"):
+        github.require_success(run, "ci.yml", SHA, event="push")
+
+
+def test_require_success_without_an_event_accepts_any_event() -> None:
+    """`plan` checks a commit's CI run regardless of whether it ran for a `pull_request` or a
+    `push` (R17): no `event` means `latest_run` doesn't filter by event at all."""
+    run = FakeRun().on(
+        "gh", "run", "list", returns=runs((7, "completed", "success", "pull_request"))
+    )
+    assert github.require_success(run, "ci.yml", SHA).run_id == 7
+
+
+def test_require_success_without_an_event_omits_it_from_the_missing_run_message() -> None:
+    run = FakeRun().on("gh", "run", "list", returns=runs())
+    message = r"No ci\.yml run found for aaaaaaa\. Push it and wait for CI\.$"
+    with pytest.raises(CommandError, match=message):
+        github.require_success(run, "ci.yml", SHA)
+
+
 def test_expired_artifacts_are_explained(tmp_path: Path) -> None:
     run = FakeRun().on("gh", "run", "download", returns=CommandError("no artifact matches"))
     with pytest.raises(CommandError, match="expire after 7 days"):

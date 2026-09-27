@@ -31,14 +31,18 @@ def latest_run(run: Runner, workflow: str, sha: str, event: str | None = None) -
     return found[0] if found else None  # gh lists the newest run first
 
 
-def require_success(run: Runner, workflow: str, sha: str, event: str) -> WorkflowRun:
+def require_success(run: Runner, workflow: str, sha: str, event: str | None = None) -> WorkflowRun:
     found = latest_run(run, workflow, sha, event)
     if found is None:
-        raise CommandError(f"No {workflow} run found for {sha[:7]} ({event}). Push it and wait for CI.")
+        where = f" ({event})" if event is not None else ""
+        raise CommandError(f"No {workflow} run found for {sha[:7]}{where}. Push it and wait for CI.")
     if found.status != "completed":
         raise CommandError(f"{workflow} for {sha[:7]} is still {found.status}; wait for it to finish.")
     if found.conclusion != "success":
-        raise CommandError(f"{workflow} for {sha[:7]} concluded '{found.conclusion}'; only green commits deploy.")
+        raise CommandError(
+            f"{workflow} for {sha[:7]} concluded '{found.conclusion}'; "
+            "only green commits are planned or deployed."
+        )
     return found
 
 
