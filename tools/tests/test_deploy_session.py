@@ -49,6 +49,13 @@ def test_incomplete_session_says_how_to_sign_in() -> None:
         session.aws_env(run, "nettriage")
 
 
+@pytest.mark.parametrize("payload", ["null", "42", "[]", "{}"])
+def test_non_object_or_empty_session_says_how_to_sign_in(payload: str) -> None:
+    run = FakeRun().on("aws", "configure", "export-credentials", returns=payload)
+    with pytest.raises(CommandError, match="aws login --profile nettriage"):
+        session.aws_env(run, "nettriage")
+
+
 def test_account_id_is_read_from_sts() -> None:
     run = FakeRun().on("aws", "sts", "get-caller-identity", returns="123456789012\n")
     assert session.account_id(run, {}) == "123456789012"

@@ -25,24 +25,26 @@ def aws_env(run: Runner, profile: str) -> dict[str, str]:
         raise CommandError(
             f"No usable AWS session for profile '{profile}'. Sign in with: aws login --profile {profile}"
         ) from exc
+    # Validate that the parsed output is a dict with required non-empty keys.
+    if (
+        not isinstance(creds, dict)
+        or not creds.get("AccessKeyId")
+        or not creds.get("SecretAccessKey")
+    ):
+        raise CommandError(
+            f"No usable AWS session for profile '{profile}'. Sign in with: aws login --profile {profile}"
+        )
     session_token = creds.get("SessionToken")
     if not session_token:
         raise CommandError(
             f"Profile '{profile}' uses long-lived access keys. Use a short-lived session instead: "
             f"aws login --profile {profile}"
         )
-    try:
-        access_key_id = creds["AccessKeyId"]
-        secret_access_key = creds["SecretAccessKey"]
-    except KeyError as exc:
-        raise CommandError(
-            f"No usable AWS session for profile '{profile}'. Sign in with: aws login --profile {profile}"
-        ) from exc
     env = {key: value for key, value in os.environ.items() if not key.startswith("AWS_")}
     env.update(
         {
-            "AWS_ACCESS_KEY_ID": access_key_id,
-            "AWS_SECRET_ACCESS_KEY": secret_access_key,
+            "AWS_ACCESS_KEY_ID": creds["AccessKeyId"],
+            "AWS_SECRET_ACCESS_KEY": creds["SecretAccessKey"],
             "AWS_SESSION_TOKEN": session_token,
             "AWS_REGION": REGION,
             "AWS_DEFAULT_REGION": REGION,
