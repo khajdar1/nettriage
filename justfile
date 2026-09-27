@@ -45,3 +45,23 @@ pin-check:
 # CI hygiene: no workflow or Terraform gives CI access to AWS (ADR 0013)
 cloud-check:
     uv run --project backend python tools/check_no_cloud_access.py .
+
+# AWS (read-only): check the account still allows what a deploy needs
+preflight stage="dev":
+    uv run --project backend python -m tools.deploy preflight --stage {{stage}}
+
+# AWS, once: create the state bucket and budget alerts, then move their state into S3
+bootstrap budget_email anomaly_monitor_arn="":
+    uv run --project backend python -m tools.deploy bootstrap --budget-email "{{budget_email}}" --anomaly-monitor-arn "{{anomaly_monitor_arn}}"
+
+# AWS, once per stage: store the Grafana OTLP token in SSM Parameter Store
+store-grafana-token stage="dev":
+    uv run --project backend python -m tools.deploy store-grafana-token --stage {{stage}}
+
+# Plan the dev stage for the checked-out, pushed commit and post the changes to its PR
+plan-dev:
+    uv run --project backend python -m tools.deploy plan --stage dev
+
+# Deploy main's CI-built artifacts to dev, then run the smoke tests
+deploy-dev:
+    uv run --project backend python -m tools.deploy deploy --stage dev
