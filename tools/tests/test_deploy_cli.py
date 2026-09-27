@@ -95,7 +95,45 @@ def test_deploy_ships_ci_artifacts_of_a_green_main_commit_then_smoke_tests(stage
 )
 def test_nothing_changes_in_aws_unless_ci_is_green(stage_dir: Path, listing: str) -> None:
     run = healthy_account(main_checkout(signed_in()).on("gh", "run", "list", returns=listing))
-    with pytest.raises(CommandError):
+    with pytest.raises(CommandError, match="ci.yml"):
+        cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+    assert run.called("terraform") == []
+    assert run.called("aws", "s3", "sync") == []
+    assert run.called("aws", "cloudfront", "create-invalidation") == []
+
+
+def test_codeql_red_blocks_the_deploy(stage_dir: Path) -> None:
+    run = healthy_account(main_checkout(signed_in()))
+    # The specific codeql.yml rule must come before the generic "gh run list" success rule.
+    run.on("gh", "run", "list", "--workflow", "codeql.yml", returns=runs((11, "completed", "failure", "push")))
+    run.on("gh", "run", "list", returns=runs((9, "completed", "success", "push")))
+    with pytest.raises(CommandError, match="codeql.yml"):
+        cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+    assert run.called("terraform") == []
+    assert run.called("aws", "s3", "sync") == []
+    assert run.called("aws", "cloudfront", "create-invalidation") == []
+
+
+def _run_on_another_branch() -> FakeRun:
+    return healthy_account(signed_in()).on("git", "rev-parse", "--abbrev-ref", returns="feature\n")
+
+
+def _run_with_a_dirty_tree() -> FakeRun:
+    run = healthy_account(signed_in())
+    run.on("git", "rev-parse", "--abbrev-ref", returns="main\n").on("git", "status", returns=" M file.py\n")
+    return run
+
+
+@pytest.mark.parametrize(
+    "build, match",
+    [(_run_on_another_branch, "Deploys run from main"), (_run_with_a_dirty_tree, "uncommitted changes")],
+    ids=["other-branch", "dirty-tree"],
+)
+def test_a_dirty_or_other_branch_checkout_never_reaches_terraform(
+    stage_dir: Path, build, match: str
+) -> None:
+    run = build()
+    with pytest.raises(CommandError, match=match):
         cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
     assert run.called("terraform") == []
     assert run.called("aws", "s3", "sync") == []
