@@ -1,6 +1,7 @@
 import json
 import logging
 import logging.config
+import sys
 from dataclasses import dataclass
 
 import pytest
@@ -100,6 +101,33 @@ def test_dataclasses_in_extra_are_redacted() -> None:
 
     assert line["user"] == {"email": REDACTED, "name": "Ada"}
     assert "user@example.com" not in json.dumps(line)
+
+
+def test_exception_messages_and_chained_causes_are_never_logged() -> None:
+    cause_message = "token=abc123"
+    outer_message = "password=hunter2"
+    try:
+        try:
+            raise ValueError(cause_message)
+        except ValueError as cause:
+            raise RuntimeError(outer_message) from cause
+    except RuntimeError:
+        record = _record("unhandled_error")
+        record.exc_info = sys.exc_info()
+        line_text = JsonFormatter(service="nettriage-api", stage="local").format(record)
+
+    assert "hunter2" not in line_text
+    assert "abc123" not in line_text
+    line = json.loads(line_text)
+    exception = line["exception"]
+    assert exception["type"] == "RuntimeError"
+    assert any(
+        frame["function"] == "test_exception_messages_and_chained_causes_are_never_logged"
+        for frame in exception["stack"]
+    )
+    [cause_entry] = exception["causes"]
+    assert cause_entry["type"] == "ValueError"
+    assert cause_entry["stack"]
 
 
 def test_configure_logging_routes_uvicorns_loggers_through_the_json_formatter(

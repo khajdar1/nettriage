@@ -4,8 +4,10 @@ import dataclasses
 import json
 import logging
 import sys
+import traceback
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import TracebackType
 from typing import Any
 
 from pydantic import BaseModel
@@ -54,6 +56,46 @@ def redact(value: Any) -> Any:
     return value
 
 
+def _exception_type_name(exc_type: type[BaseException]) -> str:
+    """`module.QualName`; for a builtin, just the name (`ValueError`, not `builtins.ValueError`)."""
+    if exc_type.__module__ in ("builtins", "__main__"):
+        return exc_type.__qualname__
+    return f"{exc_type.__module__}.{exc_type.__qualname__}"
+
+
+def _stack_frames(tb: TracebackType | None) -> list[dict[str, Any]]:
+    """Frames as code (file, line, function, source line), never the exception's message."""
+    return [
+        {"file": f.filename, "line": f.lineno, "function": f.name, "source": f.line}
+        for f in traceback.extract_tb(tb)
+    ]
+
+
+def _exception_summary(exc: BaseException) -> dict[str, Any]:
+    """An exception's type and stack: code, never its message."""
+    return {"type": _exception_type_name(type(exc)), "stack": _stack_frames(exc.__traceback__)}
+
+
+def _chained(exc: BaseException) -> BaseException | None:
+    if exc.__cause__ is not None:
+        return exc.__cause__
+    return None if exc.__suppress_context__ else exc.__context__
+
+
+def _exception_entry(exc: BaseException) -> dict[str, Any]:
+    """The exception's type and stack, plus the same for every chained cause/context, with no
+    exception messages anywhere: a message can hold a password, token, DSN, email or upload
+    line."""
+    causes: list[dict[str, Any]] = []
+    seen = {id(exc)}
+    chained = _chained(exc)
+    while chained is not None and id(chained) not in seen:
+        seen.add(id(chained))
+        causes.append(_exception_summary(chained))
+        chained = _chained(chained)
+    return {**_exception_summary(exc), "causes": causes}
+
+
 class JsonFormatter(logging.Formatter):
     def __init__(self, service: str, stage: str) -> None:
         super().__init__()
@@ -73,8 +115,8 @@ class JsonFormatter(logging.Formatter):
             "span_id": current_span_id(),
             **redact(extras),
         }
-        if record.exc_info:
-            entry["exception"] = self.formatException(record.exc_info)
+        if record.exc_info and record.exc_info[1] is not None:
+            entry["exception"] = _exception_entry(record.exc_info[1])
         return json.dumps(entry, default=str)
 
 

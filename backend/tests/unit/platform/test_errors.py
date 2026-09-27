@@ -1,8 +1,13 @@
+import logging
+import sys
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nettriage.entrypoints.api.app import create_app
 from nettriage.platform.config import Settings
+from nettriage.platform.logging import JsonFormatter
 
 PROBLEM_JSON = "application/problem+json"
 
@@ -29,21 +34,35 @@ def test_wrong_method_returns_problem_details_with_allow_header(client: TestClie
     assert response.json()["title"] == "Method Not Allowed"
 
 
-def test_unhandled_error_hides_internals(settings: Settings) -> None:
+def test_unhandled_error_hides_internals(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
     app: FastAPI = create_app(settings)
 
     @app.get("/api/boom")
     def boom() -> None:
-        raise RuntimeError("database password is hunter2")
+        message = "database password is hunter2"
+        raise RuntimeError(message)
 
-    client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/api/boom")
+    logger = logging.getLogger("nettriage.platform.errors")
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter(settings.service_name, settings.stage))
+    logger.addHandler(handler)
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/api/boom")
+    finally:
+        logger.removeHandler(handler)
 
     assert response.status_code == 500
     assert response.headers["content-type"] == PROBLEM_JSON
     assert response.json()["title"] == "Internal Server Error"
     assert "hunter2" not in response.text
     assert "Traceback" not in response.text
+
+    log_output = capsys.readouterr().out
+    assert "hunter2" not in log_output
+    assert "RuntimeError" in log_output
 
 
 def test_api_docs_are_disabled_in_prod() -> None:
