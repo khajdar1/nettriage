@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 2 in owner review (revision 1 approved 2026-09-26) |
+| **Status** | Revision 2 approved 2026-09-27 (revision 1 approved 2026-09-26) |
 | **Date** | 2026-09-26, revised 2026-09-27 |
 | **Scope** | Product vision (all milestones, high level) and the detailed design of Milestone 1 |
 | **License** | Apache-2.0 |
@@ -489,7 +489,7 @@ Every member may leave an organization, except its last Owner.
   - Rotation follows a runbook.
   - psycopg's automatic prepared statements are disabled (`prepare_threshold=None`) for compatibility with the transaction pooler.
 - **People and automation that change the account** (Revision 2, D3–D6):
-  - **The owner** is the only identity that changes infrastructure. The bootstrap, every `terraform plan` and every deploy run from the owner's machine with a short-lived `aws login` session, which is exported to the command's environment for that run only.
+  - **The owner** is the only identity that changes infrastructure. The bootstrap, every `terraform plan` and every deploy run from the owner's machine with a short-lived `aws login` session. Commands reach that session through a helper AWS profile (`<profile>-tools`) whose `credential_process` asks the AWS CLI for the current `aws login` session, so a long Terraform run outlives the session's 15-minute credentials, and the tool never writes credentials to disk.
   - **GitHub Actions** has no AWS access: no OIDC trust (the account can't create identity providers, R2), no access keys and no AWS actions in any workflow. A CI check fails if a workflow asks for `id-token: write` or uses an AWS action.
   - **Unattended jobs** that need AWS (nightly evals in Plan 5, backups in Plan 7) run inside AWS as scheduled Lambdas with their own least-privilege roles, or as owner-run commands. Each plan decides which.
 - **Deploy secrets:** the Grafana OTLP token is an SSM SecureString (`/nettriage/<stage>/grafana-otlp-auth`) that the owner stores once; the deploy reads it. GitHub holds no secrets.
@@ -986,7 +986,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 | Item | Fallback |
 |---|---|
 | The Lambda Web Adapter and OpenTelemetry collector layers, and the python3.14 runtime, in eu-north-1 (checked by `just preflight`) | `python3.13`; `force_flush` instead of the collector layer |
-| Terraform using the owner's `aws login` session | Export the session as environment variables for each command (the default in `tools/deploy.py`) |
+| Terraform using the owner's `aws login` session through a `credential_process` helper profile (the default in `tools/deploy/`) | Export the session as environment variables for each command, keeping each run under the credentials' 15-minute lifetime |
 | Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Drop unavailable candidates; run Claude only in manual comparisons |
 | Neon Terraform provider reliability | Create the projects by hand and document it |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |

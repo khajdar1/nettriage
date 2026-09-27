@@ -32,7 +32,8 @@ Regional resources run in eu-north-1 (Stockholm); CloudFront serves the app worl
 
 ## Develop
 
-Prerequisites: uv, Node LTS with pnpm, Terraform, just (see the plan's prerequisites).
+Prerequisites: uv, Node LTS with pnpm, Terraform, just (see the plan's prerequisites). Deploys
+also need AWS CLI 2.32 or later, Terraform 1.11 or later and a signed-in GitHub CLI (`gh`).
 
 ```bash
 just             # list tasks

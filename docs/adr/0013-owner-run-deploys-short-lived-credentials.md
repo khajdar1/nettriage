@@ -26,12 +26,20 @@ Split CI from CD.
 - Deploy secrets live in SSM Parameter Store as SecureStrings and are read at deploy time.
 
 ## Consequences
-- No stored cloud credentials exist anywhere: not in GitHub, not on disk, not as IAM users. A
+- No long-lived credentials exist anywhere: not in GitHub, not as IAM users or access keys. The
+  `aws login` session is cached on the owner's machine only for its own short lifetime. A
   compromised workflow or dependency in CI can't reach AWS at all.
+- Commands reach that session through a helper AWS profile, `nettriage-tools`, whose
+  `credential_process` asks the AWS CLI for the current `aws login` session. The tool creates
+  this profile on first use. It stores no credentials of its own, and it keeps long Terraform
+  runs working past the session's 15-minute credentials.
 - What's deployed is exactly what CI built and tested, and only after CI and CodeQL passed for
   that commit.
 - Deploys are deliberate owner actions; nothing deploys on merge. They depend on the owner's
   machine and sign-in, and CI artifacts expire after 7 days (re-running CI refreshes them).
+- Local plans and deploys run the repository's own code with the owner's session. So the owner
+  reviews a PR's changes to the deploy tooling, infrastructure, workflows and lockfiles before
+  `just plan-dev`, and signs out when done; CI's lack of cloud access doesn't cover this step.
 - Unattended jobs that need AWS (nightly evals, backups) can't run in GitHub Actions. They run
   inside AWS as scheduled Lambdas or as owner-run commands (Plans 5 and 7).
 - The bootstrap no longer creates an OIDC provider, CI roles or a permissions boundary.

@@ -7,7 +7,7 @@ skip-check:
   - CKV2_AWS_62    # S3 event notifications: not needed for state or web buckets
   - CKV2_AWS_61    # S3 lifecycle on the web bucket: deploys replace its content
   - CKV_AWS_21     # S3 versioning on the web bucket: rebuilt from Git on every deploy
-  - CKV_AWS_300    # S3 abort-multipart rule on the web bucket: CI uploads small files only
+  - CKV_AWS_300    # S3 abort-multipart rule on the web bucket: the owner's deploy uploads small files only
   - CKV_AWS_115    # Lambda reserved concurrency: new accounts may have too low a quota (spec §13.2)
   - CKV_AWS_116    # Lambda DLQ: the API function is synchronous
   - CKV_AWS_117    # Lambda in a VPC: no VPC by design (ADR 0009)
@@ -17,8 +17,8 @@ skip-check:
   - CKV_AWS_158    # CloudWatch log group CMK encryption: cost
   - CKV_AWS_338    # CloudWatch retention of 1 year or more: 7 days by design (spec §9.3)
   - CKV_AWS_86     # CloudFront access logs: cost; telemetry covers API traffic
-  - CKV_AWS_68     # CloudFront WAF: added with the flat-rate plan when eligible (spec §6.7)
-  - CKV2_AWS_47    # WAF Log4j rule: no WAF yet (see CKV_AWS_68)
+  - CKV_AWS_68     # CloudFront WAF: not used on this account; the edge session check and app-level rate limits are the protection (spec Revision 2, D8)
+  - CKV2_AWS_47    # WAF Log4j rule: no WAF on this account (see CKV_AWS_68)
   - CKV_AWS_174    # CloudFront minimum TLS 1.2: impossible with the default certificate (accepted risk)
   - CKV2_AWS_42    # CloudFront custom certificate: no custom domain in Milestone 1
   - CKV_AWS_310    # CloudFront origin failover: single-region portfolio app
