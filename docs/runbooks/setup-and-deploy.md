@@ -11,12 +11,13 @@ terminal, not an embedded one.
 ```bash
 aws --version; terraform version; gh auth status; just --version; uv --version
 ```
-The AWS CLI must be 2.32 or later (for `aws login`), and `gh` must be signed in.
+The AWS CLI must be 2.32 or later (for `aws login`), Terraform must be 1.11 or later, and `gh`
+must be signed in.
 
 ### A2. Sign in to AWS from the command line
 ```bash
-aws login --profile nettriage
 aws configure set region eu-north-1 --profile nettriage
+aws login --profile nettriage
 aws sts get-caller-identity --profile nettriage
 ```
 `aws login` opens your browser; sign in as you do on the AWS console. The last command prints
@@ -56,9 +57,10 @@ Then run one of these (use your email; add the monitor ARN if one was listed):
 just bootstrap you@example.com
 just bootstrap you@example.com arn:aws:ce::123456789012:anomalymonitor/…
 ```
-The first lines are the account checks (`PASS  Lambda in eu-north-1`, `PASS  IAM`, …). If any
-line says `FAIL`, the command stops with `STOP: Preflight failed; nothing was created.`; send the
-output to Claude. Terraform then shows the plan: the state bucket
+The first output line is `AWS account …, region eu-north-1`, then the account checks
+(`PASS  Lambda in eu-north-1`, `PASS  IAM`, …). If any line says `FAIL`, the command stops with
+`STOP: Preflight failed; nothing was created.`; send the output to Claude. Terraform then shows
+the plan: the state bucket
 `nettriage-tfstate-<account>` with its settings, the `nettriage-monthly` budget and, optionally,
 the anomaly subscription. Type `yes`. If the command stops partway, it keeps the partial state in
 `infra/bootstrap/terraform.tfstate.recovered`; keep that file (see Part C). It ends with
@@ -110,14 +112,17 @@ cat > "$TEMP/ruleset.json" <<'EOF'
           { "context": "backend" }, { "context": "package" }, { "context": "frontend" },
           { "context": "edge-functions" }, { "context": "terraform" },
           { "context": "analyze (python)" }, { "context": "analyze (javascript-typescript)" },
-          { "context": "analyze (actions)" } ] } }
+          { "context": "analyze (actions)" } ] } },
+    { "type": "code_scanning", "parameters": { "code_scanning_tools": [
+        { "tool": "CodeQL", "security_alerts_threshold": "high_or_higher", "alerts_threshold": "errors" } ] } }
   ]
 }
 EOF
 gh api -X POST "repos/{owner}/{repo}/rulesets" --input "$TEMP/ruleset.json"
 gh api "repos/{owner}/{repo}/rulesets" --jq '.[].name'
 ```
-The last command prints `protect-main`.
+The last command prints `protect-main`. The `code_scanning` rule blocks merging a PR that would
+introduce a new high-or-higher-severity CodeQL security alert, or a new CodeQL error, on `main`.
 
 Check Copilot code review at github.com/settings/copilot (choose **Lite** effort if the setting
 exists). Then connect the GitHub MCP server for Claude's review loop:
@@ -140,7 +145,11 @@ GitHub needs no deployment environments, variables or secrets for NetTriage.
 
 ### B1. Review
 1. Claude opens the PR, and CI must go green.
-2. While the PR's branch is checked out, plan it:
+2. `just plan-dev` runs the PR's own code with your AWS session, so before running it, read the
+   PR's changes to `tools/`, `justfile`, `infra/`, `.github/`, `backend/pyproject.toml` and
+   `backend/uv.lock`. If anything looks wrong, or you aren't sure, don't plan it; ask Claude or
+   close the PR instead.
+3. While the PR's branch is checked out, plan it:
    ```bash
    git switch <pr-branch> && git pull --ff-only
    just plan-dev
@@ -148,10 +157,15 @@ GitHub needs no deployment environments, variables or secrets for NetTriage.
    The planned changes appear in the terminal and as a PR comment titled
    `### Terraform plan: dev (<sha>)`: resource addresses only, never values. On the first
    deploy it lists the dev stage's resources (all `create`).
-3. Claude runs the Copilot review loop. You read the diff and the threads, then **squash-merge**
+4. Claude runs the Copilot review loop. You read the diff and the threads, then **squash-merge**
    on GitHub. Claude never merges.
+5. Sign out: `aws logout --profile nettriage`. This ends the session, so repository code you run
+   later (yours or anyone else's) can't use it.
 
 ### B2. Deploy
+`just deploy-dev` also runs repository code (`tools/`, `justfile`, `infra/`) with your AWS
+session, but it needs no extra read here: you deploy `main`, which contains only reviewed,
+merged PRs.
 ```bash
 git switch main && git pull --ff-only
 just deploy-dev
@@ -182,6 +196,9 @@ Success looks like eight `PASS` lines:
 The last line is `Deployed <sha> to dev: https://<id>.cloudfront.net`. The first deploy takes
 longer, because CloudFront needs several minutes to create the distribution.
 
+Sign out: `aws logout --profile nettriage`. This ends the session, so repository code you run
+later can't use it.
+
 ### B3. Check telemetry and cost
 1. In Grafana, open **Explore → Tempo** and run
    `{ resource.service.name = "nettriage-api" && resource.deployment.environment.name = "dev" }`.
@@ -205,16 +222,19 @@ passes, then run B2 again.
 | `FAIL  Terraform state bucket` | Run A4 (bootstrap) |
 | `FAIL  Grafana token in SSM` | Run `just store-grafana-token dev` |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
-| `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared` | Ask Claude to update the layer ARN to its current version |
+| `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
 | `STOP: CI hasn't finished for <sha> …` | Push the branch, wait for the `ci` workflow, then plan again |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |
 | `STOP: Deploys run from main …`, `… uncommitted changes …` or `… differs from GitHub's main …` | Follow the command in the message |
-| `STOP: ci.yml for <sha> is still in_progress` or `concluded 'failure'` | Wait for CI, or fix it; only green commits deploy |
+| `STOP: No ci.yml or codeql.yml run found for <sha> (push). Push it and wait for CI.` | Push the branch (if you haven't already), wait for both workflows to run for it, then deploy again |
+| `STOP: ci.yml or codeql.yml for <sha> is still in_progress…` or `concluded 'failure'…` | Wait for CI, or fix it; only green commits deploy |
+| `STOP: The checkout changed during the deploy …` | Something changed the branch or the tree while the deploy was checking CI and downloading artifacts; nothing was applied. Check the tree, then run `just deploy-dev` again |
 | `STOP: Couldn't download … CI artifacts expire after 7 days …` | On GitHub, re-run the `ci` workflow for that commit, then deploy again |
 | `STOP: Smoke tests failed …` | Read the `FAIL` lines. Send them to Claude, or roll back |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |
 | `` STOP: `terraform apply` failed with exit code 1. `` | Terraform's own error is printed above this line (`apply` shares the terminal), so scroll up and read it. If it's `Error acquiring the state lock`, see that row; otherwise send the output to Claude. Terraform may have made some changes before failing; the next plan or deploy shows what's left |
 | `` STOP: `terraform init` failed with exit code 1: Error: … `` (or any other `` `<tool> <command>` failed … ``) | Read the `Error:` text. `Error acquiring the state lock` is covered by its own row; for anything else, send the output to Claude |
+| Terraform's own `Failed to persist state to backend` (an `errored.tfstate` file appears in `infra/envs/dev/` or `infra/bootstrap/`) | Don't commit, share or open `errored.tfstate` in a chat: it holds secrets from the state. Tell Claude the message, not the file; Claude helps you run `terraform state push errored.tfstate` from that directory, then delete it. (`git check-ignore -v infra/envs/dev/errored.tfstate` confirms it's git-ignored, matched by the repo's `*.tfstate` pattern.) |
 | `` STOP: `<tool>` isn't installed or isn't on PATH. `` | Install it (A1 lists the tools) |
 | `STOP: The first bootstrap didn't finish; its state is saved in …terraform.tfstate.recovered (git-ignored) …` | Keep `infra/bootstrap/terraform.tfstate.recovered`. Don't run `just bootstrap` again; send the output to Claude |
 | `STOP: A saved bootstrap state exists at … Don't bootstrap again …` | A previous first bootstrap didn't finish. Send the output to Claude, who pushes the saved state into the state bucket with you |
