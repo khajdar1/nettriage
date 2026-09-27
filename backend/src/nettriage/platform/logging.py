@@ -3,6 +3,7 @@
 import dataclasses
 import json
 import logging
+import re
 import sys
 import traceback
 from collections.abc import Mapping
@@ -35,6 +36,11 @@ SENSITIVE_KEYS = frozenset(
         "completion",
         "model_output",
         "raw_line",
+        "api_key",
+        "api-key",
+        "apikey",
+        "passwd",
+        "pwd",
     }
 )
 # Attributes every LogRecord has; anything else arrived through `extra=`.
@@ -54,6 +60,48 @@ def redact(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [redact(item) for item in value]
     return value
+
+
+# `_sanitize_message` defends the message text itself: `redact` only reaches `extra=`, but a
+# %-arg, an f-string, or a third-party logger (uvicorn's access log, for example) can put a
+# secret straight into `record.msg`. Each rule is a compiled regex, applied in order.
+
+# 1. A query string on a URL or path: "?" right after a path/URL character, up to whitespace or
+#    a quote. The path itself is left readable.
+_QUERY_STRING_RE = re.compile(r"(?<=[\w/])\?[^\s\"']+")
+
+# 2. "Bearer <token>", case-insensitive.
+_BEARER_TOKEN_RE = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
+
+# 3. "key=value", "key: value" or '"key": "value"' for any name in SENSITIVE_KEYS, case
+#    insensitive. The value runs to whitespace, ",", ";", "&" or a closing quote; a quoted value
+#    is matched together with its quotes.
+_SENSITIVE_KEY_ALTERNATION = "|".join(
+    sorted((re.escape(key) for key in SENSITIVE_KEYS), key=len, reverse=True)
+)
+_SENSITIVE_KV_RE = re.compile(
+    rf'"?\b(?P<key>{_SENSITIVE_KEY_ALTERNATION})\b"?\s*(?P<sep>[:=])\s*'
+    r"""(?:"[^"]*"|'[^']*'|[^\s,;&]+)""",
+    re.IGNORECASE,
+)
+
+# 4. A bare email address.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}")
+
+
+def _redact_sensitive_kv(match: re.Match[str]) -> str:
+    return f"{match.group('key')}{match.group('sep')}{REDACTED}"
+
+
+def _sanitize_message(text: str) -> str:
+    """A plain event name (`"unhandled_error"`) or a path with no query string passes through
+    unchanged. Anything that looks like a query string, a bearer token, a sensitive key/value
+    pair or an email address is redacted."""
+    text = _QUERY_STRING_RE.sub(f"?{REDACTED}", text)
+    text = _BEARER_TOKEN_RE.sub(f"Bearer {REDACTED}", text)
+    text = _SENSITIVE_KV_RE.sub(_redact_sensitive_kv, text)
+    text = _EMAIL_RE.sub(REDACTED, text)
+    return text
 
 
 def _exception_type_name(exc_type: type[BaseException]) -> str:
@@ -108,7 +156,7 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": _sanitize_message(record.getMessage()),
             "service": self._service,
             "stage": self._stage,
             "trace_id": current_trace_id(),

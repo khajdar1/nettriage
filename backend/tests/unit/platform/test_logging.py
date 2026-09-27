@@ -149,6 +149,53 @@ def test_exception_stack_frames_never_include_the_source_line_text() -> None:
         assert "function" in frame
 
 
+def test_message_percent_args_with_a_sensitive_key_are_redacted() -> None:
+    line = _format(_record("token=%s", args=("abc123",)))
+
+    assert "abc123" not in json.dumps(line)
+    assert line["message"] == "token=[REDACTED]"
+
+
+def test_message_email_address_in_an_fstring_is_redacted() -> None:
+    address = "user@example.com"
+    line = _format(_record(f"welcome back {address}"))
+
+    assert "user@example.com" not in json.dumps(line)
+
+
+def test_message_bearer_token_is_redacted() -> None:
+    line = _format(_record("Authorization: Bearer xyz.abc"))
+
+    assert "xyz.abc" not in json.dumps(line)
+
+
+def test_uvicorn_access_log_query_string_is_redacted() -> None:
+    line = _format(
+        _record(
+            '%s - "%s %s HTTP/%s" %d',
+            args=("1.2.3.4:5", "GET", "/api/invitations/accept?code=s3cr3t", "1.1", 200),
+            name="uvicorn.access",
+        )
+    )
+
+    assert "s3cr3t" not in json.dumps(line)
+    assert "/api/invitations/accept?[REDACTED]" in str(line["message"])
+    assert "200" in str(line["message"])
+
+
+def test_message_json_style_sensitive_pair_is_redacted() -> None:
+    line = _format(_record('{"password": "hunter2"}'))
+
+    assert "hunter2" not in json.dumps(line)
+
+
+@pytest.mark.parametrize("event", ["unhandled_error", "Application startup complete."])
+def test_plain_event_names_pass_through_message_sanitization_unchanged(event: str) -> None:
+    line = _format(_record(event))
+
+    assert line["message"] == event
+
+
 def test_configure_logging_routes_uvicorns_loggers_through_the_json_formatter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
