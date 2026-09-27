@@ -69,3 +69,26 @@ def test_interactive_commands_let_a_ctrl_c_child_stop_gracefully(monkeypatch: py
     assert process.waits == 2
     assert process.killed is False
     assert process.terminated is False
+
+
+def test_terraform_style_stderr_becomes_a_readable_message() -> None:
+    """Terraform's own stderr is ANSI-colored box-drawing art; the error should read cleanly.
+
+    The child writes raw UTF-8 bytes through sys.stderr.buffer (bypassing its own text-mode
+    console encoding, which on Windows may not represent these characters) so the parent's
+    utf-8 decode of the captured stderr sees exactly the bytes Terraform itself would emit.
+    """
+    script = (
+        "import sys\n"
+        "sys.stderr.buffer.write('\\x1b[31m\\u2577\\x1b[0m\\n'.encode('utf-8'))\n"
+        "sys.stderr.buffer.write('\\u2502 \\x1b[1mError: \\x1b[0mInvalid backend\\n'.encode('utf-8'))\n"
+        "sys.stderr.buffer.write('\\u2502 \\n'.encode('utf-8'))\n"
+        "sys.stderr.buffer.write('\\u2575\\n'.encode('utf-8'))\n"
+        "sys.exit(1)\n"
+    )
+    with pytest.raises(CommandError) as err:
+        run([sys.executable, "-c", script])
+    message = str(err.value)
+    assert "Error: Invalid backend" in message
+    assert "\u2575" not in message
+    assert "\u2502" not in message

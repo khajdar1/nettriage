@@ -73,11 +73,11 @@ def bootstrap(run: Runner, env: Mapping[str, str], budget_email: str, anomaly_mo
             ignore=shutil.ignore_patterns("backend.tf", ".terraform", "tests", "*.tfstate*"),
         )
         local_state = work / "terraform.tfstate"
-        run(["terraform", "init", "-input=false"], env=env, cwd=work)
+        run(["terraform", "init", "-input=false", "-no-color"], env=env, cwd=work)
         try:
             terraform.apply(run, env, work, variables)
             terraform.init(run, env, config.BOOTSTRAP_DIR, bucket, config.BOOTSTRAP_STATE_KEY)
-            run(["terraform", "state", "push", str(local_state)], env=env, cwd=config.BOOTSTRAP_DIR)
+            run(["terraform", "state", "push", "-no-color", str(local_state)], env=env, cwd=config.BOOTSTRAP_DIR)
         except BaseException as exc:
             # Ctrl+C (KeyboardInterrupt) counts too: never lose state with the scratch directory.
             if not local_state.exists():

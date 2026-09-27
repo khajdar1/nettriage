@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -66,7 +67,7 @@ def run(
     except FileNotFoundError:
         raise CommandError(f"`{args[0]}` isn't installed or isn't on PATH.") from None
     if check and returncode != 0:
-        tail = _redact_values(_last_line(stderr), redact)
+        tail = _redact_values(_summarize(stderr), redact)
         what = " ".join(args[:2])
         reason = f": {tail}" if tail else "."
         raise CommandError(f"`{what}` failed with exit code {returncode}{reason}")
@@ -83,8 +84,19 @@ def _wait_through_ctrl_c(process: subprocess.Popen) -> int:
             continue
 
 
-def _last_line(text: str | None) -> str:
-    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_BOX_CHARS = str.maketrans("", "", "│╷╵")
+
+
+def _summarize(text: str | None) -> str:
+    """A short, readable error line: strip ANSI color codes and Terraform's box-drawing margin
+    (│ ╷ ╵), preferring the first "Error:" line over the last (which is often just a box glyph)."""
+    cleaned = _ANSI.sub("", text or "")
+    lines = [line.translate(_BOX_CHARS).strip() for line in cleaned.splitlines()]
+    lines = [line for line in lines if line]
+    for line in lines:
+        if line.startswith("Error:"):
+            return line
     return lines[-1] if lines else ""
 
 

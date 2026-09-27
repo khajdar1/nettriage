@@ -20,7 +20,10 @@ def backend_args(bucket: str, key: str) -> list[str]:
 
 
 def init(run: Runner, env: Mapping[str, str], cwd: Path, bucket: str, key: str) -> None:
-    run(["terraform", "init", "-input=false", "-reconfigure", *backend_args(bucket, key)], env=env, cwd=cwd)
+    run(
+        ["terraform", "init", "-input=false", "-no-color", "-reconfigure", *backend_args(bucket, key)],
+        env=env, cwd=cwd,
+    )
 
 
 def planned_changes(plan_output: str) -> list[str]:
@@ -67,5 +70,5 @@ def apply(run: Runner, env: Mapping[str, str], cwd: Path, extra_args: Sequence[s
 
 
 def outputs(run: Runner, env: Mapping[str, str], cwd: Path) -> dict[str, str]:
-    data = json.loads(run(["terraform", "output", "-json"], env=env, cwd=cwd).stdout)
+    data = json.loads(run(["terraform", "output", "-no-color", "-json"], env=env, cwd=cwd).stdout)
     return {name: str(item["value"]) for name, item in data.items()}

@@ -188,8 +188,10 @@ def test_first_bootstrap_applies_locally_then_pushes_state_into_the_new_bucket(b
     assert "-var=budget_email=owner@example.com" in apply_call.args
     [push] = run.called("terraform", "state", "push")
     assert push.cwd == bootstrap_dir
+    assert "-no-color" in push.args
     repo_init = [call for call in run.called("terraform", "init") if call.cwd == bootstrap_dir]
     assert "-backend-config=key=bootstrap/terraform.tfstate" in repo_init[0].args
+    assert all("-no-color" in call.args for call in run.called("terraform", "init"))
 
 
 def test_a_failed_first_apply_keeps_its_partial_state(bootstrap_dir: Path) -> None:

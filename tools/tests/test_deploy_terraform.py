@@ -83,6 +83,18 @@ def test_outputs_are_flattened_to_strings(tmp_path: Path) -> None:
     assert terraform.outputs(run, {}, tmp_path) == {"web_bucket": "b"}
 
 
+def test_init_uses_no_color_so_backend_errors_are_readable(tmp_path: Path) -> None:
+    run = FakeRun().on("terraform", "init")
+    terraform.init(run, {}, tmp_path, "bucket", "key")
+    assert "-no-color" in run.calls[0].args
+
+
+def test_outputs_uses_no_color_so_errors_are_readable(tmp_path: Path) -> None:
+    run = FakeRun().on("terraform", "output", returns=json.dumps({}))
+    terraform.outputs(run, {}, tmp_path)
+    assert "-no-color" in run.calls[0].args
+
+
 def test_plan_writes_no_plan_file_and_reads_json_lines(tmp_path: Path) -> None:
     run = FakeRun().on("terraform", "plan", returns=PLAN_LINES)
 
@@ -96,6 +108,7 @@ def test_plan_writes_no_plan_file_and_reads_json_lines(tmp_path: Path) -> None:
     assert call.cwd == tmp_path
     assert "-json" in call.args
     assert not any(arg.startswith("-out") for arg in call.args)
+    assert "-no-color" not in call.args  # plan -json needs no -no-color
 
 
 def test_plan_raises_with_the_error_diagnostics_but_not_the_raw_json(tmp_path: Path) -> None:
