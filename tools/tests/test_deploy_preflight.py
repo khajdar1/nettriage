@@ -62,6 +62,34 @@ def test_a_denied_service_fails_only_its_own_check() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        "AccessDenied: User is not authorized",
+        "explicit deny in a service control policy",
+        "UnauthorizedOperation",
+        "You are not authorized to perform this operation",
+        "accessdenied exception",  # case-insensitive
+    ],
+)
+def test_a_denial_error_gets_the_policy_hint(error: str) -> None:
+    run = FakeRun().on("aws", "cloudfront", returns=CommandError(error)).on("aws")
+    [check] = [c for c in preflight.account_checks(run, {}, "123456789012") if c.name == "CloudFront"]
+    assert "AWS denied this call; the account's policies may have changed" in check.detail
+    assert error in check.detail
+
+
+@pytest.mark.parametrize(
+    "error",
+    ["Could not connect to the endpoint URL", "timed out", "Name or service not known"],
+)
+def test_a_non_denial_error_keeps_the_plain_message(error: str) -> None:
+    run = FakeRun().on("aws", "cloudfront", returns=CommandError(error)).on("aws")
+    [check] = [c for c in preflight.account_checks(run, {}, "123456789012") if c.name == "CloudFront"]
+    assert "AWS denied this call" not in check.detail
+    assert check.detail == error
+
+
 def test_report_prints_each_check_and_fails_if_any_fails(capsys: pytest.CaptureFixture[str]) -> None:
     ok = preflight.report([preflight.Check("A", True), preflight.Check("B", False, "why")])
     out = capsys.readouterr().out

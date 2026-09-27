@@ -89,6 +89,12 @@ def test_init_uses_no_color_so_backend_errors_are_readable(tmp_path: Path) -> No
     assert "-no-color" in run.calls[0].args
 
 
+def test_init_uses_a_readonly_lockfile_so_a_deploy_never_dirties_the_tree(tmp_path: Path) -> None:
+    run = FakeRun().on("terraform", "init")
+    terraform.init(run, {}, tmp_path, "bucket", "key")
+    assert "-lockfile=readonly" in run.calls[0].args
+
+
 def test_outputs_uses_no_color_so_errors_are_readable(tmp_path: Path) -> None:
     run = FakeRun().on("terraform", "output", returns=json.dumps({}))
     terraform.outputs(run, {}, tmp_path)
@@ -109,6 +115,21 @@ def test_plan_writes_no_plan_file_and_reads_json_lines(tmp_path: Path) -> None:
     assert "-json" in call.args
     assert not any(arg.startswith("-out") for arg in call.args)
     assert "-no-color" not in call.args  # plan -json needs no -no-color
+
+
+def test_fakeruns_callable_full_result_honours_check() -> None:
+    """FakeRun's callable answer must behave like the real runner: check=True and a non-zero
+    return code raise CommandError, exactly like the int-answer branch already does."""
+    run = FakeRun().on("terraform", "validate", returns=lambda call: Result(1, "boom"))
+    with pytest.raises(CommandError, match="exit code 1"):
+        run(["terraform", "validate"])
+
+
+def test_fakeruns_callable_full_result_with_check_false_returns_it_unraised() -> None:
+    run = FakeRun().on("terraform", "validate", returns=lambda call: Result(1, "boom"))
+    result = run(["terraform", "validate"], check=False)
+    assert result.returncode == 1
+    assert result.stdout == "boom"
 
 
 def test_plan_raises_with_the_error_diagnostics_but_not_the_raw_json(tmp_path: Path) -> None:

@@ -111,3 +111,83 @@ def test_non_object_or_empty_session_says_how_to_sign_in(payload: str) -> None:
 def test_account_id_is_read_from_sts() -> None:
     run = FakeRun().on("aws", "sts", "get-caller-identity", returns="123456789012\n")
     assert session.account_id(run, {}) == "123456789012"
+
+
+def _signed_in() -> FakeRun:
+    return (
+        FakeRun()
+        .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns=f"{TOOLS_CREDENTIAL_PROCESS}\n")
+    )
+
+
+def test_aws_ca_bundle_and_config_file_survive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AWS_CA_BUNDLE", "/etc/ssl/corp-ca.pem")
+    monkeypatch.setenv("AWS_CONFIG_FILE", "/custom/config")
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", "/custom/credentials")
+
+    env = session.aws_env(_signed_in(), "nettriage")
+
+    assert env["AWS_CA_BUNDLE"] == "/etc/ssl/corp-ca.pem"
+    assert env["AWS_CONFIG_FILE"] == "/custom/config"
+    assert env["AWS_SHARED_CREDENTIALS_FILE"] == "/custom/credentials"
+
+
+@pytest.mark.parametrize(
+    "var",
+    [
+        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN",
+        "AWS_CREDENTIAL_EXPIRATION", "AWS_DEFAULT_PROFILE", "AWS_ROLE_ARN",
+        "AWS_ROLE_SESSION_NAME", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_AUTHORIZATION_TOKEN",
+    ],
+)
+def test_credential_profile_and_role_variables_never_reach_the_environment(
+    monkeypatch: pytest.MonkeyPatch, var: str
+) -> None:
+    monkeypatch.setenv(var, "x")
+    assert var not in session.aws_env(_signed_in(), "nettriage")
+
+
+def test_the_export_credentials_and_configure_calls_share_the_same_base_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_CA_BUNDLE", "/etc/ssl/corp-ca.pem")
+    run = (
+        FakeRun()
+        .on("aws", "configure", "export-credentials", returns=SESSION)
+        .on("aws", "configure", "get", returns=1)
+        .on("aws", "configure", "set")
+    )
+
+    session.aws_env(run, "nettriage")
+
+    [export_call] = run.called("aws", "configure", "export-credentials")
+    [get_call] = run.called("aws", "configure", "get")
+    set_calls = run.called("aws", "configure", "set")
+    assert len(set_calls) == 2
+    for call in (get_call, *set_calls):
+        assert call.env == export_call.env
+    assert export_call.env is not None
+    assert export_call.env["AWS_CA_BUNDLE"] == "/etc/ssl/corp-ca.pem"
+
+
+def test_terraform_overrides_are_stripped_but_plugin_cache_and_tf_var_are_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TF_LOG", "TRACE")
+    monkeypatch.setenv("TF_LOG_PATH", "/tmp/tf.log")
+    monkeypatch.setenv("TF_LOG_CORE", "TRACE")
+    monkeypatch.setenv("TF_LOG_PROVIDER", "TRACE")
+    monkeypatch.setenv("TF_CLI_ARGS", "-no-color")
+    monkeypatch.setenv("TF_CLI_ARGS_apply", "-auto-approve")
+    monkeypatch.setenv("TF_WORKSPACE", "prod")
+    monkeypatch.setenv("TF_PLUGIN_CACHE_DIR", "/cache")
+    monkeypatch.setenv("TF_VAR_GRAFANA_OTLP_AUTH", "secret")
+
+    env = session.aws_env(_signed_in(), "nettriage")
+
+    for dropped in ("TF_LOG", "TF_LOG_PATH", "TF_LOG_CORE", "TF_LOG_PROVIDER", "TF_CLI_ARGS", "TF_CLI_ARGS_apply", "TF_WORKSPACE"):
+        assert dropped not in env
+    assert env["TF_PLUGIN_CACHE_DIR"] == "/cache"
+    assert env["TF_VAR_GRAFANA_OTLP_AUTH"] == "secret"

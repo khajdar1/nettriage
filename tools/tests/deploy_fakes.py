@@ -59,7 +59,11 @@ class FakeRun:
                 return Result(answer, "")
             if callable(answer):
                 outcome = answer(call)
-                return outcome if isinstance(outcome, Result) else Result(0, outcome)
+                if not isinstance(outcome, Result):
+                    return Result(0, outcome)
+                if check and outcome.returncode != 0:
+                    raise CommandError(f"`{' '.join(call.args[:2])}` failed with exit code {outcome.returncode}.")
+                return outcome
             return Result(0, answer)
         raise AssertionError(f"unexpected command: {call.args}")
 

@@ -10,6 +10,15 @@ def test_captures_stdout() -> None:
     assert run([sys.executable, "-c", "print('hello')"]).stdout.strip() == "hello"
 
 
+def test_non_utf8_stdout_does_not_raise_unicodedecodeerror() -> None:
+    """Windows tools (e.g. a legacy-codepage error) can emit bytes that aren't valid UTF-8;
+    the runner must replace them instead of raising UnicodeDecodeError."""
+    script = "import sys; sys.stdout.buffer.write(b'before \\xff\\xfe after'); sys.exit(0)"
+    result = run([sys.executable, "-c", script])
+    assert result.returncode == 0
+    assert "before" in result.stdout and "after" in result.stdout
+
+
 def test_failure_names_only_the_program_and_subcommand() -> None:
     script = "import sys; sys.stderr.write('boom\\n'); sys.exit(3)"
     with pytest.raises(CommandError) as err:

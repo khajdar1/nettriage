@@ -35,3 +35,20 @@ def test_clean_main_matching_github_is_deployable() -> None:
 def test_anything_else_is_refused(kwargs: dict[str, str], message: str) -> None:
     with pytest.raises(CommandError, match=message):
         gitguards.require_clean_main(repo(**kwargs))
+
+
+def test_an_unchanged_checkout_passes_the_recheck() -> None:
+    run = FakeRun().on("git", "status", "--porcelain", returns="").on("git", "rev-parse", "HEAD", returns=f"{SHA}\n")
+    gitguards.require_unchanged_since(run, SHA)
+
+
+def test_a_tree_that_turned_dirty_during_the_deploy_is_refused() -> None:
+    run = FakeRun().on("git", "status", "--porcelain", returns=" M file.py\n")
+    with pytest.raises(CommandError, match="checkout changed during the deploy"):
+        gitguards.require_unchanged_since(run, SHA)
+
+
+def test_a_head_that_moved_during_the_deploy_is_refused() -> None:
+    run = FakeRun().on("git", "status", "--porcelain", returns="").on("git", "rev-parse", "HEAD", returns=f"{'c' * 40}\n")
+    with pytest.raises(CommandError, match="checkout changed during the deploy"):
+        gitguards.require_unchanged_since(run, SHA)

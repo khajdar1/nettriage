@@ -17,6 +17,23 @@ def test_requesting_an_oidc_token_is_flagged() -> None:
     assert problems_in(text, WORKFLOW_RULES) == ["requests an OIDC token (id-token: write)"]
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        '      id-token: "write"\n',
+        "      id-token: 'write'\n",
+        "    permissions: { id-token: write }\n",
+    ],
+)
+def test_quoted_and_flow_mapping_id_token_forms_are_flagged(text: str) -> None:
+    assert problems_in(text, WORKFLOW_RULES) == ["requests an OIDC token (id-token: write)"]
+
+
+def test_permissions_write_all_is_flagged() -> None:
+    text = "permissions: write-all\n"
+    assert problems_in(text, WORKFLOW_RULES) == ["grants id-token: write (permissions: write-all)"]
+
+
 def test_aws_actions_are_flagged() -> None:
     text = f"      - uses: aws-actions/configure-aws-credentials@{SHA}\n"
     assert "uses an AWS action" in problems_in(text, WORKFLOW_RULES)

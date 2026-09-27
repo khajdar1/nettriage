@@ -140,6 +140,31 @@ def test_a_dirty_or_other_branch_checkout_never_reaches_terraform(
     assert run.called("aws", "cloudfront", "create-invalidation") == []
 
 
+def test_a_checkout_that_turns_dirty_during_the_deploy_makes_no_terraform_call(stage_dir: Path) -> None:
+    """require_clean_main's own check passes; the tree turns dirty only afterwards (while CI and
+    the artifact downloads are checked), so the pre-apply recheck must catch it."""
+    porcelain_calls = {"n": 0}
+
+    def porcelain_status(call: Call) -> str:
+        porcelain_calls["n"] += 1
+        return "" if porcelain_calls["n"] == 1 else " M file.py\n"
+
+    run = healthy_account(signed_in())
+    run.on("git", "rev-parse", "--abbrev-ref", returns="main\n")
+    run.on("git", "status", "--porcelain", returns=porcelain_status)
+    run.on("git", "fetch")
+    run.on("git", "rev-parse", returns=f"{SHA}\n")
+    run.on("gh", "run", "list", returns=runs((9, "completed", "success", "push")))
+    run.on("gh", "run", "download")
+
+    with pytest.raises(CommandError, match="checkout changed during the deploy"):
+        cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    assert run.called("terraform") == []
+    assert run.called("aws", "s3", "sync") == []
+    assert run.called("aws", "cloudfront", "create-invalidation") == []
+
+
 def test_deploy_stops_before_git_and_github_when_preflight_fails(stage_dir: Path) -> None:
     run = healthy_account(signed_in().on("aws", "cloudfront", returns=CommandError("explicit deny")))
     with pytest.raises(CommandError, match="Preflight failed"):
@@ -230,6 +255,7 @@ def test_first_bootstrap_applies_locally_then_pushes_state_into_the_new_bucket(b
     repo_init = [call for call in run.called("terraform", "init") if call.cwd == bootstrap_dir]
     assert "-backend-config=key=bootstrap/terraform.tfstate" in repo_init[0].args
     assert all("-no-color" in call.args for call in run.called("terraform", "init"))
+    assert all("-lockfile=readonly" in call.args for call in run.called("terraform", "init"))
 
 
 def test_a_failed_first_apply_keeps_its_partial_state(bootstrap_dir: Path) -> None:
@@ -307,6 +333,39 @@ def test_store_grafana_token_prompts_and_never_prints_the_token(capsys: pytest.C
     assert base64.b64decode(args[args.index("--value") + 1]).decode() == "123456:glc_secret"
     captured = capsys.readouterr()
     assert "glc_secret" not in captured.out + captured.err
+
+
+def test_store_grafana_token_never_leaks_the_token_outside_the_one_put_parameter_call() -> None:
+    """The raw token, and its base64 basic-auth form, must appear in exactly one recorded call's
+    args: the `aws ssm put-parameter` that stores it (Global Constraints: the token appears on a
+    command line only in that single call)."""
+    token = "glc_super_secret_token"
+    run = FakeRun().on("aws", "ssm", "put-parameter")
+
+    cli.store_grafana_token(run, {}, "dev", ask_id=lambda prompt: "123456", ask_secret=lambda prompt: token)
+
+    b64_value = base64.b64encode(f"123456:{token}".encode()).decode()
+    put_calls = run.called("aws", "ssm", "put-parameter")
+    assert len(put_calls) == 1
+    assert b64_value in put_calls[0].args
+    for call in run.calls:
+        for arg in call.args:
+            assert token not in arg
+            if call is not put_calls[0]:
+                assert b64_value not in arg
+
+
+def test_deploy_never_puts_the_grafana_token_in_any_call_args(stage_dir: Path) -> None:
+    """The Grafana token (here SSM's raw parameter value "dG9rZW4=") reaches Terraform only as
+    the TF_VAR_grafana_otlp_auth environment variable (stage_env), never as a command argument,
+    for every call a full deploy makes."""
+    run = deployable()
+
+    cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    token = "dG9rZW4="
+    for call in run.calls:
+        assert all(token not in arg for arg in call.args)
 
 
 def test_main_stops_with_a_sign_in_hint(
