@@ -64,10 +64,10 @@ def _exception_type_name(exc_type: type[BaseException]) -> str:
 
 
 def _stack_frames(tb: TracebackType | None) -> list[dict[str, Any]]:
-    """Frames as code (file, line, function, source line), never the exception's message."""
+    """Frames as code (file, line, function), never the source line text or the exception's
+    message: a source line can itself hold a literal secret, such as a hardcoded DSN."""
     return [
-        {"file": f.filename, "line": f.lineno, "function": f.name, "source": f.line}
-        for f in traceback.extract_tb(tb)
+        {"file": f.filename, "line": f.lineno, "function": f.name} for f in traceback.extract_tb(tb)
     ]
 
 

@@ -130,6 +130,25 @@ def test_exception_messages_and_chained_causes_are_never_logged() -> None:
     assert cause_entry["stack"]
 
 
+def test_exception_stack_frames_never_include_the_source_line_text() -> None:
+    try:
+        raise ValueError("dsn=postgres://user:s3cr3t-literal-dsn@host/db")
+    except ValueError:
+        record = _record("unhandled_error")
+        record.exc_info = sys.exc_info()
+        line_text = JsonFormatter(service="nettriage-api", stage="local").format(record)
+
+    assert "s3cr3t-literal-dsn" not in line_text
+    line = json.loads(line_text)
+    frames = line["exception"]["stack"]
+    assert frames
+    for frame in frames:
+        assert "source" not in frame
+        assert "file" in frame
+        assert "line" in frame
+        assert "function" in frame
+
+
 def test_configure_logging_routes_uvicorns_loggers_through_the_json_formatter(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
