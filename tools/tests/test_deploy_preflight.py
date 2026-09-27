@@ -68,3 +68,40 @@ def test_report_prints_each_check_and_fails_if_any_fails(capsys: pytest.CaptureF
     assert not ok
     assert "PASS  A" in out
     assert "FAIL  B  why" in out
+
+
+def test_a_layer_named_like_the_region_in_another_region_fails() -> None:
+    run = FakeRun()
+    check = preflight.layer_check(run, {}, "layer", "arn:aws:lambda:us-east-1:753240598075:layer:eu-north-1:5")
+    assert not check.ok and "eu-north-1" in check.detail
+    assert run.calls == []
+
+
+def test_tfvars_values_with_inline_comments_are_read(tmp_path: Path) -> None:
+    path = tmp_path / "terraform.tfvars"
+    path.write_text('lwa_layer_arn = "x"  # pinned\ngrafana_otlp_endpoint = "https://g" // note\n', encoding="utf-8")
+    assert preflight.read_tfvars(path) == {"lwa_layer_arn": "x", "grafana_otlp_endpoint": "https://g"}
+
+
+def test_stage_checks_names_and_order() -> None:
+    run = FakeRun().on(
+        "aws", "lambda", "get-layer-version-by-arn", returns='{"CompatibleArchitectures": ["arm64"]}'
+    ).on("aws", "ssm", "describe-parameters", returns="/nettriage/dev/grafana-otlp-auth\n").on("aws")
+    tfvars = {
+        "lwa_layer_arn": "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30",
+        "otel_collector_layer_arn": "arn:aws:lambda:eu-north-1:753240598075:layer:OtelLayerArm64:1",
+        "grafana_otlp_endpoint": "https://otlp-gateway.grafana.net/otlp",
+    }
+    checks = preflight.stage_checks(run, {}, "dev", "123456789012", tfvars)
+    assert [check.name for check in checks] == [
+        "Terraform state bucket", "Grafana token in SSM", "Grafana OTLP endpoint in terraform.tfvars",
+        "Lambda Web Adapter layer", "OpenTelemetry collector layer",
+    ]
+    assert all(check.ok for check in checks)
+
+
+def test_a_layer_without_listed_architectures_passes() -> None:
+    run = FakeRun().on(
+        "aws", "lambda", "get-layer-version-by-arn", returns="{}"
+    )
+    assert preflight.layer_check(run, {}, "layer", LWA).ok

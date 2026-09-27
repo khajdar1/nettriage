@@ -11,7 +11,7 @@ from pathlib import Path
 from tools.deploy.config import REGION, otlp_auth_parameter, state_bucket
 from tools.deploy.runner import CommandError, Runner
 
-TFVAR = re.compile(r'^\s*(\w+)\s*=\s*"([^"]*)"\s*$', re.MULTILINE)
+TFVAR = re.compile(r'^\s*(\w+)\s*=\s*"([^"]*)"\s*(?:(?:#|//).*)?$', re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,8 @@ def account_checks(run: Runner, env: Mapping[str, str], account_id: str) -> list
 
 
 def layer_check(run: Runner, env: Mapping[str, str], name: str, arn: str) -> Check:
-    if f":{REGION}:" not in arn:
+    parts = arn.split(":")
+    if len(parts) < 4 or parts[3] != REGION:
         return Check(name, False, f"'{arn}' isn't a {REGION} layer ARN; fix it in terraform.tfvars")
     try:
         info = json.loads(
