@@ -7,8 +7,16 @@ mock_provider "aws" {
 }
 
 variables {
-  github_owner = "example"
   budget_email = "owner@example.com"
+}
+
+run "defaults_to_the_accounts_region" {
+  command = plan
+
+  assert {
+    condition     = var.aws_region == "eu-north-1"
+    error_message = "Regional resources live in eu-north-1, the account's only Region (spec Revision 2, R1)."
+  }
 }
 
 run "state_bucket_is_private_versioned_encrypted_and_tls_only" {
@@ -32,92 +40,11 @@ run "state_bucket_is_private_versioned_encrypted_and_tls_only" {
   }
 }
 
-run "ci_roles_trust_only_this_repository" {
-  command = apply
-
-  assert {
-    condition     = strcontains(aws_iam_role.gha_plan.assume_role_policy, "repo:example/nettriage:pull_request")
-    error_message = "The plan role must trust pull requests of this repo only."
-  }
-  assert {
-    condition     = strcontains(aws_iam_role.gha_deploy_dev.assume_role_policy, "repo:example/nettriage:environment:dev")
-    error_message = "The dev deploy role must trust the dev environment only."
-  }
-  assert {
-    condition     = !strcontains(aws_iam_role.gha_deploy_dev.assume_role_policy, "*")
-    error_message = "Trust policies must not use wildcards."
-  }
-}
-
-run "roles_cannot_read_secrets_or_touch_the_account" {
-  command = apply
-
-  assert {
-    condition     = strcontains(aws_iam_role_policy.gha_plan_no_secrets.policy, "kms:Decrypt")
-    error_message = "The plan role must be denied secret decryption."
-  }
-  assert {
-    condition     = strcontains(aws_iam_role_policy.gha_deploy_dev_scope.policy, "organizations:*")
-    error_message = "The deploy role must be denied Organizations actions (joining would forfeit credits)."
-  }
-}
-
 run "budget_alerts_at_one_and_three_dollars" {
   command = apply
 
   assert {
     condition     = length(aws_budgets_budget.monthly.notification) == 4
     error_message = "Expected alerts at $1 and $3, actual and forecast (spec §6.7)."
-  }
-}
-
-run "dev_deploy_roles_stay_within_a_permissions_boundary" {
-  command = apply
-
-  assert {
-    condition     = aws_iam_policy.dev_boundary.name == "nettriage-dev-boundary"
-    error_message = "The dev boundary policy must be named nettriage-dev-boundary."
-  }
-  assert {
-    condition     = strcontains(aws_iam_policy.dev_boundary.policy, "iam:*")
-    error_message = "The boundary must exclude IAM actions via NotAction."
-  }
-
-  # Structural assertions on the deploy role's own policy (ruling R24-A): a substring check
-  # for "iam:PermissionsBoundary" would also pass if that condition sat on the wrong statement,
-  # or covered only some of the boundary-gated actions. Decode the policy and check each
-  # statement directly. `flatten([s.Action])` normalizes Action, which AWS lets be a bare
-  # string or a list of strings.
-  assert {
-    condition = alltrue([
-      for s in jsondecode(aws_iam_role_policy.gha_deploy_dev_scope.policy).Statement : (
-        s.Effect != "Allow" ||
-        length(setintersection(flatten([s.Action]), [
-          "iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary",
-        ])) == 0 ||
-        try(s.Condition.StringEquals["iam:PermissionsBoundary"], null) == aws_iam_policy.dev_boundary.arn
-      )
-    ])
-    error_message = "Every Allow statement granting iam:CreateRole, iam:PutRolePolicy, iam:AttachRolePolicy or iam:PutRolePermissionsBoundary must condition on the dev boundary policy's ARN."
-  }
-  assert {
-    condition = anytrue([
-      for s in jsondecode(aws_iam_role_policy.gha_deploy_dev_scope.policy).Statement :
-      s.Effect == "Allow" && length(setintersection(flatten([s.Action]), [
-        "iam:CreateRole", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:PutRolePermissionsBoundary",
-      ])) > 0
-    ])
-    error_message = "At least one Allow statement must grant the boundary-gated role-management actions (the previous assertion must not pass vacuously)."
-  }
-  assert {
-    condition = alltrue([
-      for s in jsondecode(aws_iam_role_policy.gha_deploy_dev_scope.policy).Statement : (
-        s.Effect != "Allow" ||
-        length(setintersection(flatten([s.Action]), [
-          "iam:DeleteRolePermissionsBoundary", "iam:CreatePolicyVersion", "iam:CreateUser", "iam:CreateAccessKey",
-        ])) == 0
-      )
-    ])
-    error_message = "No Allow statement may grant iam:DeleteRolePermissionsBoundary, iam:CreatePolicyVersion, iam:CreateUser or iam:CreateAccessKey (each would let the deploy role escape or replace its own boundary)."
   }
 }

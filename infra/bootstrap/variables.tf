@@ -1,16 +1,7 @@
 variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
-variable "github_owner" {
   type        = string
-  description = "GitHub user or organization that owns the repository."
-}
-
-variable "github_repo" {
-  type    = string
-  default = "nettriage"
+  default     = "eu-north-1"
+  description = "The account's only Region for regional resources (spec Revision 2, R1)."
 }
 
 variable "budget_email" {
