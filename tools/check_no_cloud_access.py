@@ -10,7 +10,11 @@ import sys
 from pathlib import Path
 
 WORKFLOW_RULES: dict[str, re.Pattern[str]] = {
-    "requests an OIDC token (id-token: write)": re.compile(r"^\s*id-token:\s*write\b", re.MULTILINE),
+    # Matches the block-mapping form (`id-token: write`), quoted values (`id-token: "write"` /
+    # `id-token: 'write'`) and the flow-mapping form (`{ id-token: write }`).
+    "requests an OIDC token (id-token: write)": re.compile(r"id-token:\s*['\"]?write['\"]?\b"),
+    # `permissions: write-all` grants every permission, including id-token: write.
+    "grants id-token: write (permissions: write-all)": re.compile(r"^\s*permissions:\s*write-all\b", re.MULTILINE),
     "uses an AWS action": re.compile(r"uses:\s*['\"]?aws-actions/"),
     "references AWS credentials": re.compile(
         r"\bAWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)\b|role-to-assume"

@@ -20,8 +20,10 @@ def backend_args(bucket: str, key: str) -> list[str]:
 
 
 def init(run: Runner, env: Mapping[str, str], cwd: Path, bucket: str, key: str) -> None:
+    # -lockfile=readonly: a deploy must never add hashes to the committed .terraform.lock.hcl.
     run(
-        ["terraform", "init", "-input=false", "-no-color", "-reconfigure", *backend_args(bucket, key)],
+        ["terraform", "init", "-input=false", "-no-color", "-reconfigure", "-lockfile=readonly",
+         *backend_args(bucket, key)],
         env=env, cwd=cwd,
     )
 

@@ -12,6 +12,7 @@ from tools.deploy.config import REGION, otlp_auth_parameter, state_bucket
 from tools.deploy.runner import CommandError, Runner
 
 TFVAR = re.compile(r'^\s*(\w+)\s*=\s*"([^"]*)"\s*(?:(?:#|//).*)?$', re.MULTILINE)
+DENIED = re.compile(r"accessdenied|explicit deny|unauthorizedoperation|not authorized", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -25,22 +26,30 @@ def read_tfvars(path: Path) -> dict[str, str]:
     return dict(TFVAR.findall(path.read_text(encoding="utf-8"))) if path.exists() else {}
 
 
-def _probe(run: Runner, env: Mapping[str, str], name: str, args: Sequence[str], hint: str) -> Check:
+def _probe(run: Runner, env: Mapping[str, str], name: str, args: Sequence[str], hint: str = "") -> Check:
     try:
         run(args, env=env)
     except CommandError as exc:
-        return Check(name, False, f"{hint} ({exc})")
+        return Check(name, False, f"{hint} ({exc})" if hint else str(exc))
     return Check(name, True)
 
 
+def _denial_probe(run: Runner, env: Mapping[str, str], name: str, args: Sequence[str]) -> Check:
+    """Like `_probe`, but the "account's policies may have changed" hint only fits an actual
+    denial; a network error or a bad endpoint should keep its own plain message."""
+    check = _probe(run, env, name, args)
+    if check.ok or not DENIED.search(check.detail):
+        return check
+    return Check(name, False, f"AWS denied this call; the account's policies may have changed (see the runbook) ({check.detail})")
+
+
 def account_checks(run: Runner, env: Mapping[str, str], account_id: str) -> list[Check]:
-    denied = "AWS denied this call; the account's policies may have changed (see the runbook)"
     return [
-        _probe(run, env, f"Lambda in {REGION}", ["aws", "lambda", "list-functions", "--region", REGION, "--max-items", "1"], denied),
-        _probe(run, env, "IAM", ["aws", "iam", "list-roles", "--max-items", "1"], denied),
-        _probe(run, env, "CloudFront", ["aws", "cloudfront", "list-distributions", "--max-items", "1"], denied),
-        _probe(run, env, "Budgets", ["aws", "budgets", "describe-budgets", "--account-id", account_id, "--max-results", "1"], denied),
-        _probe(run, env, f"SSM in {REGION}", ["aws", "ssm", "describe-parameters", "--region", REGION, "--max-results", "1"], denied),
+        _denial_probe(run, env, f"Lambda in {REGION}", ["aws", "lambda", "list-functions", "--region", REGION, "--max-items", "1"]),
+        _denial_probe(run, env, "IAM", ["aws", "iam", "list-roles", "--max-items", "1"]),
+        _denial_probe(run, env, "CloudFront", ["aws", "cloudfront", "list-distributions", "--max-items", "1"]),
+        _denial_probe(run, env, "Budgets", ["aws", "budgets", "describe-budgets", "--account-id", account_id, "--max-results", "1"]),
+        _denial_probe(run, env, f"SSM in {REGION}", ["aws", "ssm", "describe-parameters", "--region", REGION, "--max-results", "1"]),
     ]
 
 

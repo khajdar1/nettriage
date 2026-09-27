@@ -66,14 +66,14 @@ def bootstrap(run: Runner, env: Mapping[str, str], budget_email: str, anomaly_mo
         return
     # First run: the state bucket doesn't exist yet. Apply with local state in a scratch copy
     # (without backend.tf), then push that state into the bucket the apply just created.
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         work = Path(scratch) / "bootstrap"
         shutil.copytree(
             config.BOOTSTRAP_DIR, work,
             ignore=shutil.ignore_patterns("backend.tf", ".terraform", "tests", "*.tfstate*"),
         )
         local_state = work / "terraform.tfstate"
-        run(["terraform", "init", "-input=false", "-no-color"], env=env, cwd=work)
+        run(["terraform", "init", "-input=false", "-no-color", "-lockfile=readonly"], env=env, cwd=work)
         try:
             terraform.apply(run, env, work, variables)
             terraform.init(run, env, config.BOOTSTRAP_DIR, bucket, config.BOOTSTRAP_STATE_KEY)
@@ -103,7 +103,7 @@ def plan(run: Runner, env: Mapping[str, str], stage: str, post_comment: bool) ->
         raise CommandError(f"CI hasn't finished for {sha[:7]}. Push the branch, wait for the ci workflow, then plan again.")
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
         tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
@@ -125,10 +125,11 @@ def deploy(run: Runner, env: Mapping[str, str], stage: str, smoke_main: SmokeMai
     github.require_success(run, config.CODEQL_WORKFLOW, sha, event="push")
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
         web = github.download(run, ci.run_id, config.WEB_ARTIFACT, Path(scratch) / "web")
         tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
+        gitguards.require_unchanged_since(run, sha)
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
         terraform.apply(run, tf_env, workdir)
         outputs = terraform.outputs(run, tf_env, workdir)
