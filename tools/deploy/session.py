@@ -43,7 +43,9 @@ def _base_env() -> dict[str, str]:
 def aws_env(run: Runner, profile: str) -> dict[str, str]:
     """This process's environment plus a profile that refreshes credentials as they expire.
 
-    The owner's short-lived `aws login` session is validated once (malformed output or
+    This builds the environment every command this tool runs (`export-credentials`, the helper
+    profile's `configure get`/`set`, and every AWS/Terraform call) gets, for this run. The
+    owner's short-lived `aws login` session is validated once (malformed output or
     long-lived keys are refused with a sign-in hint). A helper profile "<profile>-tools" is
     then ensured in the owner's AWS config, with a `credential_process` that re-runs
     `aws configure export-credentials` on every AWS/Terraform call. `aws login` sessions last
