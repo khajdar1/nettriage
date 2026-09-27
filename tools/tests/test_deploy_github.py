@@ -1,0 +1,60 @@
+from pathlib import Path
+
+import pytest
+
+from tools.deploy import github
+from tools.deploy.runner import CommandError
+from tools.tests.deploy_fakes import FakeRun, runs
+
+SHA = "a" * 40
+
+
+def test_latest_run_filters_by_event_newest_first() -> None:
+    run = FakeRun().on(
+        "gh", "run", "list",
+        returns=runs((3, "completed", "success", "pull_request"), (2, "completed", "success", "push")),
+    )
+    found = github.latest_run(run, "ci.yml", SHA, event="push")
+    assert found is not None and found.run_id == 2
+    args = run.calls[0].args
+    assert args[:5] == ["gh", "run", "list", "--workflow", "ci.yml"]
+    assert args[args.index("--commit") + 1] == SHA
+
+
+@pytest.mark.parametrize(
+    ("listing", "message"),
+    [
+        (runs(), "No ci.yml run"),
+        (runs((1, "in_progress", "", "push")), "still in_progress"),
+        (runs((1, "completed", "failure", "push")), "concluded 'failure'"),
+    ],
+)
+def test_only_green_commits_pass(listing: str, message: str) -> None:
+    run = FakeRun().on("gh", "run", "list", returns=listing)
+    with pytest.raises(CommandError, match=message):
+        github.require_success(run, "ci.yml", SHA, event="push")
+
+
+def test_green_run_is_returned() -> None:
+    run = FakeRun().on("gh", "run", "list", returns=runs((7, "completed", "success", "push")))
+    assert github.require_success(run, "ci.yml", SHA, event="push").run_id == 7
+
+
+def test_expired_artifacts_are_explained(tmp_path: Path) -> None:
+    run = FakeRun().on("gh", "run", "download", returns=CommandError("no artifact matches"))
+    with pytest.raises(CommandError, match="expire after 7 days"):
+        github.download(run, 7, "backend-zip", tmp_path)
+
+
+def test_download_names_the_run_artifact_and_directory(tmp_path: Path) -> None:
+    run = FakeRun().on("gh", "run", "download")
+    assert github.download(run, 7, "web-dist", tmp_path / "web") == tmp_path / "web"
+    assert run.calls[0].args == [
+        "gh", "run", "download", "7", "--name", "web-dist", "--dir", str(tmp_path / "web"),
+    ]
+
+
+def test_a_branch_without_a_pr_is_explained(tmp_path: Path) -> None:
+    run = FakeRun().on("gh", "pr", "comment", returns=CommandError("no pull requests found"))
+    with pytest.raises(CommandError, match="--no-comment"):
+        github.comment_on_pr(run, tmp_path / "plan.md")
