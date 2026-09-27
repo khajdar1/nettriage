@@ -118,11 +118,11 @@ def plan(run: Runner, env: Mapping[str, str], stage: str, post_comment: bool) ->
 
 
 def deploy(run: Runner, env: Mapping[str, str], stage: str, smoke_main: SmokeMain = smoke.main) -> None:
-    if not run_preflight(run, env, stage):
-        raise CommandError("Preflight failed; nothing was deployed.")
     sha = gitguards.require_clean_main(run)
     ci = github.require_success(run, config.CI_WORKFLOW, sha, event="push")
     github.require_success(run, config.CODEQL_WORKFLOW, sha, event="push")
+    if not run_preflight(run, env, stage):
+        raise CommandError("Preflight failed; nothing was deployed.")
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
