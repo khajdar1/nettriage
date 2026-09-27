@@ -1,3 +1,4 @@
+import subprocess
 import sys
 
 import pytest
@@ -35,3 +36,36 @@ def test_redacted_values_never_reach_the_error_message() -> None:
     message = str(err.value)
     assert "tok-123" not in message
     assert "***" in message
+
+
+class _FakeProcess:
+    """A Popen stand-in whose first `wait()` is interrupted, like a child getting Ctrl+C."""
+
+    def __init__(self) -> None:
+        self.waits = 0
+        self.killed = False
+        self.terminated = False
+
+    def wait(self) -> int:
+        self.waits += 1
+        if self.waits == 1:
+            raise KeyboardInterrupt
+        return 0
+
+    def kill(self) -> None:
+        self.killed = True
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+
+def test_interactive_commands_let_a_ctrl_c_child_stop_gracefully(monkeypatch: pytest.MonkeyPatch) -> None:
+    process = _FakeProcess()
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
+
+    result = run(["terraform", "apply"], interactive=True)
+
+    assert result.returncode == 0
+    assert process.waits == 2
+    assert process.killed is False
+    assert process.terminated is False

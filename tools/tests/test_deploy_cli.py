@@ -192,11 +192,54 @@ def test_a_failed_first_apply_keeps_its_partial_state(bootstrap_dir: Path) -> No
     run = signed_in().on("aws", "s3api", "head-bucket", returns=254)
     run.on("terraform", "apply", returns=apply).on("terraform").on("aws")
 
-    with pytest.raises(CommandError, match="partial state is saved"):
+    with pytest.raises(CommandError, match="state is saved in"):
         cli.bootstrap(run, {}, "owner@example.com", "")
 
     assert (bootstrap_dir / "terraform.tfstate.recovered").read_text(encoding="utf-8") == '{"partial": true}'
     assert run.called("terraform", "state", "push") == []
+
+
+def test_a_failed_first_state_push_keeps_its_partial_state(bootstrap_dir: Path) -> None:
+    def apply(call: Call) -> str:
+        assert call.cwd is not None
+        (call.cwd / "terraform.tfstate").write_text('{"partial": true}', encoding="utf-8")
+        return ""
+
+    run = signed_in().on("aws", "s3api", "head-bucket", returns=254)
+    run.on("terraform", "apply", returns=apply)
+    run.on("terraform", "state", "push", returns=CommandError("`terraform state push` failed with exit code 1."))
+    run.on("terraform").on("aws")
+
+    with pytest.raises(CommandError, match="state is saved in"):
+        cli.bootstrap(run, {}, "owner@example.com", "")
+
+    assert (bootstrap_dir / "terraform.tfstate.recovered").read_text(encoding="utf-8") == '{"partial": true}'
+
+
+def test_a_ctrl_c_during_first_bootstrap_keeps_its_partial_state(bootstrap_dir: Path) -> None:
+    def apply(call: Call) -> str:
+        assert call.cwd is not None
+        (call.cwd / "terraform.tfstate").write_text('{"partial": true}', encoding="utf-8")
+        raise KeyboardInterrupt
+
+    run = signed_in().on("aws", "s3api", "head-bucket", returns=254)
+    run.on("terraform", "apply", returns=apply).on("terraform").on("aws")
+
+    with pytest.raises(CommandError, match="state is saved in"):
+        cli.bootstrap(run, {}, "owner@example.com", "")
+
+    assert (bootstrap_dir / "terraform.tfstate.recovered").read_text(encoding="utf-8") == '{"partial": true}'
+    assert run.called("terraform", "state", "push") == []
+
+
+def test_bootstrap_refuses_to_run_again_over_a_saved_state(bootstrap_dir: Path) -> None:
+    (bootstrap_dir / "terraform.tfstate.recovered").write_text('{"partial": true}', encoding="utf-8")
+    run = FakeRun()
+
+    with pytest.raises(CommandError, match="A saved bootstrap state exists"):
+        cli.bootstrap(run, {}, "owner@example.com", "")
+
+    assert run.calls == []
 
 
 def test_later_bootstraps_apply_against_the_bucket(bootstrap_dir: Path) -> None:

@@ -50,6 +50,12 @@ def stage_env(run: Runner, env: Mapping[str, str], stage: str, sha: str, lambda_
 
 
 def bootstrap(run: Runner, env: Mapping[str, str], budget_email: str, anomaly_monitor_arn: str) -> None:
+    recovered = config.BOOTSTRAP_DIR / "terraform.tfstate.recovered"
+    if recovered.exists():
+        raise CommandError(
+            f"A saved bootstrap state exists at {recovered}. Don't bootstrap again; "
+            "ask for help to push it into the state bucket."
+        )
     if not run_preflight(run, env, stage=None):
         raise CommandError("Preflight failed; nothing was created.")
     bucket = config.state_bucket(session.account_id(run, env))
@@ -70,17 +76,17 @@ def bootstrap(run: Runner, env: Mapping[str, str], budget_email: str, anomaly_mo
         run(["terraform", "init", "-input=false"], env=env, cwd=work)
         try:
             terraform.apply(run, env, work, variables)
-        except CommandError:
+            terraform.init(run, env, config.BOOTSTRAP_DIR, bucket, config.BOOTSTRAP_STATE_KEY)
+            run(["terraform", "state", "push", str(local_state)], env=env, cwd=config.BOOTSTRAP_DIR)
+        except BaseException as exc:
+            # Ctrl+C (KeyboardInterrupt) counts too: never lose state with the scratch directory.
             if not local_state.exists():
                 raise
-            kept = config.BOOTSTRAP_DIR / "terraform.tfstate.recovered"
-            shutil.copy2(local_state, kept)
+            shutil.copy2(local_state, recovered)
             raise CommandError(
-                f"The first bootstrap apply failed; its partial state is saved in {kept} (git-ignored). "
+                f"The first bootstrap didn't finish; its state is saved in {recovered} (git-ignored). "
                 "Keep that file and ask for help before retrying."
-            ) from None
-        terraform.init(run, env, config.BOOTSTRAP_DIR, bucket, config.BOOTSTRAP_STATE_KEY)
-        run(["terraform", "state", "push", str(local_state)], env=env, cwd=config.BOOTSTRAP_DIR)
+            ) from exc
     print(f"Bootstrap state is now in s3://{bucket}/{config.BOOTSTRAP_STATE_KEY}")
 
 
