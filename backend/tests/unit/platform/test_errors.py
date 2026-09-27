@@ -65,6 +65,24 @@ def test_unhandled_error_hides_internals(
     assert "RuntimeError" in log_output
 
 
+def test_request_validation_errors_are_problem_details(settings: Settings) -> None:
+    app: FastAPI = create_app(settings)
+
+    @app.get("/api/test-validation")
+    def typed_route(n: int) -> dict[str, int]:
+        return {"n": n}
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/api/test-validation", params={"n": "not-a-number-secret"})
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == PROBLEM_JSON
+    body = response.json()
+    assert body["status"] == 422
+    assert body["errors"][0]["loc"][-1] == "n"
+    assert "not-a-number-secret" not in response.text
+
+
 def test_api_docs_are_disabled_in_prod() -> None:
     client = TestClient(create_app(Settings(stage="prod", version="1")))
 
