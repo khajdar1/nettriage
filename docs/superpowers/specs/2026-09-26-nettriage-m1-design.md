@@ -2,11 +2,35 @@
 
 | | |
 |---|---|
-| **Status** | Draft for owner review |
-| **Date** | 2026-09-26 |
+| **Status** | Revision 2 in owner review (revision 1 approved 2026-09-26) |
+| **Date** | 2026-09-26, revised 2026-09-27 |
 | **Scope** | Product vision (all milestones, high level) and the detailed design of Milestone 1 |
 | **License** | Apache-2.0 |
 | **Related** | Directors' recap deck (private artifact; its source lives in `presentation/`, which is excluded from Git) |
+
+---
+
+## Revision 2 (2026-09-27): the account's restrictions and the decisions they drive
+
+**Why this revision exists.** The owner's AWS account was created with AWS's newer sign-up experience ("Sign up for AWS (new)"). AWS places these accounts in an organization that AWS manages, and applies policies (service control policies, SCPs) that revision 1 did not anticipate. These facts were verified on the account and in AWS's documentation on 2026-09-27:
+
+- **R1. One Region for regional resources.** Regional resources can only be created in the Region AWS assigned to the account: **eu-north-1 (Stockholm)**. us-east-1 and us-west-2 accept only global services (IAM, CloudFront, Budgets, Cost Explorer, Route 53) and Bedrock model invocation.
+- **R2. No IAM identity providers.** `iam:*Provider*` is denied on both the Free and the Paid plan, so GitHub Actions cannot federate into the account with OIDC.
+- **R3. No WAF on CloudFront.** AWS WAF can't be associated with a CloudFront distribution.
+- **R4. No cross-Region inference.** Bedrock cross-Region and global inference profiles aren't supported; models must be invoked in a Region where they run on demand.
+- **R5. Free plan with fixed credits.** The account is on the Free plan with $120 of sign-up credits until **2027-03-08**. It can't be charged while on the Free plan. Upgrading to the Paid plan forfeits these credits. Lifting R1–R3 would take "Activate advanced features" (irreversible, and it requires the Paid plan) or a new account (which would get no free credits).
+
+**Decisions** (each is reflected in the sections below; ADR 0013 records D3–D6):
+
+- **D1. Stay on this account, at $0, within its policies.** Rejected alternatives: activating advanced features (irreversible, forfeits the credits); a new standalone account (no free credits); another cloud provider (DigitalOcean offers $200 for 60 days, has no equivalents for most components, and would cost about $5+ per month afterwards).
+- **D2. Regions.** Regional resources live in **eu-north-1**. Global services (CloudFront, IAM, Budgets, Cost Anomaly Detection) stay global. Neon moves to **aws-eu-central-1 (Frankfurt)**, the closest Neon region. Bedrock's Region is chosen per model in Plan 5 (eu-north-1, us-east-1 or us-west-2), using only models available on demand in that Region.
+- **D3. CI holds no cloud access.** GitHub Actions runs every check and builds the deployable artifacts once. No workflow requests an OIDC token or references AWS, and a CI check enforces that.
+- **D4. The owner deploys, from their machine, with a short-lived sign-in.** Plans and deploys use the owner's `aws login` session. `just deploy-<stage>` deploys only a commit that is on `main`, matches GitHub, and passed CI and CodeQL, and it deploys that commit's CI-built artifacts. `just plan-<stage>` posts an addresses-only plan to the PR. No IAM users or access keys exist.
+- **D5. A smaller bootstrap.** The bootstrap creates only the state bucket and the budget and anomaly alerts. The GitHub OIDC provider, the CI roles and the deploy permissions boundary are removed, because no CI identity exists.
+- **D6. Secrets in Parameter Store.** The owner stores the Grafana OTLP token once as an SSM SecureString; the deploy reads it from there. GitHub holds no secrets.
+- **D7. Unattended jobs move off GitHub Actions.** Drift is checked by every plan and deploy. Nightly evals and backups, which revision 1 gave to GitHub Actions with OIDC, are decided in Plans 5 and 7 (the `ops` Lambda or an owner-run command).
+- **D8. No WAF on this account.** The edge session check and the app-level rate limits remain the protection (13.2 already listed this fallback).
+- **D9. Timebox.** Milestone 1 finishes before 2027-03-08. After that the owner either upgrades (about $0–1 per month, credits forfeited) or winds the deployment down. Before every deploy, `just preflight` confirms the account still allows what the deploy needs: eu-north-1, the Stockholm Lambda layers, SSM, CloudFront, Budgets and IAM roles.
 
 ---
 
@@ -30,9 +54,10 @@ NetTriage is a portfolio web application. It ingests network logs (AWS VPC Flow 
 
 ### 1.3 Constraints
 
-- **Budget:** about $0 per month in steady state. The AWS account was created after 2025-07-15, so it uses the credit-based plan. The owner must upgrade to the Paid plan before the Free plan's 6 months end, and must not join AWS Organizations (that forfeits the credits).
+- **Budget:** $0 until 2027-03-08. The account is on AWS's Free plan with $120 of sign-up credits and can't be charged; upgrading forfeits the credits. After that date, about $0–1 per month if the owner upgrades (see Revision 2, D9).
+- **AWS account:** created with "Sign up for AWS (new)", so it sits in an AWS-managed organization whose policies restrict Regions, IAM identity providers and WAF (Revision 2, R1–R4). Don't activate advanced features: it's irreversible and forfeits the credits.
 - **People:** one developer, part-time.
-- **Development machine:** Windows 11, 16 GB RAM, 4-core i7-10510U, NVIDIA Quadro P520 with 2 GB. Local GPU inference is not assumed. Python 3.14 and .NET 10 are installed; Docker Desktop, Node LTS with pnpm, uv, the AWS CLI, Terraform, `just` and the GitHub CLI are to be installed.
+- **Development machine:** Windows 11, 16 GB RAM, 4-core i7-10510U, NVIDIA Quadro P520 with 2 GB. Local GPU inference is not assumed. Python 3.14, .NET 10, Node LTS with pnpm, uv, the AWS CLI (v2.32 or later, for `aws login`), Terraform, `just` and the GitHub CLI are installed; Docker Desktop is needed from Plan 3. Deploys run from this machine (Revision 2, D4).
 - **Stack:** Python backend (FastAPI), React + TypeScript frontend, Terraform, GitHub Actions.
 
 ### 1.4 Out of scope for Milestone 1
@@ -67,7 +92,7 @@ Each later milestone gets its own spec, plan and build cycle.
 | **M2 Ask NetTriage** | Chat over findings with RAG (ATT&CK + evidence in pgvector), streamed responses, prompt-injection defenses for chat, the full eval suite, LLM cost dashboards |
 | **M3 More sensors** | Zeek (conn, dns, http), SSH auth logs, **Azure virtual network flow logs**, PCAP to flows; beaconing and DNS-tunneling detections; IP reputation enrichment; an injection classifier as an extra signal |
 | **M4 Live network lab** | A throwaway lab VPC started with one command; a decoy instance with every port closed whose flow logs feed NetTriage; labeled attack scenarios |
-| **M5 Hardening and automation** | WAF (CloudFront flat-rate plan), anomaly baselines, Sigma rules, AI-suggested remediation with human approval, passive checks of an owned domain, passkeys |
+| **M5 Hardening and automation** | WAF (CloudFront flat-rate plan; needs an account whose policies allow WAF with CloudFront, see Revision 2, R3), anomaly baselines, Sigma rules, AI-suggested remediation with human approval, passive checks of an owned domain, passkeys |
 
 ## 3. Architecture
 
@@ -107,15 +132,15 @@ flowchart LR
 | Workers | Lambda `analyze`, Lambda `triage` | Triggered by SQS event source mappings |
 | Operations | Lambda `ops` | Scheduled synthetic probe and maintenance jobs (see 9.6 and 9.7) |
 | Queues | SQS `analyze`, `triage`, each with a DLQ | `maxReceiveCount` 3; alarms on DLQ depth |
-| Relational database | Neon Postgres (region aws-us-east-1) | One Neon project per stage; pooled endpoint; pgvector enabled for M2 |
+| Relational database | Neon Postgres (region aws-eu-central-1, Frankfurt) | One Neon project per stage; pooled endpoint; pgvector enabled for M2 |
 | Hot state | DynamoDB table `runtime` | Provisioned capacity within Always Free; TTL |
 | Files | S3 `uploads` bucket | Private, TLS-only, SSE-S3, deleted after 30 days |
 | Identity | Cognito user pool, Essentials tier | Managed login; MFA required (TOTP) |
-| LLM | Amazon Bedrock (us-east-1) | Structured outputs; model chosen by evals |
+| LLM | Amazon Bedrock (Region chosen per model in Plan 5: eu-north-1, us-east-1 or us-west-2) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
 | Secrets and config | SSM Parameter Store (SecureString, AWS-managed key) | Database passwords, Cognito client secret, OTLP token, kill switches |
 | Telemetry | OpenTelemetry → Grafana Cloud (free tier) | Lambda platform logs stay in CloudWatch for 7 days |
 | Scheduling | EventBridge Scheduler | Probe, maintenance |
-| IaC and CI/CD | Terraform, GitHub Actions (OIDC) | `dev` and `prod` stages in one AWS account |
+| IaC and CI/CD | Terraform; GitHub Actions for checks and builds (no cloud access); owner-run deploys with a short-lived `aws login` session | `dev` and `prod` stages in one AWS account (see 11.5) |
 
 ### 3.3 Key decisions
 
@@ -133,10 +158,11 @@ Each decision becomes an ADR in `docs/adr/`.
 10. **OpenTelemetry → Grafana Cloud** for traces, metrics and logs.
 11. **Terraform with S3 native state locking; one account, two stages.**
 12. **An AI-assisted PR review loop:** a Copilot review requested through the GitHub MCP server, each comment verified by Claude, and every merge done by a human.
+13. **Owner-run deploys with short-lived credentials; CI holds no cloud access** (Revision 2, D3–D6). Only CI-built artifacts of a CI-green `main` commit are deployed.
 
 ### 3.4 Stages, naming and region
 
-- Everything lives in **us-east-1**. Neon uses aws-us-east-1.
+- Regional resources live in **eu-north-1 (Stockholm)**, the Region AWS assigned to the account (Revision 2, R1). CloudFront, IAM, Budgets and Cost Anomaly Detection are global. Neon uses aws-eu-central-1 (Frankfurt). Bedrock's Region is chosen per model (3.2).
 - The **`dev`** and **`prod`** stages share one AWS account. Resources are named `nettriage-<stage>-<name>`. Each stage has its own Terraform state key, IAM roles, Neon project, Cognito pool, DynamoDB table and buckets.
 - Default tags on every resource: `Project=nettriage`, `Env=<stage>`, `ManagedBy=terraform`.
 - M1 uses the CloudFront default domain and a Cognito prefix domain. A custom domain is optional and only added if the owner decides to pay for one.
@@ -438,7 +464,7 @@ Every member may leave an organization, except its last Owner.
 - **CloudFront Function** (viewer request, on `/api/*`): returns 401 when there is no `__Host-session` cookie, except on `/api/auth/*` and `/api/health`.
 - **Response headers policy:**
   - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
-  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://nettriage-<stage>-uploads.s3.us-east-1.amazonaws.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://nettriage-<stage>-uploads.s3.eu-north-1.amazonaws.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`
   - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera, microphone and geolocation disabled), `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`
   - Fonts are self-hosted, so the CSP needs no third-party origins.
 - **Request limits:** JSON request bodies are at most 64 KB. Files never pass through the API.
@@ -446,7 +472,8 @@ Every member may leave an organization, except its last Owner.
   - Alerts at $1 and $3, on both actual and forecast spend.
   - At $5, a Budgets **action** attaches a deny policy for `bedrock:InvokeModel*` to the triage role.
   - Cost Anomaly Detection runs with lowered thresholds.
-- **CloudFront flat-rate Free plan** (WAF with per-IP rate limiting, DDoS protection): enabled after the account is on the Paid plan, if eligible (see 13.2).
+- **Spend cap:** on the Free plan the account can't be charged (Revision 2, R5); the budget alerts above still report usage against the credits.
+- **No WAF on this account** (Revision 2, R3 and D8). The CloudFront flat-rate plan's WAF can't be attached here, so the edge session check and the app-level rate limits (6.5) are the protection.
 
 ### 6.8 Machine identities and secrets
 
@@ -461,18 +488,12 @@ Every member may leave an organization, except its last Owner.
   - Passwords are SSM SecureStrings, loaded at cold start.
   - Rotation follows a runbook.
   - psycopg's automatic prepared statements are disabled (`prepare_threshold=None`) for compatibility with the transaction pooler.
-- **GitHub Actions OIDC roles:**
-
-  | Role | Trust | Access |
-  |---|---|---|
-  | `gha-plan` | same-repo PRs | read-only |
-  | `gha-deploy-dev` | environment `dev` | deploy dev |
-  | `gha-deploy-prod` | environment `prod` | deploy prod |
-  | `gha-evals` | eval workflows | `bedrock:InvokeModel` only |
-  | `gha-backup` | backup workflow | put to the backups bucket, read the backup credential |
-
-  Each trust policy checks `aud` and `sub` (repo plus environment or branch).
-- **No long-lived AWS keys.** The one-time Terraform bootstrap runs from AWS CloudShell or with short-lived MFA-protected credentials.
+- **People and automation that change the account** (Revision 2, D3–D6):
+  - **The owner** is the only identity that changes infrastructure. The bootstrap, every `terraform plan` and every deploy run from the owner's machine with a short-lived `aws login` session, which is exported to the command's environment for that run only.
+  - **GitHub Actions** has no AWS access: no OIDC trust (the account can't create identity providers, R2), no access keys and no AWS actions in any workflow. A CI check fails if a workflow asks for `id-token: write` or uses an AWS action.
+  - **Unattended jobs** that need AWS (nightly evals in Plan 5, backups in Plan 7) run inside AWS as scheduled Lambdas with their own least-privilege roles, or as owner-run commands. Each plan decides which.
+- **Deploy secrets:** the Grafana OTLP token is an SSM SecureString (`/nettriage/<stage>/grafana-otlp-auth`) that the owner stores once; the deploy reads it. GitHub holds no secrets.
+- **No long-lived AWS keys.** No IAM users or access keys exist.
 
 ## 7. API (Milestone 1)
 
@@ -710,7 +731,7 @@ CI adds a deploy annotation for every deploy.
 - **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM and are re-read every 60 seconds.
 - **Maintenance:** the `ops` Lambda runs daily. It expires `pending_upload` rows older than 1 hour and invitations past their date, and purges audit rows older than 180 days.
 - **Backups:**
-  - A nightly `pg_dump -Fc` from GitHub Actions (OIDC) to S3, kept for 7 days.
+  - A nightly `pg_dump -Fc` to S3, kept for 7 days. Plan 7 decides the runner: the `ops` Lambda, or an owner-run command if packaging `pg_dump` for Lambda proves impractical (Revision 2, D7).
   - Neon's 6-hour point-in-time restore on top of that.
   - Targets: RPO ≤ 24 h (≤ 6 h with point-in-time restore) and RTO ≤ 1 h.
   - One restore drill is performed and documented in M1.
@@ -780,8 +801,8 @@ nettriage/
 │   └── tests/             unit/ integration/ security/ evals/
 ├── frontend/
 ├── infra/                 modules/ and envs/dev, envs/prod
-├── tools/                 scenarios/, demo_export/, attack_loader/, eval_runner/
-├── docs/                  architecture.md, adr/, threat-model.md, runbooks/, slo.md, data-handling.md, cost.md, superpowers/
+├── tools/                 deploy.py (preflight, plan, deploy), scenarios/, demo_export/, attack_loader/, eval_runner/
+├── docs/                  architecture.md, adr/, threat-model.md, runbooks/ (incl. setup-and-deploy.md), slo.md, data-handling.md, cost.md, superpowers/
 ├── .github/               workflows/, CODEOWNERS, dependabot.yml
 ├── justfile, docker-compose.yml, README.md, SECURITY.md, LICENSE (Apache-2.0)
 └── .gitignore             includes presentation/
@@ -837,32 +858,37 @@ Implementation is test-first.
 - **Reports:** detector precision and recall, AI evals.
 - **Coverage:** at least 85% line coverage on `domain/` and `application/`.
 
-### 11.5 CI/CD (GitHub Actions)
+### 11.5 CI/CD (GitHub Actions for CI; owner-run deploys)
 
-- **Pull request checks:**
+Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and the owner deploys what it built.
+
+- **Pull request checks (GitHub Actions, no cloud access):**
   - lint and types,
   - unit, integration and security tests,
   - frontend tests and build,
   - the OpenAPI diff,
-  - `terraform validate`, tflint and Checkov,
-  - `terraform plan` posted as a PR comment (through `gha-plan`),
+  - `terraform validate`, `terraform test`, tflint and Checkov,
+  - a check that no workflow requests `id-token: write` or uses an AWS action,
   - CodeQL, dependency review and secret scanning with push protection.
-- **Merge to `main`:**
-  1. Build once and generate an SBOM (CycloneDX).
-  2. Create a GitHub artifact attestation (build provenance).
-  3. Deploy `dev`, run migrations and smoke tests.
-  4. Wait for the **owner's manual approval** (GitHub environment `prod`).
-  5. Promote the same artifact to `prod`, run smoke tests and add a Grafana deploy annotation.
+- **Plan in review:** the owner runs `just plan-<stage>` on the PR's pushed commit. It uses that commit's CI-built artifacts, reads the deploy secrets from SSM and posts the planned changes (resource addresses only, no attribute values) as a PR comment.
+- **Merge to `main`:** CI builds the artifacts once (the Lambda zip and the web build; an SBOM and a build-provenance attestation from Plan 7) and keeps them for 7 days.
+- **Deploy (owner-run, `just deploy-<stage>`):**
+  1. **Guards:** `just preflight` passes (the account's policies and the Stockholm Lambda layers are still as expected), the checkout is a clean `main` equal to GitHub's `main`, and the `ci` and `codeql` workflow runs for that commit succeeded. Any failure stops the deploy.
+  2. Download that commit's CI artifacts, so what's deployed is exactly what CI built and tested.
+  3. `terraform apply`, with the plan shown and confirmed by the owner. This also detects drift.
+  4. Publish the web build (hashed assets immutable, `index.html` no-cache, `demo/` preserved) and invalidate CloudFront.
+  5. Run migrations (from Plan 3) and the smoke tests; any FAIL exits non-zero.
+- **Promotion to `prod` (Plan 7):** `just deploy-prod` accepts only a commit already deployed to `dev` and smoke-tested there, and deploys the same artifacts; then it adds a Grafana deploy annotation.
 - **Scheduled:**
-  - nightly evals (default model), `pg_dump` backup and drift detection (`terraform plan`),
-  - a weekly OWASP ZAP baseline scan of `dev`,
-  - Dependabot for Python, npm, Terraform and GitHub Actions.
+  - a weekly OWASP ZAP baseline scan of `dev` (an HTTP scan; it needs no AWS access),
+  - Dependabot for Python, npm, Terraform and GitHub Actions,
+  - nightly evals and backups run inside AWS or as owner-run commands (6.8, 9.7).
 - **Hardening:**
   - Actions are pinned to commit SHAs.
   - `permissions:` is least-privilege on every job.
-  - AWS access is through OIDC only.
+  - CI holds no cloud credentials at all. Deploys use the owner's short-lived session and deploy only CI-built artifacts of a CI-green `main` commit.
   - Branch protection on `main` requires PRs and passing checks, with squash merges.
-- **Environments:** `dev` deploys automatically, and `prod` requires the owner's approval.
+- **Environments:** no GitHub deployment environments; deploying is an owner action.
 
 ### 11.6 AI-assisted PR review loop
 
@@ -884,9 +910,9 @@ Implementation is test-first.
 
 - **Terraform:**
   - State lives in S3 with native locking (`use_lockfile = true`), versioned and encrypted.
-  - A one-time **bootstrap** stack, applied by the owner, creates the state bucket, the GitHub OIDC provider and the CI roles. Everything else changes only through CI.
-- **Modules:** `edge`, `identity`, `app`, `pipeline`, `data`, `observability` (including the Grafana dashboards and alerts) and `cicd`.
-- **Checks:** default tags on every resource; Checkov and tflint on every PR; nightly drift detection.
+  - A one-time **bootstrap** stack, applied by the owner from their machine, creates the state bucket (eu-north-1) and the budget and anomaly alerts, then moves its own state into that bucket. Everything else changes only through `just deploy-<stage>` (11.5).
+- **Modules:** `edge`, `identity`, `app`, `pipeline`, `data` and `observability` (including the Grafana dashboards and alerts). There is no `cicd` module: CI has no cloud identity.
+- **Checks:** default tags on every resource; Checkov, tflint and `terraform test` on every PR; drift detection with every plan and deploy.
 - **Neon:** managed through its Terraform provider if it proves reliable. Otherwise the projects are created by hand and documented (see 13.2).
 
 ### 11.8 Security engineering and supply chain
@@ -906,8 +932,9 @@ Implementation is test-first.
 ### 11.9 Documentation
 
 - **README:** what and why, the live demo link, the architecture diagram, a demo GIF, how to run and deploy, cost, security highlights, the roadmap and lessons learned.
-- **ADRs:** the 12 decisions in 3.3, one ADR each.
+- **ADRs:** the 13 decisions in 3.3, one ADR each.
 - **C4 diagrams:** context and container level, in Mermaid.
+- **Owner runbook:** `docs/runbooks/setup-and-deploy.md`, the step-by-step account setup, bootstrap, plan, deploy, rollback and troubleshooting guide.
 - **Other docs:** runbooks, the SLO doc, the data-handling doc (what is stored, for how long, how to delete it) and the cost doc (free-tier usage and guardrails).
 - **Attribution:** the MITRE ATT&CK copyright notice is included where the data is used.
 
@@ -930,11 +957,11 @@ Implementation is test-first.
 - **Operable:**
   - dashboards, SLOs and burn-rate alerts are live,
   - runbooks exist for every alert,
-  - the synthetic probe and drift detection are running,
+  - the synthetic probe is running, and drift is checked before every deploy,
   - one restore drill has been performed.
-- **Cheap:** at most $1 per month; budgets, anomaly detection and the Bedrock kill switch are active.
-- **Documented:** a README with the diagram and GIF, 12 ADRs, the threat model and the remaining docs from 11.9.
-- **Delivered:** CI/CD with dev → prod promotion and approval; OIDC only; the review loop has been used on real PRs.
+- **Cheap:** $0 on the Free plan until 2027-03-08 (at most $1 per month after an upgrade); budgets, anomaly detection and the Bedrock kill switch are active.
+- **Documented:** a README with the diagram and GIF, 13 ADRs, the threat model, the owner's setup-and-deploy runbook and the remaining docs from 11.9.
+- **Delivered:** CI with build-once artifacts; owner-run deploys of those artifacts with dev → prod promotion; no stored cloud credentials anywhere; the review loop has been used on real PRs.
 
 ## 13. Risks and verification
 
@@ -942,11 +969,14 @@ Implementation is test-first.
 
 - Neon's endpoint is reachable from the internet (TLS plus strong per-role passwords; the free tier has no IP allowlist).
 - No CAPTCHA and no Cognito threat protection (cost). Bots are contained by quotas and budgets.
-- Dev and prod share one AWS account, because Organizations would forfeit the credits.
+- Dev and prod share one AWS account, the only account available at $0.
+- The account depends on policies that AWS manages and can change (Revision 2, R1–R4). `just preflight` detects a change before any deploy.
+- Deploys depend on the owner's machine and sign-in; there is no unattended deploy path.
+- The Free plan ends on 2027-03-08 (Revision 2, D9).
 - Cognito's default email sender has a small daily quota.
 - Grafana Cloud's free tier keeps data for 14 days.
 - Lambda and Neon cold starts.
-- No WAF until the CloudFront flat-rate plan is available to the account.
+- No WAF: this account can't attach WAF to CloudFront (Revision 2, R3).
 - Prompt injection can't be fully prevented. It is mitigated structurally (8.4).
 - Flow logs can't show whether a login succeeded (a detector limitation, stated in the UI).
 - On a public repo, PR comments are untrusted input to the review loop (11.6).
@@ -955,29 +985,30 @@ Implementation is test-first.
 
 | Item | Fallback |
 |---|---|
-| CloudFront flat-rate Free plan eligibility after the Paid-plan upgrade | No WAF; the edge session check and app-level limits remain |
-| Bedrock model IDs, structured-output support and in-region availability for the candidates; whether credits cover Claude | Drop unavailable candidates; run Claude only in manual comparisons |
+| The Lambda Web Adapter and OpenTelemetry collector layers, and the python3.14 runtime, in eu-north-1 (checked by `just preflight`) | `python3.13`; `force_flush` instead of the collector layer |
+| Terraform using the owner's `aws login` session | Export the session as environment variables for each command (the default in `tools/deploy.py`) |
+| Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Drop unavailable candidates; run Claude only in manual comparisons |
 | Neon Terraform provider reliability | Create the projects by hand and document it |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |
 | Current Lambda Function URL + OAC permission requirements (resource-policy actions, body-hash header) | Follow AWS's current docs; if needed, API Gateway HTTP API ($1 per million requests) |
 | S3 presigned PUT enforcing the signed `content-length`, checksum and metadata headers from browsers | Presigned POST with a policy (`content-length-range`) |
 | The OpenTelemetry Lambda collector layer for python3.14/arm64 | `force_flush` at the end of each invocation |
 | Python 3.14 arm64 wheels for every dependency | `python3.13` runtime |
-| Short-lived AWS credentials for local development without Organizations (CLI console login or an MFA-protected role session) | Use the fake and Ollama providers locally; Bedrock only from CI |
+| Short-lived AWS credentials for local development | Resolved: `aws login` (Revision 2, D4) |
 | Copilot code review availability and credit cost on the owner's Student plan; whether the remote GitHub MCP server requires a paid plan | Claude-only review; the local GitHub MCP server (Docker) or the `gh` CLI |
 | Cognito Essentials features and pricing unchanged | Lite tier (TOTP MFA is still available) |
 
 ## 14. Owner setup checklist
 
-- [ ] Upgrade the AWS account to the Paid plan before the Free plan's 6 months end (unused credits carry over).
-- [ ] Complete the five credit activities (+$100). Delete the RDS/Aurora database right afterwards.
-- [ ] Do not join AWS Organizations.
-- [ ] Turn on root MFA, and use no long-lived admin access keys.
-- [ ] Create the budgets and alerts (6.7) before deploying anything.
-- [ ] Bedrock: confirm access to the candidate models, and submit Anthropic's use-case form to test Claude.
-- [ ] Create a Grafana Cloud free stack and a Neon account (projects per 13.2).
-- [ ] Install Docker Desktop, Node LTS + pnpm, uv, the AWS CLI, Terraform, `just` and `gh`.
-- [ ] Create the public GitHub repository (Apache-2.0), branch protection and the `dev`/`prod` environments.
+The step-by-step version is `docs/runbooks/setup-and-deploy.md`.
+
+- [ ] Stay on the Free plan until Milestone 1 is done; don't upgrade and don't activate advanced features (both are irreversible and forfeit the credits). Decide before 2027-03-08 whether to upgrade or wind down.
+- [ ] Use no long-lived access keys; sign in to the CLI with `aws login`.
+- [ ] Create the budgets and alerts (6.7) with the bootstrap before deploying anything.
+- [ ] Bedrock: confirm access to the candidate models in their chosen Regions, and submit Anthropic's use-case form to test Claude.
+- [ ] Create a Grafana Cloud free stack and a Neon account (projects in aws-eu-central-1, per 13.2). Store the Grafana OTLP token in SSM.
+- [ ] Install Docker Desktop (from Plan 3), Node LTS + pnpm, uv, the AWS CLI (v2.32 or later), Terraform, `just` and `gh`.
+- [ ] Create the public GitHub repository (Apache-2.0) and the `protect-main` ruleset. No deployment environments are needed.
 - [ ] Check the Copilot plan and AI credits at github.com/settings/copilot.
 - [ ] Connect the GitHub MCP server in Claude Code with least-privilege access (11.6).
 - [ ] Optional: buy a custom domain (not required for M1).
@@ -994,7 +1025,9 @@ Implementation is test-first.
 | Relational | Neon Postgres | No equivalent; closest: Azure Database for PostgreSQL |
 | Customer identity | Cognito | Microsoft Entra External ID |
 | Service identity | IAM roles | Managed identities + Azure RBAC |
-| CI to cloud | GitHub OIDC → IAM | Microsoft Entra workload identity federation |
+| Region | eu-north-1 (Stockholm) | Sweden Central |
+| Deploy identity | Owner's short-lived `aws login` session; CI has no cloud access | `az login` (Microsoft Entra interactive sign-in); a pipeline without federated credentials |
+| Account guardrails | AWS-managed organization policies (SCPs) | Azure Policy on a management group |
 | Secrets | SSM Parameter Store, KMS | Azure Key Vault, App Configuration |
 | LLMs | Amazon Bedrock | Microsoft Foundry |
 | Telemetry | CloudWatch, OpenTelemetry, Grafana Cloud | Azure Monitor, Application Insights, Azure Managed Grafana |
@@ -1011,5 +1044,6 @@ Implementation is test-first.
 - **GCRA:** the Generic Cell Rate Algorithm, a token-bucket equivalent that stores one timestamp per key.
 - **OAC:** CloudFront Origin Access Control, which signs CloudFront's requests to origins.
 - **RLS:** Postgres row-level security.
+- **SCP:** service control policy, an AWS Organizations policy that caps what any identity in an account can do, even an administrator.
 - **SLO:** service level objective.
 - **VPC Flow Logs:** AWS's per-connection network metadata records.
