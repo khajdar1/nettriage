@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from tools.deploy.config import REGION
-from tools.deploy.runner import Runner
+from tools.deploy.runner import CommandError, Runner
 
 
 def backend_args(bucket: str, key: str) -> list[str]:
@@ -23,20 +23,42 @@ def init(run: Runner, env: Mapping[str, str], cwd: Path, bucket: str, key: str) 
     run(["terraform", "init", "-input=false", "-reconfigure", *backend_args(bucket, key)], env=env, cwd=cwd)
 
 
-def planned_changes(plan_json: str) -> list[str]:
-    """`<actions> <address>` lines for every real change: never attribute values."""
+def planned_changes(plan_output: str) -> list[str]:
+    """`<action> <resource.addr>` lines for every real change, read from `terraform plan -json`'s
+    newline-delimited "planned_change" messages: never attribute values, and no plan file."""
     lines = []
-    for change in json.loads(plan_json).get("resource_changes", []):
-        actions = change["change"]["actions"]
-        if actions in (["no-op"], ["read"]):
+    for raw_line in plan_output.splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
             continue
-        lines.append(f"{'/'.join(actions)} {change['address']}")
+        message = json.loads(raw_line)
+        if message.get("type") != "planned_change":
+            continue
+        action = message["change"]["action"]
+        if action in ("noop", "read"):
+            continue
+        lines.append(f"{action} {message['change']['resource']['addr']}")
     return lines
 
 
-def plan(run: Runner, env: Mapping[str, str], cwd: Path, plan_file: Path) -> list[str]:
-    run(["terraform", "plan", "-input=false", "-lock=false", f"-out={plan_file}"], env=env, cwd=cwd)
-    return planned_changes(run(["terraform", "show", "-json", str(plan_file)], env=env, cwd=cwd).stdout)
+def _plan_error(plan_output: str) -> str:
+    messages = []
+    for raw_line in plan_output.splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        message = json.loads(raw_line)
+        if message.get("@level") == "error":
+            messages.append(message.get("@message", ""))
+    return "; ".join(message for message in messages if message)
+
+
+def plan(run: Runner, env: Mapping[str, str], cwd: Path) -> list[str]:
+    """No `-out` plan file: a saved plan can hold sensitive variable values on disk."""
+    result = run(["terraform", "plan", "-input=false", "-lock=false", "-json"], env=env, cwd=cwd, check=False)
+    if result.returncode != 0:
+        raise CommandError(f"`terraform plan` failed: {_plan_error(result.stdout)}")
+    return planned_changes(result.stdout)
 
 
 def apply(run: Runner, env: Mapping[str, str], cwd: Path, extra_args: Sequence[str] = ()) -> None:

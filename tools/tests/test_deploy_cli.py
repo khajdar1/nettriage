@@ -114,24 +114,33 @@ def test_failed_smoke_tests_fail_the_deploy(stage_dir: Path) -> None:
         cli.deploy(deployable(), {}, "dev", smoke_main=lambda argv: 1)
 
 
-def planning(listing: str, plan_json: str = '{"resource_changes": []}') -> FakeRun:
+def planning(listing: str, plan_output: str = "") -> FakeRun:
     run = signed_in().on("git", "rev-parse", "HEAD", returns=f"{SHA}\n")
     run.on("gh", "run", "list", returns=listing).on("gh", "run", "download").on("gh", "pr", "comment")
-    run.on("terraform", "show", returns=plan_json).on("terraform")
+    run.on("terraform", "plan", returns=plan_output).on("terraform")
     return healthy_account(run)
 
 
 def test_plan_posts_addresses_only_to_the_pr(stage_dir: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    plan_json = json.dumps(
-        {"resource_changes": [{"address": "module.app.aws_lambda_function.api",
-                               "change": {"actions": ["create"], "after": {"secret": "dG9rZW4="}}}]}
+    plan_output = json.dumps(
+        {
+            "type": "planned_change",
+            "change": {
+                "action": "create",
+                "resource": {"addr": "module.app.aws_lambda_function.api"},
+                "after_unknown": {"secret": "dG9rZW4="},
+            },
+        }
     )
-    run = planning(runs((5, "completed", "success", "pull_request")), plan_json)
+    run = planning(runs((5, "completed", "success", "pull_request")), plan_output)
 
     changes = cli.plan(run, {}, "dev", post_comment=True)
 
     assert changes == ["create module.app.aws_lambda_function.api"]
     assert len(run.called("gh", "pr", "comment")) == 1
+    [plan_call] = run.called("terraform", "plan")
+    assert "-json" in plan_call.args
+    assert not any(arg.startswith("-out") for arg in plan_call.args)
     out = capsys.readouterr().out
     assert "### Terraform plan: dev (ddddddd)" in out
     assert "dG9rZW4=" not in out

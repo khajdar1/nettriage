@@ -107,7 +107,7 @@ def plan(run: Runner, env: Mapping[str, str], stage: str, post_comment: bool) ->
         dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
         tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
-        changes = terraform.plan(run, tf_env, workdir, Path(scratch) / "tfplan")
+        changes = terraform.plan(run, tf_env, workdir)
         body = plan_comment(stage, sha, changes)
         print(body)
         if post_comment:

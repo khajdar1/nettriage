@@ -20,8 +20,9 @@ class Call:
 
 
 # A rule's answer: stdout text; an exit code (for check=False probes); an exception to raise;
-# or a function of the call that returns stdout (and may create files or raise).
-Answer = str | int | Exception | Callable[[Call], str]
+# or a function of the call that returns stdout, or a full Result for a non-zero exit code with
+# its own stdout (e.g. `terraform plan -json`'s diagnostics), and may create files or raise.
+Answer = str | int | Exception | Callable[[Call], "str | Result"]
 
 
 @dataclass
@@ -57,7 +58,8 @@ class FakeRun:
                     raise CommandError(f"`{' '.join(call.args[:2])}` failed with exit code {answer}.")
                 return Result(answer, "")
             if callable(answer):
-                return Result(0, answer(call))
+                outcome = answer(call)
+                return outcome if isinstance(outcome, Result) else Result(0, outcome)
             return Result(0, answer)
         raise AssertionError(f"unexpected command: {call.args}")
 
