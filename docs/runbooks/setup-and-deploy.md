@@ -213,6 +213,7 @@ passes, then run B2 again.
 | `STOP: Couldn't download … CI artifacts expire after 7 days …` | On GitHub, re-run the `ci` workflow for that commit, then deploy again |
 | `STOP: Smoke tests failed …` | Read the `FAIL` lines. Send them to Claude, or roll back |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |
+| `` STOP: `terraform apply` failed with exit code 1. `` | Terraform's own error is printed above this line (`apply` shares the terminal), so scroll up and read it. If it's `Error acquiring the state lock`, see that row; otherwise send the output to Claude. Terraform may have made some changes before failing; the next plan or deploy shows what's left |
 | `` STOP: `terraform init` failed with exit code 1: Error: … `` (or any other `` `<tool> <command>` failed … ``) | Read the `Error:` text. `Error acquiring the state lock` is covered by its own row; for anything else, send the output to Claude |
 | `` STOP: `<tool>` isn't installed or isn't on PATH. `` | Install it (A1 lists the tools) |
 | `STOP: The first bootstrap didn't finish; its state is saved in …terraform.tfstate.recovered (git-ignored) …` | Keep `infra/bootstrap/terraform.tfstate.recovered`. Don't run `just bootstrap` again; send the output to Claude |
