@@ -12,6 +12,8 @@
 
 **Plan series:** This is Plan 1 of 7 for Milestone 1: (1) walking skeleton, (2) detection engine, (3) data, identity and access, (4) upload pipeline, (5) AI triage, (6) frontend, (7) operations and launch. Each later plan is written after the previous one is merged.
 
+> **Superseded in part (2026-09-27):** the account's AWS-managed policies rule out GitHub OIDC and us-east-1 (spec Revision 2). Task 8 Steps 6–7, Task 10 Step 6's values, Task 11 Step 6, Task 12 and Task 14 Steps 5–8 are replaced by [Plan 1b](2026-09-27-nettriage-plan-1b-account-adaptation.md) and [docs/runbooks/setup-and-deploy.md](../../runbooks/setup-and-deploy.md).
+
 ## Global Constraints
 
 - Python **3.14**; Lambda runtime **`python3.14`**, architecture **`arm64`**. Fall back to `python3.13` only if a dependency has no 3.14 arm64 wheel (§13.2).
@@ -32,6 +34,9 @@
   - The telemetry resource attribute is `deployment.environment.name`, the current OpenTelemetry name for the spec's `deployment.environment`.
   - CloudFront's default `*.cloudfront.net` certificate can't enforce TLS 1.2 as a minimum. That stays an accepted risk until a custom domain is added.
   - Traces and metrics go to Grafana Cloud from Plan 1. Logs go to stdout as JSON with trace IDs (CloudWatch, 7 days); shipping them to Grafana Loki is added in Plan 7.
+  - The Grafana OTLP token is passed to the Lambda as an environment variable, not an SSM SecureString (§3.2). Revisit when Plan 3 introduces SSM.
+  - Lambda platform log JSON format and level filtering (§9.3) are not configured in Plan 1. They're added with the observability work in Plan 7.
+  - Pre-commit hooks with gitleaks (§11.2) and the license check (§11.8) are not in Plan 1.
 
 ## Review Focus
 
@@ -2581,10 +2586,12 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 6 (owner): Apply the bootstrap from CloudShell**
 
-Push the feature branch first (`git push -u origin HEAD`). Then, in AWS CloudShell (region `us-east-1`):
+Push the feature branch first (`git push -u origin HEAD`). Then, in AWS CloudShell (region `us-east-1`): the AWS provider 6.x binary is about 877 MB, and CloudShell's persistent `$HOME` is capped at 1 GB, so install Terraform under `/tmp` (cleared when the session ends) rather than `$HOME`, and keep Terraform's own working data there too. Run `init`, `apply`, and the later `-migrate-state` in this same CloudShell session, with `TF_DATA_DIR` set to the same `/tmp` path throughout — the local state file (`terraform.tfstate`) stays in the working directory (`~/nettriage/infra/bootstrap`) until it's migrated to S3 below.
 ```bash
 TF_VERSION=$(curl -s https://checkpoint-api.hashicorp.com/v1/check/terraform | jq -r .current_version)
-mkdir -p ~/bin && cd ~/bin && curl -sSLo tf.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip" && unzip -o tf.zip terraform && rm tf.zip && cd ~
+mkdir -p /tmp/tfbin && cd /tmp/tfbin && curl -sSLo tf.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip" && unzip -o tf.zip terraform && rm tf.zip && cd ~
+export PATH="/tmp/tfbin:$PATH"
+export TF_DATA_DIR=/tmp/tf-bootstrap
 git clone -b <feature-branch> https://github.com/<owner>/nettriage.git && cd nettriage/infra/bootstrap
 aws ce get-anomaly-monitors --query 'AnomalyMonitors[].[MonitorName,MonitorArn]' --output table
 terraform init
@@ -2592,7 +2599,7 @@ terraform apply -var github_owner=<owner> -var budget_email=<you@example.com> -v
 ```
 Expected: `Apply complete!` and three outputs. Confirm the AWS Budgets email subscription if AWS sends one.
 
-Move the bootstrap state into the bucket it just created. Create `infra/bootstrap/backend.tf` containing `terraform { backend "s3" {} }`, then run:
+Move the bootstrap state into the bucket it just created. Still in this same CloudShell session, with `TF_DATA_DIR` still exported to `/tmp/tf-bootstrap`, create `infra/bootstrap/backend.tf` containing `terraform { backend "s3" {} }`, then run:
 ```bash
 terraform init -migrate-state \
   -backend-config="bucket=$(terraform output -raw state_bucket)" \
