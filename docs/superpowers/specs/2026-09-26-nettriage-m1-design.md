@@ -988,7 +988,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 | The Lambda Web Adapter and OpenTelemetry collector layers, and the python3.14 runtime, in eu-north-1 (checked by `just preflight`) | `python3.13`; `force_flush` instead of the collector layer |
 | Terraform using the owner's `aws login` session through a `credential_process` helper profile (the default in `tools/deploy/`) | Export the session as environment variables for each command, keeping each run under the credentials' 15-minute lifetime |
 | Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Drop unavailable candidates; run Claude only in manual comparisons |
-| Neon Terraform provider reliability | Create the projects by hand and document it |
+| Neon Terraform provider reliability | Create the projects by hand and document it (taken in Plan 3a: the provider isn't code-signed and the owner's machine blocks unsigned executables; see ADR 0002) |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |
 | Current Lambda Function URL + OAC permission requirements (resource-policy actions, body-hash header) | Follow AWS's current docs; if needed, API Gateway HTTP API ($1 per million requests) |
 | S3 presigned PUT enforcing the signed `content-length`, checksum and metadata headers from browsers | Presigned POST with a policy (`content-length-range`) |
