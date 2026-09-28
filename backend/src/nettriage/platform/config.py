@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     stage: Stage = "local"
     version: str = "0.0.0-local"
     service_name: str = "nettriage-api"
+    # Set by Terraform on the function (spec §5.5, §6.8). The parameters hold the Cognito app
+    # client's settings (JSON), its client secret, and app_api's pooled database URL.
+    runtime_table: str = ""
+    oidc_parameter: str = ""
+    oidc_secret_parameter: str = ""
+    database_url_parameter: str = ""
 
     @property
     def running_in_lambda(self) -> bool:

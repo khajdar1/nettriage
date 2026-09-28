@@ -23,3 +23,7 @@ skip-check:
   - CKV2_AWS_42    # CloudFront custom certificate: no custom domain in Milestone 1
   - CKV_AWS_310    # CloudFront origin failover: single-region portfolio app
   - CKV_AWS_374    # CloudFront geo restriction: the demo is public worldwide
+  - CKV_AWS_28     # DynamoDB point-in-time recovery: the runtime table holds only data that expires within 24 hours (spec §5.5)
+  - CKV_AWS_119    # DynamoDB KMS customer key: AWS-owned encryption; customer keys cost money (spec §6.8)
+  - CKV2_AWS_16    # DynamoDB auto scaling: fixed capacity inside the Always Free units (spec §5.5); scaling could leave them
+  - CKV_AWS_337    # SSM KMS customer key: SecureStrings use the AWS-managed key (spec §3.2); customer keys cost money

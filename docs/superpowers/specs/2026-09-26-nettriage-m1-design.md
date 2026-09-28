@@ -190,7 +190,7 @@ sequenceDiagram
   participant D as DynamoDB
   participant C as Cognito
   B->>A: GET /api/auth/login?return_to=/app
-  A->>D: put LOGIN#state {code_verifier, nonce, return_to} (TTL 5 min)
+  A->>D: put LOGIN#state {code_verifier, nonce, return_to} (TTL 15 min)
   A-->>B: 302 to Cognito /oauth2/authorize (code flow, PKCE S256, state, nonce)
   B->>C: managed login + TOTP MFA
   C-->>B: 302 to /api/auth/callback?code&state
@@ -204,6 +204,8 @@ sequenceDiagram
 ```
 
 After the ID token is verified, Cognito's tokens are discarded. The app never calls anything on the user's behalf. `return_to` must be a relative path within the app (open-redirect protection).
+
+The login response also sets a 15-minute `__Host-sign-in` cookie holding `state`, and the callback accepts only a `state` equal to it (amended in Plan 3b; the owner raised the sign-in window from 5 to 15 minutes, Cognito's own sign-in session, because a first sign-up also verifies the email and sets up the authenticator app). This binds each sign-in to the browser that started it: otherwise an attacker could send a victim the callback link of the attacker's own sign-in, and the victim would be signed in to the attacker's account (login CSRF).
 
 ### 4.2 Upload → findings → AI explanation
 
@@ -292,6 +294,8 @@ Tenant tables use `ON DELETE CASCADE` from `organizations`, so deleting an org r
 
 A dedicated test runs a query with no org filter and must receive zero rows from other organizations.
 
+`users` also has row-level security (the owner's decision, 2026-09-28, Plan 3b). A user sees their own row, and in an organization's transaction the members of that organization. Sign-in finds or creates the user through a `SECURITY DEFINER` function, because the API's role can't read or insert other users' rows.
+
 ### 5.4 Database roles and grants
 
 | Role | Used by | Rights |
@@ -315,13 +319,13 @@ The partition key is `pk` (string), and the TTL attribute is `expires_at`.
 |---|---|---|---|
 | Session | `SESSION#<sha256(session id)>` | `user_id`, `csrf_token`, `created_at`, `last_seen_at`, `ip`, `user_agent` | Idle 60 min, absolute 12 h (enforced in code; TTL does the cleanup) |
 | A user's sessions | `USERSESS#<user_id>` | String set of session hashes, used for "sign out everywhere" | 12 h after the last login |
-| Sign-in state | `LOGIN#<state>` | `code_verifier`, `nonce`, `return_to` | 5 min |
+| Sign-in state | `LOGIN#<state>` | `code_verifier`, `nonce`, `return_to` | 15 min |
 | Rate-limit key | `RL#<policy>#<subject>` | `tat` (GCRA theoretical arrival time, ms) | 2 × the policy window |
 | Org AI budget | `BUDGET#<org_id>#<yyyy-mm-dd>` | `tokens_reserved`, `tokens_used` | 2 days |
 | Global AI budget | `GBUDGET#<yyyy-mm-dd>` | `usd_reserved`, `usd_used` | 2 days |
 | Idempotency key | `IDEMP#<user_id>#<key>` | `request_hash`, `status`, `response` | 24 h |
 
-- **Capacity:** provisioned, within the Always Free 25 read and 25 write units per region. `prod` gets 10 RCU / 10 WCU and `dev` gets 3 / 3.
+- **Capacity:** provisioned, within the Always Free 25 read and 25 write units per region. Each stage gets 10 RCU / 10 WCU, 20 of the 25 in all (the owner raised `dev` from 3 / 3 in Plan 3b: one looping client could use up 3 write units a second and break sign-in for everyone).
 - **Session touches:** `last_seen_at` is rewritten at most once every 5 minutes to save writes.
 - **Failure policy:**
   - Sessions **fail closed**: if a session can't be validated, the request gets 401 or 503.
@@ -428,7 +432,11 @@ Every member may leave an organization, except its last Owner.
 
 **How GCRA works.** For a policy with `limit` requests per `period`, the emission interval is `T = period / limit` and the burst tolerance is `τ = (burst − 1) × T`. A request at `now` is allowed if `tat − now ≤ τ`, where `tat` is the key's theoretical arrival time and defaults to `now`. On allow, `tat = max(tat, now) + T`.
 
-**Storage.** An eventually consistent read, followed by a conditional write (`attribute_not_exists(tat) OR tat = :old`). On a conflict it retries up to 3 times. If it still can't decide, it allows the request (fail open) and increments a metric.
+**Storage.** Conditional updates, never a read followed by a write, so parallel requests can't both take the last slot (amended in Plan 3b: the original read-then-write design would fail open under exactly the contention the concurrency test creates):
+1. A new or idle key (no `tat`, or `tat` ≤ now) is set to now + T.
+2. Otherwise `tat` grows by T, on condition that `tat − now ≤ τ`.
+
+A failed condition returns the item as it was, which tells whether the request is over the limit. If DynamoDB fails, the request is allowed (fail open) and a metric is incremented.
 
 **Subjects:**
 - the user ID for authenticated routes,
@@ -844,7 +852,7 @@ Implementation is test-first.
   - the authorization matrix and route-declaration check,
   - RLS cross-tenant isolation,
   - CSRF, session fixation and expiry,
-  - a rate-limiter concurrency test (100 parallel requests; exactly the allowed number pass),
+  - a rate-limiter concurrency test (100 parallel requests; exactly the allowed number pass), run against DynamoDB Local in CI, because moto's in-process DynamoDB doesn't make conditional writes atomic,
   - a zip-bomb fixture,
   - redaction of sensitive log fields,
   - a test that fails if any free-text field from an upload could reach the prompt.

@@ -11,12 +11,21 @@ SECURITY_HEADERS = {
 }
 
 
+COGNITO = "https://nettriage-dev-1a2b3c4d.auth.eu-north-1.amazoncognito.com"
+AUTHORIZE = f"{COGNITO}/oauth2/authorize?client_id=abc&code_challenge_method=S256&state=s"
+
+
 def healthy(request: httpx.Request) -> httpx.Response:
     path = request.url.path
     if request.url.host == "fn.example":
         return httpx.Response(403, json={"Message": "Forbidden"})
+    if request.url.host.endswith(".amazoncognito.com"):
+        return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html>")
     if path == "/api/health":
-        return httpx.Response(200, json={"status": "ok", "version": "abc"}, headers=SECURITY_HEADERS)
+        headers = {**SECURITY_HEADERS, "ratelimit-policy": '"public.ip";q=60;w=60'}
+        return httpx.Response(200, json={"status": "ok", "version": "abc"}, headers=headers)
+    if path == "/api/auth/login":
+        return httpx.Response(302, headers={"location": AUTHORIZE})
     problem = {**SECURITY_HEADERS, "content-type": "application/problem+json"}
     if path == "/api/v1/me":
         return httpx.Response(401, headers=problem)
@@ -82,3 +91,42 @@ def test_wrong_deployed_version_is_caught() -> None:
         return healthy(request)
 
     assert checks_for(old)["api health"] is False
+
+
+def test_a_login_that_does_not_reach_cognito_is_caught() -> None:
+    def local(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/auth/login":
+            return httpx.Response(302, headers={"location": "/?sign_in=unavailable"})
+        return healthy(request)
+
+    results = checks_for(local)
+
+    assert results["sign-in redirects to Cognito"] is False
+    assert results["Cognito sign-in page loads"] is False
+
+
+def test_a_login_without_pkce_is_caught() -> None:
+    def no_pkce(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/auth/login":
+            return httpx.Response(302, headers={"location": f"{COGNITO}/oauth2/authorize?client_id=abc"})
+        return healthy(request)
+
+    assert checks_for(no_pkce)["sign-in redirects to Cognito"] is False
+
+
+def test_a_broken_cognito_page_is_caught() -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        if request.url.host.endswith(".amazoncognito.com"):
+            return httpx.Response(400, content=b"Login pages unavailable")
+        return healthy(request)
+
+    assert checks_for(broken)["Cognito sign-in page loads"] is False
+
+
+def test_an_api_that_cannot_see_the_viewer_ip_is_caught() -> None:
+    def no_viewer(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/health":
+            return httpx.Response(200, json={"status": "ok", "version": "abc"}, headers=SECURITY_HEADERS)
+        return healthy(request)
+
+    assert checks_for(no_viewer)["api limits requests per viewer ip"] is False

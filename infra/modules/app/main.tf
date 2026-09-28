@@ -1,5 +1,13 @@
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
 locals {
   name = "nettriage-${var.stage}-api"
+  parameter_arns = [
+    for name in [var.oidc_parameter, var.oidc_secret_parameter, var.database_url_parameter] :
+    "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${name}"
+  ]
 }
 
 resource "aws_cloudwatch_log_group" "api" {
@@ -33,6 +41,42 @@ resource "aws_iam_role_policy" "api_logs" {
   })
 }
 
+# Sessions, sign-in state and rate limits in the runtime table (spec §6.8). TransactWriteItems
+# and BatchWriteItem are authorized by the item-level actions they perform.
+resource "aws_iam_role_policy" "api_runtime_table" {
+  name = "runtime-table"
+  role = aws_iam_role.api.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:BatchWriteItem",
+      ]
+      Resource = var.runtime_table_arn
+    }]
+  })
+}
+
+# Its own settings and secrets, read once at cold start. SecureStrings use the AWS-managed
+# aws/ssm key, whose key policy already lets this account's roles decrypt through SSM.
+resource "aws_iam_role_policy" "api_parameters" {
+  name = "read-own-parameters"
+  role = aws_iam_role.api.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "ssm:GetParameters"
+      Resource = local.parameter_arns
+    }]
+  })
+}
+
 resource "aws_lambda_function" "api" {
   function_name    = local.name
   role             = aws_iam_role.api.arn
@@ -58,10 +102,19 @@ resource "aws_lambda_function" "api" {
       NETTRIAGE_STAGE                    = var.stage
       NETTRIAGE_VERSION                  = var.app_version
       NETTRIAGE_SERVICE_NAME             = "nettriage-api"
+      NETTRIAGE_RUNTIME_TABLE            = var.runtime_table_name
+      NETTRIAGE_OIDC_PARAMETER           = var.oidc_parameter
+      NETTRIAGE_OIDC_SECRET_PARAMETER    = var.oidc_secret_parameter
+      NETTRIAGE_DATABASE_URL_PARAMETER   = var.database_url_parameter
     }
   }
 
-  depends_on = [aws_cloudwatch_log_group.api, aws_iam_role_policy.api_logs]
+  depends_on = [
+    aws_cloudwatch_log_group.api,
+    aws_iam_role_policy.api_logs,
+    aws_iam_role_policy.api_runtime_table,
+    aws_iam_role_policy.api_parameters,
+  ]
 }
 
 resource "aws_lambda_function_url" "api" {

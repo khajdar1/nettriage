@@ -27,8 +27,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Atomic conditional writes for the rate limiter's concurrency test (spec §11.4); moto's
+      # in-process DynamoDB, which the other tests use, isn't atomic.
+      dynamodb:
+        image: amazon/dynamodb-local:3.3.1
+        ports:
+          - 8000:8000
     env:
       NETTRIAGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      NETTRIAGE_TEST_DYNAMODB_URL: http://localhost:8000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -39,7 +46,7 @@ jobs:
           uv run --locked ruff check .
           uv run --locked ruff format --check .
           uv run --locked mypy
-          uv run --locked pytest --cov=nettriage.domain --cov-report=term-missing --cov-fail-under=85
+          uv run --locked pytest --cov=nettriage.domain --cov=nettriage.application --cov-report=term-missing --cov-fail-under=85
 
   package:
     runs-on: ubuntu-24.04
@@ -118,7 +125,7 @@ jobs:
       - name: Format, validate and test
         run: |
           terraform fmt -check -recursive infra
-          for dir in infra/bootstrap infra/modules/app infra/modules/edge; do
+          for dir in infra/bootstrap infra/modules/app infra/modules/data infra/modules/edge infra/modules/identity; do
             (cd "$dir" && terraform init -backend=false -input=false && terraform validate && terraform test)
           done
           (cd infra/envs/dev && terraform init -backend=false -input=false && terraform validate)

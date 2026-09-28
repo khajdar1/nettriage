@@ -125,3 +125,17 @@ def test_remove_console_scripts_drops_launchers_and_lock(tmp_path: Path) -> None
     assert not (package / ".lock").exists()
     assert (package / "nettriage/entrypoints/api/main.py").read_bytes() == b"app = None\n"
     assert (package / "fastapi-1.0.dist-info/WHEEL").exists()
+
+
+def test_a_zip_over_lambdas_upload_limit_is_rejected(tmp_path: Path) -> None:
+    out = build(tmp_path)
+
+    with pytest.raises(PackageError, match="Lambda takes at most 10"):
+        validate_zip(out, max_zipped=10)
+
+
+def test_a_package_over_lambdas_unzipped_limit_is_rejected(tmp_path: Path) -> None:
+    out = build(tmp_path)
+
+    with pytest.raises(PackageError, match="unzipped it is"):
+        validate_zip(out, max_unzipped=10)

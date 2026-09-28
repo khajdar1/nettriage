@@ -10,6 +10,7 @@ import argparse
 import sys
 import time
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
@@ -44,6 +45,35 @@ def _is_problem(response: httpx.Response, status: int) -> bool:
     return response.status_code == status and content_type.startswith("application/problem+json")
 
 
+def _is_cognito_authorize(response: httpx.Response) -> bool:
+    """A redirect to Cognito's authorize endpoint for the code flow with PKCE (spec §4.1)."""
+    location = urlsplit(response.headers.get("location", ""))
+    query = parse_qs(location.query)
+    return (
+        response.status_code == 302
+        and location.scheme == "https"
+        and (location.hostname or "").endswith(".amazoncognito.com")
+        and location.path == "/oauth2/authorize"
+        and query.get("code_challenge_method") == ["S256"]
+        and bool(query.get("client_id"))
+    )
+
+
+def _sign_in_checks(client: httpx.Client, base_url: str) -> list[Check]:
+    login = client.get(f"{base_url}/api/auth/login")
+    redirects = _is_cognito_authorize(login)
+    checks = [
+        Check("sign-in redirects to Cognito", redirects,
+              f"{login.status_code} {urlsplit(login.headers.get('location', '')).hostname}"),
+    ]
+    if redirects:
+        page = client.get(login.headers["location"], follow_redirects=True)
+        checks.append(Check("Cognito sign-in page loads", _is_html(page), str(page.status_code)))
+    else:
+        checks.append(Check("Cognito sign-in page loads", False, "no redirect to Cognito"))
+    return checks
+
+
 def run_checks(client: httpx.Client, base_url: str, function_url: str, version: str) -> list[Check]:
     health = client.get(f"{base_url}/api/health")
     body = health.json() if "json" in health.headers.get("content-type", "") else {}
@@ -67,6 +97,10 @@ def run_checks(client: httpx.Client, base_url: str, function_url: str, version: 
               f"{not_found.status_code} {not_found.headers.get('content-type')}"),
         Check("function url rejects direct calls", direct.status_code == 403,
               str(direct.status_code)),
+        Check("api limits requests per viewer ip",
+              '"public.ip"' in health.headers.get("ratelimit-policy", ""),
+              health.headers.get("ratelimit-policy", "no RateLimit-Policy header")),
+        *_sign_in_checks(client, base_url),
     ]
 
 

@@ -1,4 +1,14 @@
 mock_provider "aws" {
+  mock_data "aws_region" {
+    defaults = {
+      region = "eu-north-1"
+    }
+  }
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+    }
+  }
   # The default mock for a computed "arn" attribute is a short random string, not
   # ARN-shaped. aws_lambda_function.role validates its value looks like an ARN,
   # so give aws_iam_role.api's computed arn a realistic value.
@@ -17,6 +27,11 @@ variables {
   otel_collector_layer_arn = "arn:aws:lambda:eu-north-1:184161586896:layer:opentelemetry-collector-arm64-0_22_0:1"
   grafana_otlp_endpoint    = "https://otlp-gateway.example.grafana.net/otlp"
   grafana_otlp_auth        = "dGVzdDp0ZXN0"
+  runtime_table_name       = "nettriage-dev-runtime"
+  runtime_table_arn        = "arn:aws:dynamodb:eu-north-1:123456789012:table/nettriage-dev-runtime"
+  oidc_parameter           = "/nettriage/dev/api/oidc"
+  oidc_secret_parameter    = "/nettriage/dev/api/oidc-client-secret"
+  database_url_parameter   = "/nettriage/dev/db/app-api-url"
 }
 
 run "function_is_arm64_python_behind_iam_auth" {
@@ -81,4 +96,25 @@ run "rejects_a_non_https_otlp_endpoint" {
   }
 
   expect_failures = [var.grafana_otlp_endpoint]
+}
+
+run "the_api_reads_only_its_own_table_and_parameters" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.api_runtime_table.policy).Statement[0].Resource == "arn:aws:dynamodb:eu-north-1:123456789012:table/nettriage-dev-runtime"
+    error_message = "DynamoDB access is limited to the runtime table (spec §6.8)."
+  }
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.api_parameters.policy).Statement[0].Resource) == toset([
+      "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/api/oidc",
+      "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/api/oidc-client-secret",
+      "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/db/app-api-url",
+    ])
+    error_message = "The API reads only its own three parameters (spec §6.8)."
+  }
+  assert {
+    condition     = aws_lambda_function.api.environment[0].variables["NETTRIAGE_DATABASE_URL_PARAMETER"] == "/nettriage/dev/db/app-api-url"
+    error_message = "The function gets parameter names, never secret values."
+  }
 }

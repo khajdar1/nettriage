@@ -30,6 +30,9 @@ FORBIDDEN_NAME = re.compile(r"(win_amd64|win32|macosx|x86_64|\.pyd$|\.dll$|\.dyl
 # uvicorn ...` directly), so they are dropped rather than shipped and merely rejected.
 GENERATED_SCRIPT_DIRS = ("bin", "Scripts")
 FIXED_DATE = (2020, 1, 1, 0, 0, 0)
+# Lambda's limits for a zip uploaded directly, as Terraform does (not through S3).
+MAX_ZIPPED_BYTES = 50 * 1024 * 1024
+MAX_UNZIPPED_BYTES = 250 * 1024 * 1024
 
 
 class PackageError(Exception):
@@ -86,9 +89,16 @@ def write_zip(package: Path, out: Path) -> None:
             zf.writestr(info, path.read_bytes())
 
 
-def validate_zip(out: Path) -> None:
+def validate_zip(
+    out: Path, *, max_zipped: int = MAX_ZIPPED_BYTES, max_unzipped: int = MAX_UNZIPPED_BYTES
+) -> None:
     problems: list[str] = []
+    if out.stat().st_size > max_zipped:
+        problems.append(f"the zip is {out.stat().st_size} bytes; Lambda takes at most {max_zipped}")
     with zipfile.ZipFile(out) as zf:
+        unzipped = sum(info.file_size for info in zf.infolist())
+        if unzipped > max_unzipped:
+            problems.append(f"unzipped it is {unzipped} bytes; Lambda takes at most {max_unzipped}")
         names = set(zf.namelist())
         problems += [f"missing {name}" for name in REQUIRED if name not in names]
         if "run.sh" in names:

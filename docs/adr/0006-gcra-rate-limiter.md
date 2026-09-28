@@ -1,6 +1,6 @@
 # 0006: A GCRA distributed rate limiter
 
-- Status: Accepted
+- Status: Accepted; storage amended 2026-09-28 (Plan 3b)
 - Date: 2026-09-26
 
 ## Context
@@ -12,17 +12,23 @@ handles poorly.
 
 ## Decision
 Rate limiting uses GCRA (Generic Cell Rate Algorithm) implemented on DynamoDB: each key
-stores one theoretical arrival time (`tat`), updated with a conditional write on every check.
+stores one theoretical arrival time (`tat`), changed only by conditional updates. A new or idle
+key is set to now + T; otherwise `tat` grows by T on condition that `tat - now <= tau`. A failed
+condition returns the stored item, which says whether the request is over the limit.
 Limited routes return the IETF `RateLimit-Policy` and `RateLimit` headers; a blocked request
 gets `429` with `Retry-After`.
 
 ## Consequences
-- GCRA is exact under concurrency: two Lambda instances checking the same key race on the
-  same conditional write, so one of them always loses cleanly rather than both allowing a
-  request that together exceeds the limit.
-- Each check costs one read and one write against DynamoDB.
-- On a write conflict, the check retries up to 3 times; if it still can't decide, it fails
-  open: the request is allowed, and the failure is logged, counted and alerted on.
+- GCRA is exact under concurrency: DynamoDB applies conditional updates of one item one at a
+  time, so parallel requests can't both take the last slot. A test sends 100 parallel requests
+  at DynamoDB Local in CI and expects exactly the burst to pass.
+- Each check costs one or two writes and no reads: one for a new or idle key, two for an active
+  key (the first condition fails, the second update succeeds), and one for a refused request.
+- The first design (never built) read the item and then wrote it conditionally, retrying 3
+  times on a conflict. Under contention it would run out of retries and fail open, letting more
+  requests through than the limit allows, so Plan 3b replaced it before implementing it.
+- If DynamoDB fails, the check fails open: the request is allowed, and the failure is logged
+  and counted.
 
 ## Alternatives considered
 - **Fixed-window counters:** simple, but they double the effective burst at window edges (a

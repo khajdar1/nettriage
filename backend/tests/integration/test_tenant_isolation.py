@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError, ProgrammingError
 from tenantdata import add_invitation, add_member, add_tenant
 
 from nettriage.adapters.postgres import tenant_transaction
+from nettriage.adapters.users import sign_in_user
 
 TENANT_TABLES = ("organizations", "memberships", "invitations", "audit_log")
 INSERT_AUDIT_EVENT = text(
@@ -109,13 +110,11 @@ def test_another_tenants_org_and_roles_cannot_be_changed(database: Database) -> 
 
 def test_the_api_role_can_run_an_orgs_whole_lifecycle(database: Database) -> None:
     """Every write Plan 3b's endpoints need, as app_api, inside the org's own transaction."""
-    org, owner, member = uuid7(), uuid7(), uuid7()
-    with database.app_api.begin() as connection:  # just-in-time users need no tenant
-        for user in (owner, member):
-            connection.execute(
-                text("INSERT INTO users (id, cognito_sub, email) VALUES (:id, :sub, :email)"),
-                {"id": user, "sub": f"sub-{user}", "email": f"{user}@example.com"},
-            )
+    org = uuid7()
+    owner, member = (
+        sign_in_user(database.app_api, sub=f"sub-{uuid7()}", email=f"{name}@example.com").user_id
+        for name in ("owner", "member")
+    )
 
     with tenant_transaction(database.app_api, org_id=org, user_id=owner) as connection:
         connection.execute(
@@ -229,6 +228,10 @@ def test_audit_events_cannot_be_written_for_another_org(database: Database) -> N
         "UPDATE organizations SET slug = 'taken-over'",
         "UPDATE users SET cognito_sub = 'someone-else'",
         "UPDATE invitations SET token_hash = repeat('0', 64)",
+        "INSERT INTO organizations (id, name, slug, is_demo) "
+        "VALUES (gen_random_uuid(), 'Demo', 'fake-demo', true)",
+        "CREATE TEMP TABLE shadow (id int)",
+        "CREATE TABLE sneaky (id int)",
     ],
 )
 def test_the_api_role_only_has_the_grants_it_needs(database: Database, statement: str) -> None:

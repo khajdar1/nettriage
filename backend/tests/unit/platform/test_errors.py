@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nettriage.entrypoints.api.app import create_app
+from nettriage.entrypoints.api.services import Services
 from nettriage.platform.config import Settings
 from nettriage.platform.logging import JsonFormatter
 
@@ -35,9 +36,9 @@ def test_wrong_method_returns_problem_details_with_allow_header(client: TestClie
 
 
 def test_unhandled_error_hides_internals(
-    settings: Settings, capsys: pytest.CaptureFixture[str]
+    settings: Settings, services: Services, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    app: FastAPI = create_app(settings)
+    app: FastAPI = create_app(settings, services)
 
     @app.get("/api/boom")
     def boom() -> None:
@@ -65,8 +66,10 @@ def test_unhandled_error_hides_internals(
     assert "RuntimeError" in log_output
 
 
-def test_request_validation_errors_are_problem_details(settings: Settings) -> None:
-    app: FastAPI = create_app(settings)
+def test_request_validation_errors_are_problem_details(
+    settings: Settings, services: Services
+) -> None:
+    app: FastAPI = create_app(settings, services)
 
     @app.get("/api/test-validation")
     def typed_route(n: int) -> dict[str, int]:
@@ -83,8 +86,8 @@ def test_request_validation_errors_are_problem_details(settings: Settings) -> No
     assert "not-a-number-secret" not in response.text
 
 
-def test_api_docs_are_disabled_in_prod() -> None:
-    client = TestClient(create_app(Settings(stage="prod", version="1")))
+def test_api_docs_are_disabled_in_prod(services: Services) -> None:
+    client = TestClient(create_app(Settings(stage="prod", version="1"), services))
 
     assert client.get("/api/docs").status_code == 404
     assert client.get("/api/openapi.json").status_code == 404

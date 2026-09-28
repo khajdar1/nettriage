@@ -43,6 +43,10 @@ SENSITIVE_KEYS = frozenset(
         "pwd",
     }
 )
+# HTTP and AWS clients log request URLs and parameters at DEBUG and INFO: botocore logs every
+# DynamoDB item it writes, sessions and sign-in state included. Only their warnings reach our
+# logs, whatever our own level.
+QUIET_LOGGERS = ("botocore", "boto3", "s3transfer", "urllib3", "httpx", "httpcore")
 # Attributes every LogRecord has; anything else arrived through `extra=`.
 _STANDARD_ATTRS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime", "taskName"}
 
@@ -180,6 +184,8 @@ def configure_logging(settings: Settings, level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(max(level, logging.WARNING))
     # uvicorn's own dictConfig gives these loggers their own handlers and propagate=False;
     # strip both so uvicorn's records reach the root JSON handler too.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):

@@ -13,3 +13,7 @@ output "web_bucket" {
 output "function_url" {
   value = module.app.function_url
 }
+
+output "sign_in_domain" {
+  value = module.identity.sign_in_domain
+}
