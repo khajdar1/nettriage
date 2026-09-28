@@ -21,6 +21,10 @@ test:
 tools-test:
     uv run --project backend python -m pytest tools/tests
 
+# Detection quality: precision and recall of every detector on the generated scenarios
+detection-report:
+    uv run --project backend python -m tools.scenarios report --out dist/detection-report.md
+
 # Build the Lambda zip (arm64, python3.14) into dist/backend.zip
 build-lambda:
     uv run --project backend python tools/build_lambda.py --out dist/backend.zip
