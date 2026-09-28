@@ -55,3 +55,27 @@ variable "runtime" {
   type    = string
   default = "python3.14"
 }
+
+variable "runtime_table_name" {
+  type        = string
+  description = "The DynamoDB runtime table (infra/modules/data)."
+}
+
+variable "runtime_table_arn" {
+  type = string
+}
+
+variable "oidc_parameter" {
+  type        = string
+  description = "SSM parameter with the Cognito app client's settings (infra/modules/identity)."
+}
+
+variable "oidc_secret_parameter" {
+  type        = string
+  description = "SSM SecureString with the Cognito app client's secret (infra/modules/identity)."
+}
+
+variable "database_url_parameter" {
+  type        = string
+  description = "SSM SecureString with app_api's pooled Neon URL, written by the deploy (tools/deploy)."
+}

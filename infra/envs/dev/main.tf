@@ -1,3 +1,16 @@
+# The API's SSM parameters. identity writes the first two; the deploy writes the database URL
+# (tools/deploy/config.py, db_role_url_parameter). The function gets only these names.
+locals {
+  oidc_parameter         = "/nettriage/dev/api/oidc"
+  oidc_secret_parameter  = "/nettriage/dev/api/oidc-client-secret"
+  database_url_parameter = "/nettriage/dev/db/app-api-url"
+}
+
+module "data" {
+  source = "../../modules/data"
+  stage  = "dev"
+}
+
 module "app" {
   source                   = "../../modules/app"
   stage                    = "dev"
@@ -7,6 +20,19 @@ module "app" {
   otel_collector_layer_arn = var.otel_collector_layer_arn
   grafana_otlp_endpoint    = var.grafana_otlp_endpoint
   grafana_otlp_auth        = var.grafana_otlp_auth
+  runtime_table_name       = module.data.table_name
+  runtime_table_arn        = module.data.table_arn
+  oidc_parameter           = local.oidc_parameter
+  oidc_secret_parameter    = local.oidc_secret_parameter
+  database_url_parameter   = local.database_url_parameter
+}
+
+module "identity" {
+  source                = "../../modules/identity"
+  stage                 = "dev"
+  app_domain            = module.edge.distribution_domain
+  oidc_parameter        = local.oidc_parameter
+  oidc_secret_parameter = local.oidc_secret_parameter
 }
 
 module "edge" {

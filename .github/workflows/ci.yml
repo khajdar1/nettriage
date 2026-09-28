@@ -125,7 +125,7 @@ jobs:
       - name: Format, validate and test
         run: |
           terraform fmt -check -recursive infra
-          for dir in infra/bootstrap infra/modules/app infra/modules/edge; do
+          for dir in infra/bootstrap infra/modules/app infra/modules/data infra/modules/edge infra/modules/identity; do
             (cd "$dir" && terraform init -backend=false -input=false && terraform validate && terraform test)
           done
           (cd infra/envs/dev && terraform init -backend=false -input=false && terraform validate)

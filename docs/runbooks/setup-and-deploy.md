@@ -215,7 +215,7 @@ If step 2's preflight has a `FAIL` line, the command stops with
 `STOP: Preflight failed; nothing was deployed.`; fix it (see Part C) and run `just deploy-dev`
 again.
 
-Success looks like eight `PASS` lines:
+Success looks like eleven `PASS` lines:
 - `api health`
 - `api security headers`
 - `web root`
@@ -224,6 +224,9 @@ Success looks like eight `PASS` lines:
 - `edge rejects api call without session`
 - `api 404 stays problem+json`
 - `function url rejects direct calls`
+- `api limits requests per viewer ip`
+- `sign-in redirects to Cognito`
+- `Cognito sign-in page loads`
 
 The last line is `Deployed <sha> to dev: https://<id>.cloudfront.net`. The first deploy takes
 longer, because CloudFront needs several minutes to create the distribution.
@@ -238,6 +241,29 @@ later can't use it.
 2. In **Explore → Prometheus**, search the metrics for `nettriage-api`; look for
    `http_server_duration_milliseconds_*` or `http_server_request_duration_seconds_*`.
 3. In AWS Settings → **Billing**, the amount due is still $0.
+
+### B4. Sign in to dev
+Sign-in uses Cognito's managed login page with a password and a one-time code from an
+authenticator app (TOTP). The app's own pages come in Plan 6, so for now you check the result
+with the API directly.
+1. Install an authenticator app on your phone: Microsoft Authenticator or Google Authenticator.
+2. In your browser, open `https://<id>.cloudfront.net/api/auth/login` (the address from B2's last
+   line, plus `/api/auth/login`). You land on Cognito's sign-in page.
+3. Choose **Create an account**. Enter your email address and a password of at least 12
+   characters, then choose **Sign up**.
+4. Cognito emails you a verification code from `no-reply@verificationemail.com` (check spam).
+   Enter it and confirm.
+5. Set up MFA: in the authenticator app, add an account and scan the QR code on the page. Type
+   the 6-digit code the app shows, give the device a name if asked, and confirm.
+6. You land on `https://<id>.cloudfront.net/app`, which is still Plan 1's placeholder page.
+7. Open `https://<id>.cloudfront.net/api/v1/me`. It shows your email, `"memberships": []` and a
+   `csrf_token`: you're signed in, and your user exists in the database.
+8. To sign in again later, repeat step 2; Cognito asks for your password and a fresh code from
+   the app. A session lasts up to 12 hours, and ends after 60 minutes without activity.
+
+Do steps 2 to 5 in one go: the API gives a sign-in 5 minutes. If it takes longer, you land on
+`/?sign_in=expired`; your account is kept, so start again at step 2 and just sign in. If you land
+on another `/?sign_in=...` address, see Part C.
 
 ## Part C: when things go wrong
 
@@ -267,6 +293,14 @@ passes, then run B2 again.
 | `STOP: The checkout changed during the deploy …` or `… during the plan …` | Something changed the branch or the tree while the command was checking CI and downloading artifacts, and it stopped before Terraform ran. Check the tree, then run the command again |
 | `STOP: Couldn't download … CI artifacts expire after 7 days …` | On GitHub, re-run the `ci` workflow for that commit, then deploy again |
 | `STOP: Smoke tests failed …` | Read the `FAIL` lines. Send them to Claude, or roll back |
+| `FAIL  Cognito sign-in page loads` right after the first Plan 3b deploy | A new Cognito domain can take a few minutes to start answering. Wait 5 minutes, then run `just deploy-dev` again (Terraform has nothing left to change). If it still fails, send the output to Claude |
+| `FAIL  sign-in redirects to Cognito` or `FAIL  api limits requests per viewer ip` | Send the output to Claude. Sign-in, or rate limiting by IP, isn't working on the deployed stage |
+| The browser lands on `/?sign_in=expired` | The sign-in took longer than 5 minutes, was finished in a different browser from the one that started it, or a page was reloaded or opened twice. Start again from `/api/auth/login` |
+| The browser lands on `/?sign_in=failed` | The sign-in was cancelled, or Cognito's answer was refused. Start again; if it keeps happening, send Claude the time it happened (the logs record why, as `sign_in_failed`) |
+| The browser lands on `/?sign_in=unavailable` | DynamoDB, Neon or Cognito didn't answer. Wait a minute and start again; if it keeps happening, tell Claude |
+| The browser lands on `/?sign_in=disabled` | This account is disabled in the database. Tell Claude if that's unexpected |
+| `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account. Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
+| Cognito's verification email never arrives | Check spam. Cognito's built-in sender allows about 50 emails a day per account; wait until tomorrow if many sign-ups ran today |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |
 | `` STOP: `terraform apply` failed with exit code 1. `` | Terraform's own error is printed above this line (`apply` shares the terminal), so scroll up and read it. If it's `Error acquiring the state lock`, see that row; otherwise send the output to Claude. Terraform may have made some changes before failing; the next plan or deploy shows what's left |
 | `` STOP: `terraform init` failed with exit code 1: Error: … `` (or any other `` `<tool> <command>` failed … ``) | Read the `Error:` text. `Error acquiring the state lock` is covered by its own row; for anything else, send the output to Claude |

@@ -3,8 +3,9 @@
 AI-assisted triage of network threats. Upload AWS VPC Flow Logs, get detections mapped to
 MITRE ATT&CK, and a checked, plain-English explanation for every finding.
 
-> Status: Milestone 1 in progress. Plan 1 (walking skeleton) delivers the deployed,
-> observable foundation: CI, owner-run deploys, infrastructure as code and telemetry.
+> Status: Milestone 1 in progress. Deployed so far: the walking skeleton (CI, owner-run
+> deploys, infrastructure as code, telemetry), the detection engine, the Postgres data
+> foundation, and sign-in with mandatory MFA.
 
 ## Architecture
 
@@ -28,6 +29,9 @@ Regional resources run in eu-north-1 (Stockholm); CloudFront serves the app worl
 - **No stored cloud credentials**: CI checks and builds with no AWS access; the owner deploys CI-built, CI-green commits with a short-lived sign-in ([ADR 0013](docs/adr/0013-owner-run-deploys-short-lived-credentials.md)). The Lambda Function URL only accepts CloudFront-signed requests ([ADR 0003](docs/adr/0003-cloudfront-to-function-url-with-oac.md)).
 - **Strict security headers** from the edge, including a CSP with no inline scripts (checked in CI).
 - **OpenTelemetry** traces and metrics in Grafana Cloud; RFC 9457 errors that carry the trace ID.
+- **Sign-in with mandatory TOTP MFA** through Cognito, the backend-for-frontend way: the browser only holds an opaque, HttpOnly session cookie, with CSRF checks on every state-changing request ([ADR 0004](docs/adr/0004-backend-for-frontend-sessions.md)).
+- **Tenant isolation in the database**: row-level security on every tenant table and on users, and a least-privilege database role for the API.
+- **Distributed rate limiting** with GCRA on DynamoDB, exact under concurrency ([ADR 0006](docs/adr/0006-gcra-rate-limiter.md)).
 - **Supply chain**: SHA-pinned actions, CodeQL, dependency review, Dependabot, Checkov and tflint.
 
 ## Develop
