@@ -430,7 +430,11 @@ Every member may leave an organization, except its last Owner.
 
 **How GCRA works.** For a policy with `limit` requests per `period`, the emission interval is `T = period / limit` and the burst tolerance is `τ = (burst − 1) × T`. A request at `now` is allowed if `tat − now ≤ τ`, where `tat` is the key's theoretical arrival time and defaults to `now`. On allow, `tat = max(tat, now) + T`.
 
-**Storage.** An eventually consistent read, followed by a conditional write (`attribute_not_exists(tat) OR tat = :old`). On a conflict it retries up to 3 times. If it still can't decide, it allows the request (fail open) and increments a metric.
+**Storage.** Conditional updates, never a read followed by a write, so parallel requests can't both take the last slot (amended in Plan 3b: the original read-then-write design would fail open under exactly the contention the concurrency test creates):
+1. A new or idle key (no `tat`, or `tat` ≤ now) is set to now + T.
+2. Otherwise `tat` grows by T, on condition that `tat − now ≤ τ`.
+
+A failed condition returns the item as it was, which tells whether the request is over the limit. If DynamoDB fails, the request is allowed (fail open) and a metric is incremented.
 
 **Subjects:**
 - the user ID for authenticated routes,
@@ -846,7 +850,7 @@ Implementation is test-first.
   - the authorization matrix and route-declaration check,
   - RLS cross-tenant isolation,
   - CSRF, session fixation and expiry,
-  - a rate-limiter concurrency test (100 parallel requests; exactly the allowed number pass),
+  - a rate-limiter concurrency test (100 parallel requests; exactly the allowed number pass), run against DynamoDB Local in CI, because moto's in-process DynamoDB doesn't make conditional writes atomic,
   - a zip-bomb fixture,
   - redaction of sensitive log fields,
   - a test that fails if any free-text field from an upload could reach the prompt.

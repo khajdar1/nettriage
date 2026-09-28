@@ -10,7 +10,9 @@ Run `just` to list tasks. Backend commands run inside `backend/` with `uv run â€
 Windows machine, run Python tools as modules (`uv run python -m pytest`); host policy blocks
 some uv launchers and every unsigned executable outside trusted tools.
 Backend tests need Postgres: `just test` starts a local one first (`just db-up`, no Docker) and
-`just db-down` stops it; CI uses a Postgres 17 service container.
+`just db-down` stops it; CI uses a Postgres 17 service container. DynamoDB is mocked in-process
+with moto; the rate limiter's concurrency test needs DynamoDB Local, so it runs only in CI and
+is skipped locally.
 Deploys are owner actions (`docs/runbooks/setup-and-deploy.md`). Claude may run `just preflight`
 and `just plan-dev` when the owner asks, but never runs `aws login`, `just bootstrap`,
 `just store-grafana-token`, `just store-database-url` or `just deploy-*`.
