@@ -3,6 +3,8 @@ import random
 import time
 
 from flowmaker import make_flow
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from nettriage.domain.detection.engine import DETECTORS, detect
 from nettriage.domain.detection.model import Severity
@@ -66,3 +68,40 @@ def test_a_hundred_thousand_flows_are_detected_in_seconds() -> None:
     detect(flows)
 
     assert time.perf_counter() - started < 15
+
+
+ADDRESSES = ["10.0.0.5", "10.0.0.6", "192.168.1.9", "203.0.113.9", "2001:db8::1", "fd00::1"]
+LATEST = 4_102_444_800
+
+
+@settings(max_examples=150, deadline=None)
+@given(
+    st.lists(
+        st.tuples(
+            st.sampled_from(ADDRESSES),
+            st.sampled_from(ADDRESSES),
+            st.integers(0, 65_535),
+            st.sampled_from([22, 53, 443, 3389, 50_000]),
+            st.sampled_from([1, 6, 17]),
+            st.integers(0, 2**63 - 1),
+            st.integers(0, 2**63 - 1),
+            st.integers(0, LATEST),
+            st.integers(0, 900),
+            st.sampled_from(["ACCEPT", "REJECT"]),
+        ),
+        min_size=1,
+        max_size=80,
+    )
+)
+def test_any_valid_records_parse_and_detect_without_crashing(
+    rows: list[tuple[str, str, int, int, int, int, int, int, int, str]],
+) -> None:
+    lines = [
+        f"2 123456789012 eni-1 {src} {dst} {sport} {dport} {proto} {packets} {size} "
+        f"{start} {min(start + duration, LATEST)} {action} OK"
+        for src, dst, sport, dport, proto, packets, size, start, duration, action in rows
+    ]
+
+    result = detect(parse_flow_log(io.BytesIO(("\n".join(lines) + "\n").encode())).flows)
+
+    assert len(result.findings) <= 50

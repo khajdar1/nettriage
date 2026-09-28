@@ -1,6 +1,7 @@
 """`port_scan` v1 (spec §8.2): in any 5-minute window, one source reaches at least 100 distinct
 destination ports on one host (vertical) or at least 50 distinct hosts on one port
-(horizontal), with at least 80% of those flows REJECT or at most 3 packets."""
+(horizontal), with at least 80% of those flows REJECT or at most 3 packets. Replies (a server
+answering clients, see `is_reply`) are ignored."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from nettriage.domain.detection.model import (
     sample_evidence,
 )
 from nettriage.domain.detection.windows import Episode, sliding_episodes
-from nettriage.domain.flows import TCP, UDP, IPAddress, NetworkFlow, protocol_name
+from nettriage.domain.flows import TCP, UDP, IPAddress, NetworkFlow, is_reply, protocol_name
 
 DETECTOR_ID = "port_scan"
 VERSION = 1
@@ -39,7 +40,7 @@ def detect_port_scans(flows: Sequence[NetworkFlow]) -> list[Finding]:
     vertical: defaultdict[tuple[IPAddress, IPAddress, int], list[NetworkFlow]] = defaultdict(list)
     horizontal: defaultdict[tuple[IPAddress, int, int], list[NetworkFlow]] = defaultdict(list)
     for flow in flows:
-        if flow.protocol in SCAN_PROTOCOLS:
+        if flow.protocol in SCAN_PROTOCOLS and not is_reply(flow):
             vertical[(flow.src_ip, flow.dst_ip, flow.protocol)].append(flow)
             horizontal[(flow.src_ip, flow.dst_port, flow.protocol)].append(flow)
 

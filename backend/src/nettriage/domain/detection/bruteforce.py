@@ -8,7 +8,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from nettriage.domain.detection.model import (
     DetectorInfo,
@@ -113,11 +113,13 @@ class _SuccessIndex:
     """Large or long flows per (source, host, port), sorted by start, for the success check."""
 
     def __init__(self, to_service: dict[Target, list[NetworkFlow]]) -> None:
-        self._flows: dict[Target, list[NetworkFlow]] = {}
+        # Start times are computed once per target: rebuilding them per episode made the
+        # lookup quadratic on files with many bursts.
+        self._flows: dict[Target, tuple[list[NetworkFlow], list[datetime]]] = {}
         for target, group in to_service.items():
             candidates = [flow for flow in group if _is_success(flow)]
             if candidates:
-                self._flows[target] = candidates
+                self._flows[target] = (candidates, [flow.start for flow in candidates])
 
     def first_after(self, episode: Episode, targets: list[Target]) -> NetworkFlow | None:
         """The earliest success-like flow that starts after the episode's first attempt and
@@ -126,8 +128,7 @@ class _SuccessIndex:
         latest = episode.flows[-1].start + SUCCESS_WITHIN
         found: list[NetworkFlow] = []
         for target in targets:
-            candidates = self._flows.get(target, [])
-            starts = [flow.start for flow in candidates]
+            candidates, starts = self._flows.get(target, ([], []))
             found.extend(candidates[bisect_left(starts, earliest) : bisect_right(starts, latest)])
         return min(found, key=flow_order) if found else None
 

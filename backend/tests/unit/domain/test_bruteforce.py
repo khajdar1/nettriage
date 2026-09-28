@@ -1,3 +1,4 @@
+import time
 from ipaddress import ip_address
 
 from flowmaker import make_flow
@@ -140,3 +141,32 @@ def test_server_replies_from_port_22_are_not_attempts() -> None:
     ]
 
     assert detect_bruteforce(replies) == []
+
+
+def test_the_success_lookup_stays_linear_on_many_bursts() -> None:
+    """2,000 separate bursts with 40,000 success-like flows to the same service: the lookup
+    must not rescan every success candidate for every burst."""
+    bursts = [
+        make_flow(ATTACKER, SERVER, 22, at=burst * 3_600.0 + n, packets=12, action="ACCEPT")
+        for burst in range(2_000)
+        for n in range(30)
+    ]
+    sessions = [
+        make_flow(
+            ATTACKER,
+            SERVER,
+            22,
+            at=n * 180.0 + 90,
+            duration=2.0,
+            packets=400,
+            bytes=200_000,
+            action="ACCEPT",
+        )
+        for n in range(40_000)
+    ]
+
+    started = time.perf_counter()
+    findings = detect_bruteforce(bursts + sessions)
+
+    assert len(findings) == 2_000
+    assert time.perf_counter() - started < 1.5

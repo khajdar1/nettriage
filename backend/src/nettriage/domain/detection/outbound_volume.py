@@ -1,7 +1,8 @@
 """`outbound_volume` v1 (spec §8.2): an internal source sends at least 50 MB to one external
 destination within the file, and that volume's robust z-score against every internal host's
 largest outbound volume is at least 5. With fewer than 5 internal hosts, or a MAD of 0, only
-the absolute threshold applies."""
+the absolute threshold applies. Replies (a server answering a download, see `is_reply`) aren't
+outbound transfers and are ignored."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from nettriage.domain.detection.model import (
     fingerprint,
     sample_evidence,
 )
-from nettriage.domain.flows import IPAddress, NetworkFlow, protocol_name
+from nettriage.domain.flows import IPAddress, NetworkFlow, is_reply, protocol_name
 
 DETECTOR_ID = "outbound_volume"
 VERSION = 1
@@ -35,7 +36,12 @@ TECHNIQUES = ("T1048", "T1041", "T1567")
 def detect_outbound_volume(flows: Sequence[NetworkFlow]) -> list[Finding]:
     pairs: defaultdict[tuple[IPAddress, IPAddress], list[NetworkFlow]] = defaultdict(list)
     for flow in flows:
-        if flow.action == "ACCEPT" and is_internal(flow.src_ip) and not is_internal(flow.dst_ip):
+        if (
+            flow.action == "ACCEPT"
+            and not is_reply(flow)
+            and is_internal(flow.src_ip)
+            and not is_internal(flow.dst_ip)
+        ):
             pairs[(flow.src_ip, flow.dst_ip)].append(flow)
     totals = {pair: sum(flow.bytes for flow in group) for pair, group in pairs.items()}
     host_max: dict[IPAddress, int] = {}

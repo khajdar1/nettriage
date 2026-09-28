@@ -50,3 +50,23 @@ class NetworkFlow:
     line_no: int
     direction: Direction | None = None
     tcp_flags: int | None = None
+
+
+# VPC Flow Logs report TCP flags as FIN 1, SYN 2, RST 4 and SYN-ACK 18. The 0x10 (ACK) bit
+# appears only as part of SYN-ACK.
+TCP_SYN = 0x02
+TCP_SYN_ACK_BIT = 0x10
+MAX_SERVICE_PORT = 1023
+
+
+def is_reply(flow: NetworkFlow) -> bool:
+    """The responder's side of a connection: a server answering a client, not a flow the
+    source started. With TCP flags logged, SYN-ACK means a reply and a SYN without it means the
+    initiator (so a scan sent from source port 53 still counts). Otherwise a flow from a
+    service port (below 1024) to an unprivileged port is a reply."""
+    if flow.protocol == TCP and flow.tcp_flags is not None:
+        if flow.tcp_flags & TCP_SYN_ACK_BIT:
+            return True
+        if flow.tcp_flags & TCP_SYN:
+            return False
+    return flow.src_port <= MAX_SERVICE_PORT < flow.dst_port

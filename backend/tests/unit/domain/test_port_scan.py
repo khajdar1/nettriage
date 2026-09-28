@@ -132,3 +132,56 @@ def test_findings_are_identical_when_detection_runs_twice() -> None:
     flows = vertical(ATTACKER, 150) + horizontal("10.0.9.9", 60)
 
     assert detect_port_scans(flows) == detect_port_scans(list(flows))
+
+
+def test_ordinary_requests_before_a_scan_do_not_hide_it() -> None:
+    requests = [
+        make_flow(ATTACKER, TARGET, 443, at=n, packets=30, action="ACCEPT") for n in range(30)
+    ]
+
+    assert len(detect_port_scans(requests + vertical(ATTACKER, 110, start=240.0, spacing=0.5))) == 1
+
+
+def test_dns_replies_to_a_busy_client_are_not_a_scan() -> None:
+    replies = [
+        make_flow(
+            "10.0.0.10",
+            "10.0.1.50",
+            20_000 + n * 7,
+            at=n * 2.0,
+            src_port=53,
+            protocol=UDP,
+            packets=1,
+            bytes=180,
+            action="ACCEPT",
+        )
+        for n in range(150)
+    ]
+
+    assert detect_port_scans(replies) == []
+
+
+def test_syn_ack_replies_from_a_high_service_port_are_not_a_scan() -> None:
+    replies = [
+        make_flow(
+            TARGET,
+            ATTACKER,
+            30_000 + n,
+            at=n,
+            src_port=8_443,
+            packets=2,
+            action="ACCEPT",
+            tcp_flags=18,
+        )
+        for n in range(150)
+    ]
+
+    assert detect_port_scans(replies) == []
+
+
+def test_a_syn_scan_from_source_port_53_is_still_a_scan() -> None:
+    probes = [
+        make_flow(ATTACKER, TARGET, 2_000 + n, at=n, src_port=53, tcp_flags=2) for n in range(150)
+    ]
+
+    assert len(detect_port_scans(probes)) == 1

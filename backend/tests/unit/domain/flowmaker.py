@@ -25,6 +25,7 @@ def make_flow(
     packets: int = 1,
     bytes: int = 60,
     action: Action = "REJECT",
+    tcp_flags: int | None = None,
 ) -> NetworkFlow:
     """`at` and `duration` are seconds after 12:00:00 UTC on 2026-09-01."""
     start = T0 + timedelta(seconds=at)
@@ -41,4 +42,5 @@ def make_flow(
         action=action,
         source=SOURCE,
         line_no=next(_line_numbers),
+        tcp_flags=tcp_flags,
     )

@@ -145,3 +145,22 @@ def test_the_marked_share_must_hold_in_the_window() -> None:
 
     assert sliding_episodes(flows, lambda f: f.dst_port, 100, rejected, 80) == []
     assert len(sliding_episodes(flows, lambda f: f.dst_port, 100, rejected, 70)) == 1
+
+
+def test_ordinary_flows_just_before_a_scan_do_not_hide_it() -> None:
+    requests = [
+        make_flow("198.51.100.7", "10.0.1.20", 443, at=n, packets=30, action="ACCEPT")
+        for n in range(30)
+    ]
+    probes = [
+        make_flow("198.51.100.7", "10.0.1.20", 1_000 + n, at=240 + n * 0.5) for n in range(110)
+    ]
+
+    def scan_like(flow: NetworkFlow) -> bool:
+        return flow.action == "REJECT" or flow.packets <= 3
+
+    episodes = sliding_episodes(requests + probes, lambda f: f.dst_port, 100, scan_like, 80)
+
+    assert len(episodes) == 1
+    # The window starting at the last request holds it and all 110 probes: 111 ports, 99% marked.
+    assert episodes[0].peak_distinct == 111

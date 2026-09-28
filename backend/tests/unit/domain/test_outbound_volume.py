@@ -93,3 +93,22 @@ def test_inbound_internal_and_rejected_traffic_do_not_count() -> None:
     rejected = upload("10.0.5.200", EXFIL_DST, 300, action="REJECT")
 
     assert detect_outbound_volume(baseline() + inbound + internal + rejected) == []
+
+
+def test_a_web_server_answering_a_large_download_is_not_exfiltration() -> None:
+    response = [
+        make_flow(
+            "10.0.2.10",
+            "203.0.113.77",
+            51_000,
+            at=n * 30.0,
+            duration=25.0,
+            src_port=443,
+            packets=9_000,
+            bytes=12 * MB,
+            action="ACCEPT",
+        )
+        for n in range(10)
+    ]
+
+    assert detect_outbound_volume(baseline() + response) == []
