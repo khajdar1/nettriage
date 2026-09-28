@@ -1,9 +1,12 @@
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import boto3
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -14,6 +17,9 @@ from sqlalchemy.engine import URL
 from nettriage.adapters.postgres import create_database_engine, engine_url
 from nettriage.entrypoints.api.app import create_app
 from nettriage.platform.config import Settings
+
+if TYPE_CHECKING:
+    from types_boto3_dynamodb.client import DynamoDBClient
 
 TEST_DATABASE_ENV = "NETTRIAGE_TEST_DATABASE_URL"
 BACKEND = Path(__file__).resolve().parents[1]
@@ -100,3 +106,52 @@ def empty_database() -> Iterator[URL]:
     url = create_database(server)
     yield url
     drop_database(server, url)
+
+
+# The DynamoDB `runtime` table, mocked in-process by moto (spec §11.4). The concurrency test in
+# tests/security uses a real DynamoDB Local instead, because moto's writes aren't atomic.
+
+RUNTIME_TABLE = "nettriage-test-runtime"
+REGION = "eu-north-1"
+
+
+@dataclass(frozen=True)
+class RuntimeTable:
+    client: DynamoDBClient
+    name: str
+
+
+def create_runtime_table(client: DynamoDBClient, name: str) -> None:
+    """The same key schema as infra/modules/data."""
+    client.create_table(
+        TableName=name,
+        KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+        AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+
+
+@pytest.fixture
+def runtime_table() -> Iterator[RuntimeTable]:
+    from moto import mock_aws
+
+    with mock_aws():
+        client = boto3.client("dynamodb", region_name=REGION)
+        create_runtime_table(client, RUNTIME_TABLE)
+        yield RuntimeTable(client=client, name=RUNTIME_TABLE)
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = datetime(2026, 9, 28, 12, 0, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, delta: timedelta) -> None:
+        self.now += delta
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
