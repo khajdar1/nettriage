@@ -156,7 +156,8 @@ GitHub needs no deployment environments, variables or secrets for NetTriage.
    ```
    The planned changes appear in the terminal and as a PR comment titled
    `### Terraform plan: dev (<sha>)`: resource addresses only, never values. On the first
-   deploy it lists the dev stage's resources (all `create`).
+   deploy it lists the dev stage's resources (all `create`). The working tree must be clean
+   (commit or stash first) and must stay on the PR's commit while the plan runs.
 4. Claude runs the Copilot review loop. You read the diff and the threads, then **squash-merge**
    on GitHub. Claude never merges.
 5. Sign out: `aws logout --profile nettriage`. This ends the session, so repository code you run
@@ -224,10 +225,10 @@ passes, then run B2 again.
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
 | `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |
-| `STOP: Deploys run from main …`, `… uncommitted changes …` or `… differs from GitHub's main …` | Follow the command in the message |
+| `STOP: Deploys run from main …`, `… uncommitted changes …` or `… differs from GitHub's main …` | Follow the command in the message. `… uncommitted changes …` also applies to `just plan-dev` |
 | `STOP: No ci.yml or codeql.yml run found for <sha>…` | Push the branch (if you haven't already), wait for the workflow(s) to run for it, then plan or deploy again. `just plan-dev` only checks `ci.yml`; `just deploy-dev` checks both |
 | `STOP: ci.yml or codeql.yml for <sha> is still in_progress…` or `concluded 'failure'…` | Wait for CI, or fix it; only green commits are planned or deployed. Applies to `just plan-dev` (`ci.yml` only) and `just deploy-dev` (both) |
-| `STOP: The checkout changed during the deploy …` | Something changed the branch or the tree while the deploy was checking CI and downloading artifacts; nothing was applied. Check the tree, then run `just deploy-dev` again |
+| `STOP: The checkout changed during the deploy …` or `… during the plan …` | Something changed the branch or the tree while the command was checking CI and downloading artifacts, and it stopped before Terraform ran. Check the tree, then run the command again |
 | `STOP: Couldn't download … CI artifacts expire after 7 days …` | On GitHub, re-run the `ci` workflow for that commit, then deploy again |
 | `STOP: Smoke tests failed …` | Read the `FAIL` lines. Send them to Claude, or roll back |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |

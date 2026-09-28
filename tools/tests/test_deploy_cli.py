@@ -180,7 +180,7 @@ def test_failed_smoke_tests_fail_the_deploy(stage_dir: Path) -> None:
 
 
 def planning(listing: str, plan_output: str = "") -> FakeRun:
-    run = signed_in().on("git", "rev-parse", "HEAD", returns=f"{SHA}\n")
+    run = signed_in().on("git", "status", "--porcelain", returns="").on("git", "rev-parse", "HEAD", returns=f"{SHA}\n")
     run.on("gh", "run", "list", returns=listing).on("gh", "run", "download").on("gh", "pr", "comment")
     run.on("terraform", "plan", returns=plan_output).on("terraform")
     return healthy_account(run)
@@ -229,6 +229,55 @@ def test_plan_refuses_a_completed_but_failed_ci_run(stage_dir: Path) -> None:
     with pytest.raises(CommandError, match="only green commits are planned or deployed"):
         cli.plan(run, {}, "dev", post_comment=True)
     assert run.called("terraform") == []
+
+
+def test_plan_refuses_a_dirty_tree_before_any_gh_or_aws_call(stage_dir: Path) -> None:
+    run = FakeRun().on("git", "status", "--porcelain", returns=" M file.py\n")
+    with pytest.raises(CommandError, match="uncommitted changes"):
+        cli.plan(run, {}, "dev", post_comment=True)
+    assert run.called("gh") == []
+    assert run.called("aws") == []
+    assert run.called("terraform") == []
+
+
+def test_plan_refuses_a_tree_that_turns_dirty_after_the_ci_check(stage_dir: Path) -> None:
+    """require_clean_tree's own check passes; the tree turns dirty only afterwards (while the CI
+    check and artifact download run), so the pre-terraform recheck must catch it."""
+    porcelain_calls = {"n": 0}
+
+    def porcelain_status(call: Call) -> str:
+        porcelain_calls["n"] += 1
+        return "" if porcelain_calls["n"] == 1 else " M file.py\n"
+
+    run = healthy_account(signed_in()).on("git", "status", "--porcelain", returns=porcelain_status)
+    run.on("git", "rev-parse", "HEAD", returns=f"{SHA}\n")
+    run.on("gh", "run", "list", returns=runs((5, "completed", "success", "pull_request")))
+    run.on("gh", "run", "download")
+
+    with pytest.raises(CommandError, match="checkout changed during the plan"):
+        cli.plan(run, {}, "dev", post_comment=True)
+
+    assert run.called("terraform") == []
+    assert run.called("gh", "pr", "comment") == []
+
+
+def test_plan_refuses_a_head_that_moves_after_the_ci_check(stage_dir: Path) -> None:
+    head_calls = {"n": 0}
+
+    def head_sha_answer(call: Call) -> str:
+        head_calls["n"] += 1
+        return f"{SHA}\n" if head_calls["n"] == 1 else f"{'c' * 40}\n"
+
+    run = healthy_account(signed_in()).on("git", "status", "--porcelain", returns="")
+    run.on("git", "rev-parse", "HEAD", returns=head_sha_answer)
+    run.on("gh", "run", "list", returns=runs((5, "completed", "success", "pull_request")))
+    run.on("gh", "run", "download")
+
+    with pytest.raises(CommandError, match="checkout changed during the plan"):
+        cli.plan(run, {}, "dev", post_comment=True)
+
+    assert run.called("terraform") == []
+    assert run.called("gh", "pr", "comment") == []
 
 
 @pytest.fixture

@@ -97,13 +97,14 @@ def plan_comment(stage: str, sha: str, changes: list[str]) -> str:
 
 
 def plan(run: Runner, env: Mapping[str, str], stage: str, post_comment: bool) -> list[str]:
-    sha = gitguards.head_sha(run)
+    sha = gitguards.require_clean_tree(run)
     ci = github.require_success(run, config.CI_WORKFLOW, sha)
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
         tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
+        gitguards.require_unchanged_since(run, sha, "plan")
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
         changes = terraform.plan(run, tf_env, workdir)
         body = plan_comment(stage, sha, changes)
@@ -127,7 +128,7 @@ def deploy(run: Runner, env: Mapping[str, str], stage: str, smoke_main: SmokeMai
         dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
         web = github.download(run, ci.run_id, config.WEB_ARTIFACT, Path(scratch) / "web")
         tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
-        gitguards.require_unchanged_since(run, sha)
+        gitguards.require_unchanged_since(run, sha, "deploy")
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
         terraform.apply(run, tf_env, workdir)
         outputs = terraform.outputs(run, tf_env, workdir)
