@@ -87,7 +87,7 @@ def _finish_sign_in(request: Request, code: str | None, state: str | None) -> Re
     services = get_services(request)
     started_here = request.cookies.get(SIGN_IN_COOKIE, "")
     if not state or not hmac.compare_digest(started_here.encode(), state.encode()):
-        return sign_in_failed("expired")  # not started in this browser, or over 5 minutes ago
+        return sign_in_failed("expired")  # not started in this browser, or over 15 minutes ago
     try:
         login = services.login_states.take(state, services.clock())
     except BotoCoreError, ClientError:

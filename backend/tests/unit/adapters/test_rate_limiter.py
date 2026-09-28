@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from conftest import FakeClock, RuntimeTable
+from conftest import CountingClient, FakeClock, RuntimeTable
 
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.application.rate_limits import Policy
@@ -83,3 +83,51 @@ def test_limits_are_audited_at_most_once_per_minute_per_subject(
     later = limits.should_audit(POLICY, "user-1")
 
     assert (first, again, someone_else, later) == (True, False, True, True)
+
+
+def counting(table: RuntimeTable, clock: FakeClock) -> tuple[RateLimiter, CountingClient]:
+    client = CountingClient(table.client)
+    return RateLimiter(client, table.name, clock), client  # type: ignore[arg-type]
+
+
+def test_an_active_key_costs_one_write_per_allowed_request(
+    runtime_table: RuntimeTable, clock: FakeClock
+) -> None:
+    """The provisioned table has only 10 write units a second: a failed conditional update
+    costs a unit too, so the limiter starts with the update most likely to succeed."""
+    limits, client = counting(runtime_table, clock)
+
+    assert all(limits.check(POLICY, "user-1").allowed for _ in range(3))
+
+    assert client.calls["update_item"] == 3
+
+
+def test_a_limited_subject_is_refused_without_asking_dynamodb_until_it_may_retry(
+    runtime_table: RuntimeTable, clock: FakeClock
+) -> None:
+    """A flood from one subject must not spend the table's capacity: tat never decreases, so a
+    subject this process has seen over its limit stays over it until tat - tau."""
+    limits, client = counting(runtime_table, clock)
+    for _ in range(3):
+        limits.check(POLICY, "user-1")
+    writes = client.calls["update_item"]
+
+    refused = [limits.check(POLICY, "user-1") for _ in range(50)]
+    clock.advance(timedelta(seconds=1))
+    again = limits.check(POLICY, "user-1")
+
+    assert not any(decision.allowed for decision in refused)
+    assert {decision.retry_after_seconds for decision in refused} == {1}
+    assert client.calls["update_item"] == writes + 1
+    assert again.allowed
+
+
+def test_limits_are_sampled_for_the_audit_log_without_extra_writes(
+    runtime_table: RuntimeTable, clock: FakeClock
+) -> None:
+    limits, client = counting(runtime_table, clock)
+
+    sampled = [limits.should_audit(POLICY, "user-1") for _ in range(20)]
+
+    assert sampled.count(True) == 1
+    assert client.calls["put_item"] == 1

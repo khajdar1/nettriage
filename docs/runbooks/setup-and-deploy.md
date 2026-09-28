@@ -261,7 +261,7 @@ with the API directly.
 8. To sign in again later, repeat step 2; Cognito asks for your password and a fresh code from
    the app. A session lasts up to 12 hours, and ends after 60 minutes without activity.
 
-Do steps 2 to 5 in one go: the API gives a sign-in 5 minutes. If it takes longer, you land on
+Do steps 2 to 5 in one go: the API gives a sign-in 15 minutes. If it takes longer, you land on
 `/?sign_in=expired`; your account is kept, so start again at step 2 and just sign in. If you land
 on another `/?sign_in=...` address, see Part C.
 
@@ -295,7 +295,7 @@ passes, then run B2 again.
 | `STOP: Smoke tests failed …` | Read the `FAIL` lines. Send them to Claude, or roll back |
 | `FAIL  Cognito sign-in page loads` right after the first Plan 3b deploy | A new Cognito domain can take a few minutes to start answering. Wait 5 minutes, then run `just deploy-dev` again (Terraform has nothing left to change). If it still fails, send the output to Claude |
 | `FAIL  sign-in redirects to Cognito` or `FAIL  api limits requests per viewer ip` | Send the output to Claude. Sign-in, or rate limiting by IP, isn't working on the deployed stage |
-| The browser lands on `/?sign_in=expired` | The sign-in took longer than 5 minutes, was finished in a different browser from the one that started it, or a page was reloaded or opened twice. Start again from `/api/auth/login` |
+| The browser lands on `/?sign_in=expired` | The sign-in took longer than 15 minutes, was finished in a different browser from the one that started it, or a page was reloaded or opened twice. Start again from `/api/auth/login` |
 | The browser lands on `/?sign_in=failed` | The sign-in was cancelled, or Cognito's answer was refused. Start again; if it keeps happening, send Claude the time it happened (the logs record why, as `sign_in_failed`) |
 | The browser lands on `/?sign_in=unavailable` | DynamoDB, Neon or Cognito didn't answer. Wait a minute and start again; if it keeps happening, tell Claude |
 | The browser lands on `/?sign_in=disabled` | This account is disabled in the database. Tell Claude if that's unexpected |

@@ -1,8 +1,9 @@
 # The DynamoDB `runtime` table (spec §5.5): sessions, sign-in state and rate-limit keys, all
 # expiring through TTL. Provisioned capacity stays inside the Always Free 25 read and 25 write
-# units: prod gets 10 of each, dev 3.
+# units: each stage gets 10 of each (the owner raised dev from 3 in Plan 3b, because one looping
+# client could use up 3 write units a second and break sign-in for everyone).
 locals {
-  capacity = var.stage == "prod" ? 10 : 3
+  capacity = 10
 }
 
 resource "aws_dynamodb_table" "runtime" {

@@ -167,3 +167,27 @@ def test_keys_are_fetched_once_and_refetched_for_a_new_key_at_most_every_five_mi
         oidc.verify(rotated, "n")
 
     assert idp.jwks_requests == 2
+
+
+def test_a_failed_key_fetch_is_retried_on_the_next_sign_in(
+    idp: FakeIdentityProvider, clock: FakeClock
+) -> None:
+    """One network blip at a cold start must not block every sign-in on that Lambda instance
+    for 5 minutes."""
+    failures = [True]
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/jwks.json") and failures:
+            failures.pop()
+            raise httpx.ConnectError("blip", request=request)
+        return idp.transport().handle_request(request)
+
+    client = OidcClient(settings(), httpx.Client(transport=httpx.MockTransport(flaky)), clock)
+    with pytest.raises(OidcError, match="signing keys couldn't be fetched"):
+        client.identity(code=idp.issue_code(nonce="n"), code_verifier="v", nonce="n")
+
+    identity = client.identity(
+        code=idp.issue_code(nonce="n", sub="abc"), code_verifier="v", nonce="n"
+    )
+
+    assert identity.sub == "abc"

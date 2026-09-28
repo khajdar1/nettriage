@@ -76,6 +76,8 @@ The web pages for all of this come in Plan 6.
 
 ## Decisions this plan makes
 
+> **Amended after the final review (the owner's decisions, 2026-09-28):** the sign-in window is **15 minutes**, not 5 (the `LOGIN#` item and the `__Host-sign-in` cookie), and dev's runtime table gets **10 RCU / 10 WCU** like prod. The fix pass also made each rate-limit check cheaper, guarded session reads against bogus cookies, and retries a failed JWKS fetch on the next sign-in. The ledger's `Final:` lines list every change.
+
 1. **Plan 3 is split three ways.** The owner chose on 2026-09-28 to deliver sign-in before the organization API, as 3b and 3c. Each is a PR with its own deploy and something to try.
 2. **`users` gets row-level security (the owner's decision, 2026-09-28).**
    - A user sees their own row. In an org's transaction, they also see the members of that org, but only if they are one of them.

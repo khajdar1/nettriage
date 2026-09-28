@@ -1,9 +1,10 @@
 import os
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import boto3
@@ -145,6 +146,23 @@ def runtime_table() -> Iterator[RuntimeTable]:
         client = boto3.client("dynamodb", region_name=REGION)
         create_runtime_table(client, RUNTIME_TABLE)
         yield RuntimeTable(client=client, name=RUNTIME_TABLE)
+
+
+class CountingClient:
+    """A boto3 client that counts calls per operation, to prove when DynamoDB isn't asked."""
+
+    def __init__(self, client: DynamoDBClient) -> None:
+        self._client = client
+        self.calls: Counter[str] = Counter()
+
+    def __getattr__(self, name: str) -> Any:
+        method = getattr(self._client, name)
+
+        def counted(*args: Any, **kwargs: Any) -> Any:
+            self.calls[name] += 1
+            return method(*args, **kwargs)
+
+        return counted
 
 
 class FakeClock:

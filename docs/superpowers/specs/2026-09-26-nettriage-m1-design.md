@@ -190,7 +190,7 @@ sequenceDiagram
   participant D as DynamoDB
   participant C as Cognito
   B->>A: GET /api/auth/login?return_to=/app
-  A->>D: put LOGIN#state {code_verifier, nonce, return_to} (TTL 5 min)
+  A->>D: put LOGIN#state {code_verifier, nonce, return_to} (TTL 15 min)
   A-->>B: 302 to Cognito /oauth2/authorize (code flow, PKCE S256, state, nonce)
   B->>C: managed login + TOTP MFA
   C-->>B: 302 to /api/auth/callback?code&state
@@ -205,7 +205,7 @@ sequenceDiagram
 
 After the ID token is verified, Cognito's tokens are discarded. The app never calls anything on the user's behalf. `return_to` must be a relative path within the app (open-redirect protection).
 
-The login response also sets a 5-minute `__Host-sign-in` cookie holding `state`, and the callback accepts only a `state` equal to it (amended in Plan 3b). This binds each sign-in to the browser that started it: otherwise an attacker could send a victim the callback link of the attacker's own sign-in, and the victim would be signed in to the attacker's account (login CSRF).
+The login response also sets a 15-minute `__Host-sign-in` cookie holding `state`, and the callback accepts only a `state` equal to it (amended in Plan 3b; the owner raised the sign-in window from 5 to 15 minutes, Cognito's own sign-in session, because a first sign-up also verifies the email and sets up the authenticator app). This binds each sign-in to the browser that started it: otherwise an attacker could send a victim the callback link of the attacker's own sign-in, and the victim would be signed in to the attacker's account (login CSRF).
 
 ### 4.2 Upload → findings → AI explanation
 
@@ -319,13 +319,13 @@ The partition key is `pk` (string), and the TTL attribute is `expires_at`.
 |---|---|---|---|
 | Session | `SESSION#<sha256(session id)>` | `user_id`, `csrf_token`, `created_at`, `last_seen_at`, `ip`, `user_agent` | Idle 60 min, absolute 12 h (enforced in code; TTL does the cleanup) |
 | A user's sessions | `USERSESS#<user_id>` | String set of session hashes, used for "sign out everywhere" | 12 h after the last login |
-| Sign-in state | `LOGIN#<state>` | `code_verifier`, `nonce`, `return_to` | 5 min |
+| Sign-in state | `LOGIN#<state>` | `code_verifier`, `nonce`, `return_to` | 15 min |
 | Rate-limit key | `RL#<policy>#<subject>` | `tat` (GCRA theoretical arrival time, ms) | 2 × the policy window |
 | Org AI budget | `BUDGET#<org_id>#<yyyy-mm-dd>` | `tokens_reserved`, `tokens_used` | 2 days |
 | Global AI budget | `GBUDGET#<yyyy-mm-dd>` | `usd_reserved`, `usd_used` | 2 days |
 | Idempotency key | `IDEMP#<user_id>#<key>` | `request_hash`, `status`, `response` | 24 h |
 
-- **Capacity:** provisioned, within the Always Free 25 read and 25 write units per region. `prod` gets 10 RCU / 10 WCU and `dev` gets 3 / 3.
+- **Capacity:** provisioned, within the Always Free 25 read and 25 write units per region. Each stage gets 10 RCU / 10 WCU, 20 of the 25 in all (the owner raised `dev` from 3 / 3 in Plan 3b: one looping client could use up 3 write units a second and break sign-in for everyone).
 - **Session touches:** `last_seen_at` is rewritten at most once every 5 minutes to save writes.
 - **Failure policy:**
   - Sessions **fail closed**: if a session can't be validated, the request gets 401 or 503.

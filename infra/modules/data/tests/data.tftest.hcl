@@ -25,8 +25,8 @@ run "dev_capacity_stays_inside_always_free" {
   command = plan
 
   assert {
-    condition     = aws_dynamodb_table.runtime.billing_mode == "PROVISIONED" && aws_dynamodb_table.runtime.read_capacity == 3 && aws_dynamodb_table.runtime.write_capacity == 3
-    error_message = "dev gets 3 RCU and 3 WCU, provisioned (spec §5.5)."
+    condition     = aws_dynamodb_table.runtime.billing_mode == "PROVISIONED" && aws_dynamodb_table.runtime.read_capacity == 10 && aws_dynamodb_table.runtime.write_capacity == 10
+    error_message = "dev gets 10 RCU and 10 WCU, provisioned: with prod's 10, 20 of the 25 Always Free units (spec §5.5)."
   }
   assert {
     condition     = !aws_dynamodb_table.runtime.deletion_protection_enabled

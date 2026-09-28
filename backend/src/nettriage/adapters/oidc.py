@@ -151,12 +151,13 @@ class OidcClient:
         return self._keys[kid]
 
     def _may_refresh(self) -> bool:
-        """Fetch the keys on first use, and again for an unknown key at most every 5 minutes,
-        so tokens with made-up key IDs can't make us hammer Cognito."""
+        """Fetch the keys until a fetch succeeds, then again for an unknown key at most every 5
+        minutes, so tokens with made-up key IDs can't make us hammer Cognito. A failed fetch
+        (a network blip at a cold start) is retried by the next sign-in; sign-ins are
+        rate-limited per IP, which bounds those retries."""
         return self._fetched_at is None or self._clock() - self._fetched_at >= JWKS_REFRESH_INTERVAL
 
     def _refresh(self) -> None:
-        self._fetched_at = self._clock()
         try:
             response = self._http.get(self.settings.jwks_url)
             response.raise_for_status()
@@ -168,3 +169,4 @@ class OidcClient:
             }
         except httpx.HTTPError, ValueError, KeyError, TypeError, jwt.PyJWTError:
             raise OidcError("Cognito's signing keys couldn't be fetched") from None
+        self._fetched_at = self._clock()

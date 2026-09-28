@@ -8,6 +8,12 @@ by a write, so parallel requests can't both take the last slot:
 
 A failed condition returns the item as it was, which tells us whether the request is over the
 limit. DynamoDB errors fail open: the request is allowed and the decision is marked `degraded`.
+
+The table's capacity is small (10 writes a second), and a failed conditional update costs a
+write too. So each process remembers the last `tat` it saw per key. `tat` never decreases, so:
+- a key known to be over its limit is refused locally, without a write, until it may retry;
+- an active key starts with update 2, and a new or idle one with update 1.
+The audit-log sample is remembered the same way.
 """
 
 from __future__ import annotations
@@ -30,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 ATTEMPTS = 3
 AUDIT_SAMPLE_WINDOW = timedelta(minutes=1)
+# Each process remembers at most this many keys; beyond it, it starts again from nothing.
+MAX_REMEMBERED = 10_000
 
 
 class RateLimiter:
@@ -37,25 +45,34 @@ class RateLimiter:
         self._client = client
         self._table = table
         self._clock = clock
+        self._known_tat: dict[str, int] = {}
+        self._audited_until: dict[str, int] = {}
 
     def check(self, policy: Policy, subject: str) -> Decision:
         now_moment = self._clock()
         now = epoch_millis(now_moment)
-        key: dict[str, AttributeValueTypeDef] = {"pk": {"S": f"RL#{policy.name}#{subject}"}}
+        name = f"RL#{policy.name}#{subject}"
+        known = self._known_tat.get(name)
+        if known is not None and known - now > policy.tolerance_ms:
+            return limited(policy, known, now)  # still over the limit: tat never decreases
+        key: dict[str, AttributeValueTypeDef] = {"pk": {"S": name}}
         expires: AttributeValueTypeDef = {"N": str(epoch_seconds(now_moment + 2 * policy.period))}
+        active = known is not None and known > now
         try:
             for _ in range(ATTEMPTS):
-                fresh = now + policy.interval_ms
-                succeeded, tat = self._update(
-                    key,
-                    "SET tat = :fresh, expires_at = :expires",
-                    "attribute_not_exists(tat) OR tat <= :now",
-                    {":fresh": {"N": str(fresh)}, ":now": {"N": str(now)}, ":expires": expires},
-                )
-                if succeeded:
-                    return allowed(policy, fresh, now)
-                if tat is not None and tat - now > policy.tolerance_ms:
-                    return limited(policy, tat, now)
+                if not active:
+                    fresh = now + policy.interval_ms
+                    succeeded, tat = self._update(
+                        key,
+                        "SET tat = :fresh, expires_at = :expires",
+                        "attribute_not_exists(tat) OR tat <= :now",
+                        {":fresh": {"N": str(fresh)}, ":now": {"N": str(now)}, ":expires": expires},
+                    )
+                    if succeeded:
+                        return self._remember(name, fresh, allowed(policy, fresh, now))
+                    if tat is not None and tat - now > policy.tolerance_ms:
+                        return self._remember(name, tat, limited(policy, tat, now))
+                active = False
                 succeeded, tat = self._update(
                     key,
                     "SET tat = tat + :interval, expires_at = :expires",
@@ -68,9 +85,10 @@ class RateLimiter:
                     },
                 )
                 if succeeded and tat is not None:
-                    return allowed(policy, tat, now)
+                    return self._remember(name, tat, allowed(policy, tat, now))
                 if tat is not None and tat - now > policy.tolerance_ms:
-                    return limited(policy, tat, now)
+                    return self._remember(name, tat, limited(policy, tat, now))
+                # No tat, or tat <= now: the key was new or idle after all; start with update 1.
         except BotoCoreError, ClientError:
             logger.warning("rate_limit_failed_open", extra={"policy": policy.name})
             return failed_open(policy)
@@ -81,11 +99,15 @@ class RateLimiter:
         """True at most once per subject and policy per minute: the audit log samples
         `ratelimit.limited` (spec §9.4)."""
         now = self._clock()
+        name = f"RLAUDIT#{policy.name}#{subject}"
+        if epoch_millis(now) < self._audited_until.get(name, 0):
+            return False
+        _bounded(self._audited_until)[name] = epoch_millis(now + AUDIT_SAMPLE_WINDOW)
         try:
             self._client.put_item(
                 TableName=self._table,
                 Item={
-                    "pk": {"S": f"RLAUDIT#{policy.name}#{subject}"},
+                    "pk": {"S": name},
                     "expires_at": {"N": str(epoch_seconds(now + AUDIT_SAMPLE_WINDOW))},
                 },
                 ConditionExpression="attribute_not_exists(pk) OR expires_at <= :now",
@@ -100,6 +122,10 @@ class RateLimiter:
             logger.warning("rate_limit_audit_sample_failed", extra={"policy": policy.name})
             return False
         return True
+
+    def _remember(self, name: str, tat: int, decision: Decision) -> Decision:
+        _bounded(self._known_tat)[name] = tat
+        return decision
 
     def _update(
         self,
@@ -130,6 +156,12 @@ class RateLimiter:
                 ).get("Item")
             return False, _tat(item)
         return True, _tat(response.get("Attributes"))
+
+
+def _bounded(memory: dict[str, int]) -> dict[str, int]:
+    if len(memory) >= MAX_REMEMBERED:
+        memory.clear()
+    return memory
 
 
 def _tat(item: dict[str, Any] | None) -> int | None:

@@ -6,18 +6,24 @@ declares neither.
 - `SignedIn` needs a valid session. It fails closed: an unreadable session store gives 503.
   State-changing methods also pass the CSRF checks. Requests are rate-limited per user, and
   state-changing ones also by `api.mutation.user`.
+
+The edge lets any request with a `__Host-session` cookie through, so bogus cookies must not
+each cost a DynamoDB read: a value that can't be a session ID is refused unread, and an IP that
+keeps presenting unknown sessions is refused unread for a while (`UNKNOWN_SESSIONS_PER_IP`).
 """
 
 from __future__ import annotations
 
 import hmac
 import logging
-from typing import Annotated
+import re
+from typing import Annotated, NoReturn
 from uuid import UUID
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import Depends, HTTPException, Request
 
+from nettriage.adapters.runtime_table import epoch_millis
 from nettriage.application.rate_limits import POLICIES, Policy, ip_subject
 from nettriage.application.sessions import COOKIE_NAME, Session
 from nettriage.entrypoints.api.auditing import VIEWER_ADDRESS, audit
@@ -27,6 +33,7 @@ from nettriage.entrypoints.api.services import Services, get_services
 logger = logging.getLogger(__name__)
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+SESSION_ID = re.compile(r"[A-Za-z0-9_-]{43}")  # 32 bytes, base64url without padding
 SAME_SITE = frozenset({"same-origin", "none"})
 
 
@@ -101,13 +108,19 @@ def _valid_session(request: Request, services: Services) -> Session:
     session_id = request.cookies.get(COOKIE_NAME)
     if not session_id:
         raise unauthorized()
+    subject = ip_subject(request.headers.get(VIEWER_ADDRESS))
+    now = epoch_millis(services.clock())
+    if subject is not None and services.unknown_sessions.exhausted(subject, now):
+        raise unauthorized()
+    if not SESSION_ID.fullmatch(session_id):
+        _unknown_session(services, subject, now)
     try:
         session = services.sessions.get(session_id)
     except BotoCoreError, ClientError:
         logger.exception("session_read_failed")
         raise unavailable("Signing in") from None
     if session is None:
-        raise unauthorized()
+        _unknown_session(services, subject, now)
     if session.is_expired(services.clock()):
         try:
             services.sessions.delete(session)
@@ -115,6 +128,12 @@ def _valid_session(request: Request, services: Services) -> Session:
             logger.warning("expired_session_delete_failed")
         raise unauthorized()
     return session
+
+
+def _unknown_session(services: Services, subject: str | None, now: int) -> NoReturn:
+    if subject is not None:
+        services.unknown_sessions.hit(subject, now)
+    raise unauthorized()
 
 
 def _check_csrf(request: Request, services: Services, session: Session) -> None:

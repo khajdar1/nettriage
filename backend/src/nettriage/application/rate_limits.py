@@ -49,6 +49,31 @@ POLICIES: dict[str, Policy] = {
 }
 
 
+# Not one of §6.5's policies, and not stored in DynamoDB: a per-process guard on how many
+# unknown session IDs one IP may present before the API stops spending a DynamoDB read on each.
+UNKNOWN_SESSIONS_PER_IP = Policy("unknown-session.ip", 10, timedelta(minutes=1), 5)
+
+
+class LocalLimiter:
+    """GCRA kept in this process's memory. It costs nothing to check, but each Lambda instance
+    counts on its own, so it only guards what must not cost a DynamoDB call."""
+
+    MAX_SUBJECTS = 10_000
+
+    def __init__(self, policy: Policy) -> None:
+        self.policy = policy
+        self._tats: dict[str, int] = {}
+
+    def exhausted(self, subject: str, now_ms: int) -> bool:
+        tat = self._tats.get(subject)
+        return tat is not None and tat - now_ms > self.policy.tolerance_ms
+
+    def hit(self, subject: str, now_ms: int) -> None:
+        if len(self._tats) >= self.MAX_SUBJECTS:
+            self._tats.clear()
+        self._tats[subject] = max(self._tats.get(subject, now_ms), now_ms) + self.policy.interval_ms
+
+
 @dataclass(frozen=True)
 class Decision:
     policy: Policy

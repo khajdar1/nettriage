@@ -198,13 +198,13 @@ def test_a_sign_in_finished_in_another_browser_is_refused(
     assert COOKIE_NAME not in victim.cookies
 
 
-def test_the_sign_in_cookie_lives_five_minutes_and_the_callback_clears_it(
+def test_the_sign_in_cookie_lives_fifteen_minutes_and_the_callback_clears_it(
     database_client: TestClient, idp: FakeIdentityProvider
 ) -> None:
     login = database_client.get("/api/auth/login", follow_redirects=False)
     cookie = set_cookie(login, "__Host-sign-in")
     assert cookie is not None
-    for attribute in ("Max-Age=300", "Path=/", "Secure", "HttpOnly", "SameSite=lax"):
+    for attribute in ("Max-Age=900", "Path=/", "Secure", "HttpOnly", "SameSite=lax"):
         assert attribute in cookie
 
     callback = finish_sign_in(

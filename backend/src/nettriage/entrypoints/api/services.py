@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
 
 from fastapi import Request
@@ -14,6 +14,7 @@ from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
 from nettriage.application.clock import Clock
+from nettriage.application.rate_limits import UNKNOWN_SESSIONS_PER_IP, LocalLimiter
 from nettriage.platform.metrics import AppMetrics
 
 
@@ -26,6 +27,9 @@ class Services:
     oidc: OidcClient
     clock: Clock
     metrics: AppMetrics
+    unknown_sessions: LocalLimiter = field(
+        default_factory=lambda: LocalLimiter(UNKNOWN_SESSIONS_PER_IP)
+    )
 
     @property
     def app_origin(self) -> str:

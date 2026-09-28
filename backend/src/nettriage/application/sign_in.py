@@ -6,14 +6,18 @@ import base64
 import hashlib
 import secrets
 from dataclasses import dataclass
+from datetime import timedelta
 
 DEFAULT_RETURN_TO = "/app"
 MAX_RETURN_TO = 512
+# How long a sign-in may take, from the login redirect to the callback. A first sign-up also
+# verifies the email and sets up the authenticator app, so it gets Cognito's own 15 minutes.
+SIGN_IN_WINDOW = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
 class LoginState:
-    """What the callback needs from the login that started it; kept for 5 minutes."""
+    """What the callback needs from the login that started it; kept for SIGN_IN_WINDOW."""
 
     code_verifier: str
     nonce: str

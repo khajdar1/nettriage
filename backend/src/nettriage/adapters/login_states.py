@@ -1,20 +1,20 @@
 """Sign-in state in the DynamoDB `runtime` table (spec §4.1, §5.5): `LOGIN#<state>` holds the
-PKCE verifier, the nonce and where to return, for 5 minutes, and can be taken only once."""
+PKCE verifier, the nonce and where to return, for 15 minutes, and can be taken only once."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from botocore.exceptions import ClientError
 
 from nettriage.adapters.runtime_table import epoch_seconds, is_condition_failure
-from nettriage.application.sign_in import LoginState
+from nettriage.application.sign_in import SIGN_IN_WINDOW, LoginState
 
 if TYPE_CHECKING:
     from types_boto3_dynamodb.client import DynamoDBClient
 
-LOGIN_STATE_TTL = timedelta(minutes=5)
+LOGIN_STATE_TTL = SIGN_IN_WINDOW
 
 
 class LoginStateStore:
