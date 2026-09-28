@@ -19,6 +19,7 @@ from nettriage.domain.parsing.vpc_records import (
 )
 
 GZIP_MAGIC = b"\x1f\x8b"
+UTF8_BOM = b"\xef\xbb\xbf"
 CHUNK_BYTES = 64 * 1024
 MAX_REJECTED_SAMPLES = 20
 SAMPLE_CHARS = 120
@@ -167,6 +168,8 @@ class _Parser:
     def feed(self, raw: bytes) -> None:
         self._line_no += 1
         raw = raw.rstrip(b"\r")
+        if self._line_no == 1 and raw.startswith(UTF8_BOM):
+            raw = raw[len(UTF8_BOM) :]
         try:
             text = raw.decode("ascii")
         except UnicodeDecodeError:
@@ -182,6 +185,8 @@ class _Parser:
                 raise FlowLogError("not_a_flow_log", exc.reason) from None
             if self._layout.has_header:
                 return
+        elif self._layout.has_header and tuple(text.split()) == self._layout.fields:
+            return  # Concatenated S3 objects each start with the same header.
         self._count_row()
         try:
             self._flows.append(parse_record(text, self._layout, self._line_no))
@@ -219,5 +224,6 @@ class _Parser:
     def _reject(self, raw: bytes, reason: str) -> None:
         self._rows_rejected += 1
         if len(self._samples) < MAX_REJECTED_SAMPLES:
-            text = raw[:SAMPLE_CHARS].decode("ascii", errors="replace")
+            # Printable ASCII only: NUL breaks Postgres jsonb, and escape codes reach the UI.
+            text = "".join(chr(b) if 0x20 <= b <= 0x7E else "�" for b in raw[:SAMPLE_CHARS])
             self._samples.append(RejectedSample(self._line_no, reason, text))

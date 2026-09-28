@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
-from ipaddress import ip_address
+from ipaddress import IPv6Address, ip_address
 from typing import cast
 
 from nettriage.domain.flows import Action, Direction, FlowSource, IPAddress, NetworkFlow
@@ -36,8 +36,10 @@ SKIPPED_STATUSES: frozenset[str] = frozenset({"NODATA", "SKIPDATA"})
 NULL = "-"
 MAX_PORT = 65_535
 MAX_PROTOCOL = 255
-# 9999-12-31T23:59:59Z: the largest Unix time a datetime can hold.
-MAX_EPOCH_SECONDS = 253_402_300_799
+# 2100-01-01T00:00:00Z. Later times are corrupt, and some platforms can't convert them.
+MAX_EPOCH_SECONDS = 4_102_444_800
+# Postgres bigint, where packet and byte counts are stored.
+MAX_COUNT = 2**63 - 1
 _FIELD_NAME = re.compile(r"[a-z][a-z0-9-]*")
 
 
@@ -118,9 +120,11 @@ def parse_record(line: str, layout: Layout, line_no: int) -> NetworkFlow:
     action = required("action")
     if action not in ("ACCEPT", "REJECT"):
         raise RecordError("bad_action")
+    # Addresses stay as the interface saw them. pkt-srcaddr/pkt-dstaddr aren't substituted:
+    # on a NAT gateway's inbound leg that would duplicate the instance's own record.
     return NetworkFlow(
-        src_ip=_optional_address(value("pkt-srcaddr")) or src_ip,
-        dst_ip=_optional_address(value("pkt-dstaddr")) or dst_ip,
+        src_ip=src_ip,
+        dst_ip=dst_ip,
         src_port=_bounded(required("srcport"), MAX_PORT, "bad_port"),
         dst_port=_bounded(required("dstport"), MAX_PORT, "bad_port"),
         protocol=_bounded(required("protocol"), MAX_PROTOCOL, "bad_protocol"),
@@ -138,16 +142,13 @@ def parse_record(line: str, layout: Layout, line_no: int) -> NetworkFlow:
 
 def _address(text: str) -> IPAddress:
     try:
-        return ip_address(text)
+        address = ip_address(text)
     except ValueError:
         raise RecordError("bad_address") from None
-
-
-def _optional_address(text: str | None) -> IPAddress | None:
-    try:
-        return ip_address(text) if text is not None else None
-    except ValueError:
-        return None
+    if isinstance(address, IPv6Address) and address.scope_id is not None:
+        # A zone ID ("fe80::1%eth0") is free text; it must never ride along in a typed field.
+        raise RecordError("bad_address")
+    return address
 
 
 def _is_number(text: str) -> bool:
@@ -162,7 +163,7 @@ def _bounded(text: str, maximum: int, reason: str) -> int:
 
 
 def _count(text: str) -> int:
-    if not _is_number(text):
+    if not _is_number(text) or int(text) > MAX_COUNT:
         raise RecordError("bad_count")
     return int(text)
 

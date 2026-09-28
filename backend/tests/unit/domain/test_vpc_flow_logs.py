@@ -214,3 +214,34 @@ def test_mixed_lines_respect_the_limits(lines: list[str]) -> None:
     else:
         assert result.rows_parsed + result.rows_rejected + result.rows_skipped <= 40
         assert all(len(sample.text) <= 120 for sample in result.rejected_samples)
+
+
+def test_rejected_samples_carry_no_control_characters() -> None:
+    lines = [record(n) for n in range(40)] + ["bad\x00line\x1b[31m red"]
+
+    result = parse("\n".join(lines))
+
+    assert result.rejected_samples[0].text == "bad�line�[31m red"
+
+
+def test_concatenated_s3_objects_repeat_their_header_and_still_parse() -> None:
+    objects = [
+        gzip.compress(
+            ("\n".join([HEADER, *(record(10 * part + n) for n in range(15))]) + "\n").encode()
+        )
+        for part in range(5)
+    ]
+
+    result = parse(b"".join(objects))
+
+    assert result.rows_parsed == 75
+    assert result.rows_rejected == 0
+
+
+def test_a_utf8_byte_order_mark_before_the_header_is_ignored() -> None:
+    text = "﻿" + "\n".join([HEADER, record(1), record(2)]) + "\n"
+
+    result = parse(text.encode("utf-8"))
+
+    assert result.has_header
+    assert result.rows_parsed == 2
