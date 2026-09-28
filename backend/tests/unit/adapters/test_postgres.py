@@ -17,6 +17,7 @@ def test_remote_hosts_always_verify_tls_and_skip_prepared_statements() -> None:
 
     assert connect_args(url) == {
         "prepare_threshold": None,
+        "connect_timeout": 10,
         "sslmode": "verify-full",
         "sslrootcert": certifi.where(),
     }
@@ -25,4 +26,4 @@ def test_remote_hosts_always_verify_tls_and_skip_prepared_statements() -> None:
 def test_a_local_test_server_needs_no_tls() -> None:
     url = engine_url("postgresql://postgres:@127.0.0.1:55432/postgres")
 
-    assert connect_args(url) == {"prepare_threshold": None}
+    assert connect_args(url) == {"prepare_threshold": None, "connect_timeout": 10}

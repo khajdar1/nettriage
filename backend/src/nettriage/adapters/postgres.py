@@ -16,6 +16,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+CONNECT_TIMEOUT_SECONDS = 10
 
 
 def engine_url(url: str) -> URL:
@@ -25,8 +26,9 @@ def engine_url(url: str) -> URL:
 
 def connect_args(url: URL) -> dict[str, Any]:
     """Remote hosts always use `sslmode=verify-full` against certifi's CA bundle, whatever the URL
-    says; only a local test server may skip TLS."""
-    args: dict[str, Any] = {"prepare_threshold": None}
+    says; only a local test server may skip TLS. A connection attempt gives up after 10 seconds,
+    well inside the API's 29-second timeout, instead of psycopg's default of about two minutes."""
+    args: dict[str, Any] = {"prepare_threshold": None, "connect_timeout": CONNECT_TIMEOUT_SECONDS}
     if url.host not in LOCAL_HOSTS:
         args |= {"sslmode": "verify-full", "sslrootcert": certifi.where()}
     return args

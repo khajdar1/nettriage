@@ -292,6 +292,8 @@ Tenant tables use `ON DELETE CASCADE` from `organizations`, so deleting an org r
 
 A dedicated test runs a query with no org filter and must receive zero rows from other organizations.
 
+`users` also has row-level security (the owner's decision, 2026-09-28, Plan 3b). A user sees their own row, and in an organization's transaction the members of that organization. Sign-in finds or creates the user through a `SECURITY DEFINER` function, because the API's role can't read or insert other users' rows.
+
 ### 5.4 Database roles and grants
 
 | Role | Used by | Rights |
