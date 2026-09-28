@@ -13,9 +13,16 @@ lint:
 fmt:
     cd backend && uv run python -m ruff format . && uv run python -m ruff check --fix .
 
-# Backend: tests
-test:
-    cd backend && uv run python -m pytest --cov=nettriage.domain --cov-report=term-missing --cov-fail-under=85
+# Backend: tests. Integration tests need Postgres, so this starts the local one first.
+test: db-up
+    cd backend && NETTRIAGE_TEST_DATABASE_URL="$(cat ../.localdb/url)" uv run python -m pytest --cov=nettriage.domain --cov-report=term-missing --cov-fail-under=85
+
+# Local Postgres for tests, without Docker (tools/localdb.py); it keeps running until db-down
+db-up:
+    uv run --no-project --python 3.12 --with pgserver==0.1.4 python tools/localdb.py up
+
+db-down:
+    uv run --no-project --python 3.12 --with pgserver==0.1.4 python tools/localdb.py down
 
 # Tools: tests for the build, smoke and pinned-actions scripts
 tools-test:
