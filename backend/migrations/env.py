@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 
 from alembic import context
 
@@ -31,4 +32,16 @@ def run_migrations() -> None:
         engine.dispose()
 
 
-run_migrations()
+def main() -> None:
+    """Run the migrations. On failure, first print one `Error:` line naming the cause: the
+    deploy shows only that line (tools/deploy/runner.py), and a SQLAlchemy error's last line
+    is just a link to its docs."""
+    try:
+        run_migrations()
+    except Exception as exc:
+        cause = str(exc).strip().splitlines()[0] if str(exc).strip() else "no details"
+        print(f"Error: {type(exc).__name__}: {cause}", file=sys.stderr)
+        raise
+
+
+main()

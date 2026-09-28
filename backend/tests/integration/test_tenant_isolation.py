@@ -30,17 +30,131 @@ def run_as_api(database: Database, statement: str, org_id: UUID, **params: objec
 
 
 def test_a_query_without_an_org_filter_sees_only_its_own_org(database: Database) -> None:
-    """The spec's dedicated isolation test: no WHERE clause, and still no other tenant's rows."""
+    """The spec's dedicated isolation test: no WHERE clause, and still no other tenant's rows,
+    with both settings set as the API sets them, even for a user who belongs to both orgs."""
     mine, theirs = add_tenant(database.admin), add_tenant(database.admin)
+    with database.admin.begin() as connection:
+        add_member(connection, theirs.org_id, mine.owner_id, "viewer")
 
-    with tenant_transaction(database.app_api, org_id=mine.org_id) as connection:
+    with tenant_transaction(
+        database.app_api, org_id=mine.org_id, user_id=mine.owner_id
+    ) as connection:
         seen = {
             table: org_ids(connection, table)
             for table in ("organizations", "memberships", "invitations")
         }
 
     assert seen == {table: {mine.org_id} for table in seen}
-    assert all(theirs.org_id not in ids for ids in seen.values())
+
+
+def two_orgs_one_user(database: Database) -> tuple[UUID, UUID, UUID]:
+    """(A, B, U): U owns A and is a viewer in B."""
+    mine, theirs = add_tenant(database.admin), add_tenant(database.admin)
+    with database.admin.begin() as connection:
+        add_member(connection, theirs.org_id, mine.owner_id, "viewer")
+    return mine.org_id, theirs.org_id, mine.owner_id
+
+
+def remaining(database: Database, statement: str, **params: object) -> int:
+    with database.admin.begin() as connection:
+        count: int = connection.execute(text(statement), params).scalar_one()
+    return count
+
+
+def test_another_tenants_org_cannot_be_deleted(database: Database) -> None:
+    a, b, user = two_orgs_one_user(database)
+
+    with tenant_transaction(database.app_api, org_id=a, user_id=user) as connection:
+        deleted = connection.execute(
+            text("DELETE FROM organizations WHERE id = :b"), {"b": b}
+        ).rowcount
+
+    assert deleted == 0
+    assert remaining(database, "SELECT count(*) FROM organizations WHERE id = :b", b=b) == 1
+
+
+def test_leaving_without_an_org_filter_only_leaves_this_org(database: Database) -> None:
+    a, b, user = two_orgs_one_user(database)
+
+    with tenant_transaction(database.app_api, org_id=a, user_id=user) as connection:
+        deleted = connection.execute(
+            text("DELETE FROM memberships WHERE user_id = :user"), {"user": user}
+        ).rowcount
+
+    assert deleted == 1
+    assert (
+        remaining(
+            database,
+            "SELECT count(*) FROM memberships WHERE org_id = :b AND user_id = :user",
+            b=b,
+            user=user,
+        )
+        == 1
+    )
+
+
+def test_another_tenants_org_and_roles_cannot_be_changed(database: Database) -> None:
+    a, b, user = two_orgs_one_user(database)
+
+    with tenant_transaction(database.app_api, org_id=a, user_id=user) as connection:
+        renamed = connection.execute(
+            text("UPDATE organizations SET name = 'Taken over' WHERE id = :b"), {"b": b}
+        ).rowcount
+        promoted = connection.execute(
+            text("UPDATE memberships SET role = 'owner' WHERE org_id = :b"), {"b": b}
+        ).rowcount
+
+    assert (renamed, promoted) == (0, 0)
+
+
+def test_the_api_role_can_run_an_orgs_whole_lifecycle(database: Database) -> None:
+    """Every write Plan 3b's endpoints need, as app_api, inside the org's own transaction."""
+    org, owner, member = uuid7(), uuid7(), uuid7()
+    with database.app_api.begin() as connection:  # just-in-time users need no tenant
+        for user in (owner, member):
+            connection.execute(
+                text("INSERT INTO users (id, cognito_sub, email) VALUES (:id, :sub, :email)"),
+                {"id": user, "sub": f"sub-{user}", "email": f"{user}@example.com"},
+            )
+
+    with tenant_transaction(database.app_api, org_id=org, user_id=owner) as connection:
+        connection.execute(
+            text(
+                "INSERT INTO organizations (id, name, slug, created_by) "
+                "VALUES (:id, 'New org', :slug, :owner)"
+            ),
+            {"id": org, "slug": f"org-{org.hex}", "owner": owner},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO memberships (org_id, user_id, role) VALUES "
+                "(:org, :owner, 'owner'), (:org, :member, 'viewer')"
+            ),
+            {"org": org, "owner": owner, "member": member},
+        )
+        add_invitation(connection, org, owner, "invitee@example.com")
+        connection.execute(
+            text(
+                "UPDATE memberships SET role = 'analyst' WHERE org_id = :org AND user_id = :member"
+            ),
+            {"org": org, "member": member},
+        )
+        connection.execute(
+            text("UPDATE organizations SET name = 'Renamed' WHERE id = :org"), {"org": org}
+        )
+        connection.execute(
+            text("DELETE FROM memberships WHERE org_id = :org AND user_id = :member"),
+            {"org": org, "member": member},
+        )
+
+    with tenant_transaction(database.app_api, user_id=owner) as connection:  # "my orgs"
+        assert org_ids(connection, "organizations") == {org}
+
+    with tenant_transaction(database.app_api, org_id=org, user_id=owner) as connection:
+        deleted = connection.execute(
+            text("DELETE FROM organizations WHERE id = :org"), {"org": org}
+        ).rowcount
+    assert deleted == 1
 
 
 @pytest.mark.parametrize("table", TENANT_TABLES)

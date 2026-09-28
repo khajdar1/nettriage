@@ -82,6 +82,7 @@ Uploads, findings and AI tables come with Plans 4 and 5.
    - The settings are read through `NULLIF(current_setting(…, true), '')`. Once a pooled connection has held a transaction-local value, Postgres returns `''` rather than NULL.
    - `tenant_transaction` always sets both values, to `''` when absent.
    - An organization is visible when it's the transaction's org or one the user is a member of, for "my organizations"; writes go only to the transaction's org.
+   - *Amended by the final review:* inside an org's transaction only that org is visible. The user's other orgs and memberships show only when no org is set, so "my organizations" runs in a user-only transaction. The policies are split per command (read, insert, update, delete), so UPDATE and DELETE never use the wider read rule.
    - `users` has no row-level security: the spec lists tenant tables only, and Plan 3b's repositories scope user reads.
    - `audit_log` rows are read per org, and may be written with no org (sign-in events).
 6. **A pending invitation is one that's neither accepted nor revoked.** A unique index can't call `now()`, so expiry isn't part of the uniqueness rule. Plan 3b revokes an expired invitation before re-inviting the same email.

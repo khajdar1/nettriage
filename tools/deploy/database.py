@@ -65,7 +65,10 @@ def migrate(run: Runner, env: Mapping[str, str], owner_url: str) -> None:
             redact=[owner_url, urlsplit(owner_url).password or owner_url],
         )
     except CommandError as exc:
-        raise CommandError(f"Database migrations failed; nothing was deployed. {exc}") from exc
+        reason = str(exc).partition(" failed with ")[2] or str(exc)  # drop the interpreter path
+        raise CommandError(
+            f"Database migrations failed; nothing was deployed. Alembic stopped with {reason}"
+        ) from exc
 
 
 def set_role_password(owner_url: str, role: str, password: str) -> None:

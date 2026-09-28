@@ -32,17 +32,33 @@ def upgrade() -> None:
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
     op.execute(
         """
-        -- An organization is visible when it's the transaction's org, or the user is a member
-        -- (for "my organizations"). Writes are only allowed to the transaction's org.
-        CREATE POLICY tenant ON organizations
+        -- Inside an org's transaction only that org is visible, so a query that forgets its
+        -- org filter still can't count or change another tenant's rows. With no org set, a
+        -- user sees the orgs they belong to and their own memberships ("my organizations").
+        -- Writes are per command so UPDATE and DELETE never use the wider read rule.
+        CREATE POLICY tenant_read ON organizations FOR SELECT
             USING (id = app_org_id()
-                   OR id IN (SELECT org_id FROM memberships WHERE user_id = app_user_id()))
+                   OR (app_org_id() IS NULL
+                       AND id IN (SELECT org_id FROM memberships
+                                  WHERE user_id = app_user_id())));
+        CREATE POLICY tenant_insert ON organizations FOR INSERT
             WITH CHECK (id = app_org_id());
+        CREATE POLICY tenant_update ON organizations FOR UPDATE
+            USING (id = app_org_id())
+            WITH CHECK (id = app_org_id());
+        CREATE POLICY tenant_delete ON organizations FOR DELETE
+            USING (id = app_org_id());
 
-        -- A user also sees their own memberships in every org.
-        CREATE POLICY tenant ON memberships
-            USING (org_id = app_org_id() OR user_id = app_user_id())
+        CREATE POLICY tenant_read ON memberships FOR SELECT
+            USING (org_id = app_org_id()
+                   OR (app_org_id() IS NULL AND user_id = app_user_id()));
+        CREATE POLICY tenant_insert ON memberships FOR INSERT
             WITH CHECK (org_id = app_org_id());
+        CREATE POLICY tenant_update ON memberships FOR UPDATE
+            USING (org_id = app_org_id())
+            WITH CHECK (org_id = app_org_id());
+        CREATE POLICY tenant_delete ON memberships FOR DELETE
+            USING (org_id = app_org_id());
 
         CREATE POLICY tenant ON invitations
             USING (org_id = app_org_id())
@@ -54,8 +70,8 @@ def upgrade() -> None:
         CREATE POLICY tenant_append ON audit_log FOR INSERT
             WITH CHECK (org_id IS NULL OR org_id = app_org_id());
 
-        -- On Neon, Terraform creates app_api with a login and password first. Locally and in
-        -- CI it's created here, without a login.
+        -- Created without a login. On Neon the deploy then gives it a login and a password
+        -- (tools/deploy/database.py); tests do the same with a test-only password.
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_api') THEN
@@ -87,8 +103,14 @@ def downgrade() -> None:
         DROP POLICY tenant_append ON audit_log;
         DROP POLICY tenant_read ON audit_log;
         DROP POLICY tenant ON invitations;
-        DROP POLICY tenant ON memberships;
-        DROP POLICY tenant ON organizations;
+        DROP POLICY tenant_delete ON memberships;
+        DROP POLICY tenant_update ON memberships;
+        DROP POLICY tenant_insert ON memberships;
+        DROP POLICY tenant_read ON memberships;
+        DROP POLICY tenant_delete ON organizations;
+        DROP POLICY tenant_update ON organizations;
+        DROP POLICY tenant_insert ON organizations;
+        DROP POLICY tenant_read ON organizations;
         """
     )
     for table in TENANT_TABLES:

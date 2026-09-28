@@ -99,3 +99,19 @@ def test_a_database_error_names_the_role_but_not_the_connection_details() -> Non
 
     assert "s3cret" not in str(caught.value)
     assert run.called("aws", "ssm", "put-parameter") == []
+
+
+def test_a_failed_migration_names_its_cause_without_the_interpreter_path() -> None:
+    failure = CommandError(
+        r"`C:\dev\nettriage\backend\.venv\Scripts\python.exe -m` failed with exit code 1: "
+        'Error: ProgrammingError: relation "users" already exists'
+    )
+    run = FakeRun().on(sys.executable, returns=failure)
+
+    with pytest.raises(CommandError) as caught:
+        database.migrate(run, {}, OWNER_URL)
+
+    assert str(caught.value) == (
+        "Database migrations failed; nothing was deployed. Alembic stopped with exit code 1: "
+        'Error: ProgrammingError: relation "users" already exists'
+    )
