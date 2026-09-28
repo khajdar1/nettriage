@@ -15,7 +15,7 @@ fmt:
 
 # Backend: tests
 test:
-    cd backend && uv run python -m pytest
+    cd backend && uv run python -m pytest --cov=nettriage.domain --cov-report=term-missing --cov-fail-under=85
 
 # Tools: tests for the build, smoke and pinned-actions scripts
 tools-test:

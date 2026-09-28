@@ -25,7 +25,7 @@ jobs:
           uv run --locked ruff check .
           uv run --locked ruff format --check .
           uv run --locked mypy
-          uv run --locked pytest
+          uv run --locked pytest --cov=nettriage.domain --cov-report=term-missing --cov-fail-under=85
 
   package:
     runs-on: ubuntu-24.04
