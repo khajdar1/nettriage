@@ -27,7 +27,7 @@ target-version = "py314"
 select = ["E", "W", "F", "I", "UP", "B", "S", "SIM", "PT", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S311"]
 
 [tool.mypy]
 strict = true
@@ -44,7 +44,9 @@ addopts = "-q --strict-markers"
 dev = [
     "httpx>=0.28.1",
     "httpx2>=2.13.1",
+    "hypothesis>=6.168.3",
     "mypy>=2.3.1",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.9",
 ]

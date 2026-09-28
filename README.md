@@ -43,6 +43,10 @@ just tf-check    # Terraform format, validate and tests
 just cloud-check # CI holds no cloud access
 ```
 
+Detector quality: `just detection-report` scores every detector's precision and recall on a
+seeded, synthetic scenario suite (target: 0.90 or more for both). CI publishes the report on
+every run as the `detection-report` artifact and in the job summary.
+
 ## Deploy
 
 Only the owner deploys, from their machine, with a short-lived AWS sign-in. The step-by-step
