@@ -5,7 +5,7 @@ import pytest
 
 from tools.deploy import preflight
 from tools.deploy.runner import CommandError
-from tools.tests.deploy_fakes import FakeRun
+from tools.tests.deploy_fakes import FakeRun, ssm_names
 
 LWA = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
 
@@ -114,7 +114,7 @@ def test_tfvars_values_with_inline_comments_are_read(tmp_path: Path) -> None:
 def test_stage_checks_names_and_order() -> None:
     run = FakeRun().on(
         "aws", "lambda", "get-layer-version-by-arn", returns='{"CompatibleArchitectures": ["arm64"]}'
-    ).on("aws", "ssm", "describe-parameters", returns="/nettriage/dev/grafana-otlp-auth\n").on("aws")
+    ).on("aws", "ssm", "describe-parameters", returns=ssm_names()).on("aws")
     tfvars = {
         "lwa_layer_arn": "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30",
         "otel_collector_layer_arn": "arn:aws:lambda:eu-north-1:753240598075:layer:OtelLayerArm64:1",
@@ -122,7 +122,8 @@ def test_stage_checks_names_and_order() -> None:
     }
     checks = preflight.stage_checks(run, {}, "dev", "123456789012", tfvars)
     assert [check.name for check in checks] == [
-        "Terraform state bucket", "Grafana token in SSM", "Grafana OTLP endpoint in terraform.tfvars",
+        "Terraform state bucket", "Grafana token in SSM", "Database connection in SSM",
+        "Grafana OTLP endpoint in terraform.tfvars",
         "Lambda Web Adapter layer", "OpenTelemetry collector layer",
     ]
     assert all(check.ok for check in checks)
@@ -133,3 +134,15 @@ def test_a_layer_without_listed_architectures_passes() -> None:
         "aws", "lambda", "get-layer-version-by-arn", returns="{}"
     )
     assert preflight.layer_check(run, {}, "layer", LWA).ok
+
+
+def test_a_missing_database_connection_says_how_to_store_it() -> None:
+    run = FakeRun().on(
+        "aws", "ssm", "describe-parameters", returns=ssm_names(missing=["/nettriage/dev/db/owner-url"])
+    )
+    run.on("aws", "lambda", returns='{"CompatibleArchitectures": ["arm64"]}').on("aws")
+
+    checks = {check.name: check for check in preflight.stage_checks(run, {}, "dev", "123456789012", {})}
+
+    assert not checks["Database connection in SSM"].ok
+    assert checks["Database connection in SSM"].detail == "missing; run: just store-database-url dev"

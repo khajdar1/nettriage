@@ -22,7 +22,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from tools import smoke
-from tools.deploy import config, github, gitguards, preflight, publish, secrets, session, terraform
+from tools.deploy import database, config, github, gitguards, preflight, publish, secrets, session, terraform
 from tools.deploy import runner
 from tools.deploy.runner import CommandError, Runner
 
@@ -129,6 +129,7 @@ def deploy(run: Runner, env: Mapping[str, str], stage: str, smoke_main: SmokeMai
         web = github.download(run, ci.run_id, config.WEB_ARTIFACT, Path(scratch) / "web")
         tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
         gitguards.require_unchanged_since(run, sha, "deploy")
+        migrate_database(run, env, stage)
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
         terraform.apply(run, tf_env, workdir)
         outputs = terraform.outputs(run, tf_env, workdir)
@@ -144,6 +145,30 @@ def deploy(run: Runner, env: Mapping[str, str], stage: str, smoke_main: SmokeMai
             "then deploy main again."
         )
     print(f"Deployed {sha[:7]} to {stage}: https://{outputs['cloudfront_domain']}")
+
+
+def migrate_database(run: Runner, env: Mapping[str, str], stage: str) -> None:
+    """Migrations run before the new code deploys (spec §5.8), so code only meets a schema it
+    was written for; migrations stay backward compatible (expand, migrate, contract)."""
+    owner_url = secrets.read_parameter(
+        run, env, config.db_owner_url_parameter(stage), f"just store-database-url {stage}"
+    )
+    database.migrate(run, env, owner_url)
+    created = database.ensure_role_logins(run, env, stage, owner_url)
+    print("Database migrated." + (f" New logins: {', '.join(created)}." if created else ""))
+
+
+def store_database_url(
+    run: Runner,
+    env: Mapping[str, str],
+    stage: str,
+    ask_secret: Callable[[str], str] = getpass.getpass,
+) -> None:
+    url = database.check_owner_url(
+        ask_secret("Neon connection string for the database owner, direct (hidden): ")
+    )
+    secrets.store_parameter(run, env, config.db_owner_url_parameter(stage), url)
+    print(f"Stored {config.db_owner_url_parameter(stage)} as a SecureString.")
 
 
 def store_grafana_token(
@@ -164,7 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--profile", default=os.environ.get("NETTRIAGE_AWS_PROFILE", config.DEFAULT_PROFILE))
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("preflight", "store-grafana-token", "plan", "deploy"):
+    for name in ("preflight", "store-grafana-token", "store-database-url", "plan", "deploy"):
         command = commands.add_parser(name)
         command.add_argument("--stage", choices=config.STAGES, default="dev")
     commands.choices["plan"].add_argument("--no-comment", action="store_true")
@@ -186,6 +211,8 @@ def main(argv: list[str] | None = None, run: Runner = runner.run) -> int:
             bootstrap(run, env, args.budget_email, args.anomaly_monitor_arn)
         elif args.command == "store-grafana-token":
             store_grafana_token(run, env, args.stage)
+        elif args.command == "store-database-url":
+            store_database_url(run, env, args.stage)
         elif args.command == "plan":
             plan(run, env, args.stage, post_comment=not args.no_comment)
         else:

@@ -13,7 +13,7 @@ Backend tests need Postgres: `just test` starts a local one first (`just db-up`,
 `just db-down` stops it; CI uses a Postgres 17 service container.
 Deploys are owner actions (`docs/runbooks/setup-and-deploy.md`). Claude may run `just preflight`
 and `just plan-dev` when the owner asks, but never runs `aws login`, `just bootstrap`,
-`just store-grafana-token` or `just deploy-*`.
+`just store-grafana-token`, `just store-database-url` or `just deploy-*`.
 
 ## Working with the owner
 - Ask instead of assuming: when a requirement or decision is ambiguous, ask a clear question.

@@ -1,5 +1,6 @@
 import base64
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,15 @@ import pytest
 from tools.deploy import __main__ as cli
 from tools.deploy import config
 from tools.deploy.runner import CommandError
-from tools.tests.deploy_fakes import Call, FakeRun, runs, signed_in
+from tools.tests.deploy_fakes import (
+    OWNER_URL,
+    Call,
+    FakeRun,
+    runs,
+    signed_in,
+    ssm_names,
+    ssm_values,
+)
 
 SHA = "d" * 40
 LWA = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
@@ -33,12 +42,16 @@ def stage_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
+STORED = {"/nettriage/dev/grafana-otlp-auth": "dG9rZW4=", "/nettriage/dev/db/owner-url": OWNER_URL}
+
+
 def healthy_account(run: FakeRun) -> FakeRun:
-    """Every read-only AWS check passes and the token is stored."""
+    """Every read-only AWS check passes, and the Grafana token, the database owner's URL and
+    the app roles' logins are all stored."""
     return (
         run.on("aws", "lambda", "get-layer-version-by-arn", returns=json.dumps({"CompatibleArchitectures": ["arm64"]}))
-        .on("aws", "ssm", "describe-parameters", returns="/nettriage/dev/grafana-otlp-auth\n")
-        .on("aws", "ssm", "get-parameter", returns="dG9rZW4=\n")
+        .on("aws", "ssm", "describe-parameters", returns=ssm_names())
+        .on("aws", "ssm", "get-parameter", returns=ssm_values(STORED))
         .on("aws")
     )
 
@@ -56,6 +69,7 @@ def deployable() -> FakeRun:
     run = main_checkout(signed_in())
     run.on("gh", "run", "list", returns=runs((9, "completed", "success", "push")))
     run.on("gh", "run", "download").on("terraform", "output", returns=OUTPUTS).on("terraform")
+    run.on(sys.executable, "-m", "alembic")
     return healthy_account(run)
 
 
@@ -440,3 +454,76 @@ def test_main_preflight_passes_on_a_healthy_account(
 ) -> None:
     monkeypatch.setattr(config, "PLUGIN_CACHE", tmp_path / "cache")
     assert cli.main(["preflight", "--stage", "dev"], run=healthy_account(signed_in())) == 0
+
+
+def test_deploy_migrates_the_database_before_terraform_applies_the_new_code(stage_dir: Path) -> None:
+    run = deployable()
+
+    cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    [migrate] = run.called(sys.executable, "-m", "alembic")
+    assert migrate.args[-2:] == ["upgrade", "head"]
+    assert migrate.env is not None
+    assert migrate.env["NETTRIAGE_MIGRATION_DATABASE_URL"] == OWNER_URL
+    assert run.first(sys.executable) < run.first("terraform", "init") < run.first("terraform", "apply")
+
+
+def test_deploy_never_puts_the_database_owner_url_in_any_call_args(stage_dir: Path) -> None:
+    run = deployable()
+
+    cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    for call in run.calls:
+        assert all("owner-s3cret" not in arg for arg in call.args)
+
+
+def test_deploy_stops_before_terraform_without_a_stored_database_url(stage_dir: Path) -> None:
+    run = deployable()
+    run.rules.insert(
+        0,
+        (
+            ("aws", "ssm", "get-parameter", "--name", "/nettriage/dev/db/owner-url"),
+            CommandError("ParameterNotFound"),
+        ),
+    )
+
+    with pytest.raises(CommandError, match="just store-database-url dev"):
+        cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    assert run.called(sys.executable) == []
+    assert run.called("terraform", "apply") == []
+
+
+def test_a_failed_migration_stops_the_deploy_before_terraform(stage_dir: Path) -> None:
+    run = deployable()
+    run.rules.insert(0, ((sys.executable,), CommandError("`alembic upgrade` failed with exit code 1.")))
+
+    with pytest.raises(CommandError, match="Database migrations failed; nothing was deployed"):
+        cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    assert run.called("terraform") == []
+
+
+def test_store_database_url_checks_and_stores_it_without_printing_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run = FakeRun().on("aws", "ssm", "put-parameter")
+
+    cli.store_database_url(run, {}, "dev", ask_secret=lambda prompt: f"  {OWNER_URL}  ")
+
+    [put] = run.calls
+    assert put.args[put.args.index("--name") + 1] == "/nettriage/dev/db/owner-url"
+    assert put.args[put.args.index("--value") + 1] == OWNER_URL
+    output = capsys.readouterr()
+    assert "Stored /nettriage/dev/db/owner-url as a SecureString." in output.out
+    assert "owner-s3cret" not in output.out + output.err
+
+
+def test_store_database_url_refuses_a_pooled_string_and_stores_nothing() -> None:
+    run = FakeRun()
+    pooled = OWNER_URL.replace("ep-quiet-sun-123456.", "ep-quiet-sun-123456-pooler.")
+
+    with pytest.raises(CommandError, match="direct"):
+        cli.store_database_url(run, {}, "dev", ask_secret=lambda prompt: pooled)
+
+    assert run.calls == []

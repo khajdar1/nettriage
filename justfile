@@ -71,6 +71,10 @@ bootstrap budget_email anomaly_monitor_arn="":
 store-grafana-token stage="dev":
     uv run --project backend python -m tools.deploy store-grafana-token --stage {{stage}}
 
+# Store the Neon owner's connection string in SSM (prompts; never printed)
+store-database-url stage="dev":
+    uv run --project backend python -m tools.deploy store-database-url --stage {{stage}}
+
 # Plan the dev stage for the checked-out, pushed commit and post the changes to its PR
 plan-dev:
     uv run --project backend python -m tools.deploy plan --stage dev
