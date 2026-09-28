@@ -205,9 +205,11 @@ command:
 1. refuses anything but a clean `main` that matches GitHub and whose CI and CodeQL passed;
 2. runs the preflight;
 3. downloads that commit's CI-built artifacts;
-4. shows the Terraform plan, and you type `yes`;
-5. publishes the site;
-6. runs the smoke tests.
+4. migrates the database and prints `Database migrated.` The first time, it also gives the
+   app's database role a login and adds `New logins: app_api.`;
+5. shows the Terraform plan, and you type `yes`;
+6. publishes the site;
+7. runs the smoke tests.
 
 If step 2's preflight has a `FAIL` line, the command stops with
 `STOP: Preflight failed; nothing was deployed.`; fix it (see Part C) and run `just deploy-dev`
