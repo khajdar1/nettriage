@@ -205,6 +205,8 @@ sequenceDiagram
 
 After the ID token is verified, Cognito's tokens are discarded. The app never calls anything on the user's behalf. `return_to` must be a relative path within the app (open-redirect protection).
 
+The login response also sets a 5-minute `__Host-sign-in` cookie holding `state`, and the callback accepts only a `state` equal to it (amended in Plan 3b). This binds each sign-in to the browser that started it: otherwise an attacker could send a victim the callback link of the attacker's own sign-in, and the victim would be signed in to the attacker's account (login CSRF).
+
 ### 4.2 Upload → findings → AI explanation
 
 ```mermaid

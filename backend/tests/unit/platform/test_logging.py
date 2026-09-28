@@ -11,7 +11,13 @@ from opentelemetry.sdk.trace import TracerProvider
 from pydantic import BaseModel
 
 from nettriage.platform.config import Settings
-from nettriage.platform.logging import REDACTED, JsonFormatter, _sanitize_message, configure_logging
+from nettriage.platform.logging import (
+    QUIET_LOGGERS,
+    REDACTED,
+    JsonFormatter,
+    _sanitize_message,
+    configure_logging,
+)
 
 
 def _record(msg: str, **extra: object) -> logging.LogRecord:
@@ -254,3 +260,21 @@ def test_configure_logging_routes_uvicorns_loggers_through_the_json_formatter(
             lg.handlers = handlers
             lg.propagate = propagate
             lg.level = lvl
+
+
+def test_http_and_aws_clients_only_log_warnings_even_at_debug() -> None:
+    """botocore logs every DynamoDB item it writes at DEBUG, sessions included."""
+    root = logging.getLogger()
+    saved = (list(root.handlers), root.level)
+    quiet = {name: logging.getLogger(name).level for name in QUIET_LOGGERS}
+    try:
+        configure_logging(Settings(stage="local", version="t"), level=logging.DEBUG)
+
+        levels = {name: logging.getLogger(name).getEffectiveLevel() for name in QUIET_LOGGERS}
+        assert set(levels) >= {"botocore", "httpx"}
+        assert set(levels.values()) == {logging.WARNING}
+        assert logging.getLogger("nettriage").getEffectiveLevel() == logging.DEBUG
+    finally:
+        root.handlers, root.level = saved
+        for name, level in quiet.items():
+            logging.getLogger(name).setLevel(level)

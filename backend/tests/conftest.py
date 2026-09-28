@@ -1,22 +1,33 @@
 import os
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import boto3
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
+from fake_idp import FakeIdentityProvider
+from fake_idp import settings as idp_settings
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader, NumberDataPoint
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import URL
 
+from nettriage.adapters.login_states import LoginStateStore
+from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.postgres import create_database_engine, engine_url
+from nettriage.adapters.rate_limiter import RateLimiter
+from nettriage.adapters.sessions import SessionStore
 from nettriage.entrypoints.api.app import create_app
+from nettriage.entrypoints.api.services import Services
 from nettriage.platform.config import Settings
+from nettriage.platform.metrics import AppMetrics
 
 if TYPE_CHECKING:
     from types_boto3_dynamodb.client import DynamoDBClient
@@ -29,11 +40,6 @@ APP_API_PASSWORD = "app-api-test-only"  # noqa: S105 - a throwaway password on a
 @pytest.fixture
 def settings() -> Settings:
     return Settings(stage="local", version="1.2.3-test")
-
-
-@pytest.fixture
-def client(settings: Settings) -> TestClient:
-    return TestClient(create_app(settings))
 
 
 # Database fixtures. Integration tests need a Postgres superuser URL in
@@ -155,3 +161,68 @@ class FakeClock:
 @pytest.fixture
 def clock() -> FakeClock:
     return FakeClock()
+
+
+# The API with everything it uses: moto for DynamoDB, a fake Cognito, and a database engine that
+# never connects. `database_client` puts the test database behind the API instead.
+
+APP_ORIGIN = "https://app.test"
+NO_DATABASE = "postgresql://unused@db.nettriage.invalid/unused"  # fails fast if ever used
+
+
+@pytest.fixture
+def idp() -> FakeIdentityProvider:
+    return FakeIdentityProvider()
+
+
+@pytest.fixture
+def metric_reader() -> InMemoryMetricReader:
+    return InMemoryMetricReader()
+
+
+@pytest.fixture
+def services(
+    runtime_table: RuntimeTable,
+    clock: FakeClock,
+    idp: FakeIdentityProvider,
+    metric_reader: InMemoryMetricReader,
+) -> Services:
+    table, client = runtime_table.name, runtime_table.client
+    return Services(
+        database=create_database_engine(NO_DATABASE),
+        sessions=SessionStore(client, table),
+        login_states=LoginStateStore(client, table),
+        rate_limiter=RateLimiter(client, table, clock),
+        oidc=OidcClient(idp_settings(), httpx.Client(transport=idp.transport()), clock),
+        clock=clock,
+        metrics=AppMetrics(MeterProvider(metric_readers=[metric_reader])),
+    )
+
+
+@pytest.fixture
+def client(settings: Settings, services: Services) -> TestClient:
+    return TestClient(create_app(settings, services), base_url=APP_ORIGIN)
+
+
+@pytest.fixture
+def database_client(settings: Settings, services: Services, database: Database) -> TestClient:
+    """The API with the test database behind it, as `app_api`."""
+    return TestClient(
+        create_app(settings, replace(services, database=database.app_api)), base_url=APP_ORIGIN
+    )
+
+
+def counter(reader: InMemoryMetricReader, name: str) -> int:
+    """The total of a counter across all its attributes."""
+    data = reader.get_metrics_data()
+    if data is None:
+        return 0
+    return sum(
+        int(point.value)
+        for resource in data.resource_metrics
+        for scope in resource.scope_metrics
+        for metric in scope.metrics
+        if metric.name == name
+        for point in metric.data.data_points
+        if isinstance(point, NumberDataPoint)
+    )
