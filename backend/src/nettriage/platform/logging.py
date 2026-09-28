@@ -85,8 +85,14 @@ _SENSITIVE_KV_RE = re.compile(
     re.IGNORECASE,
 )
 
-# 4. A bare email address.
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}")
+# 4. A bare email address. The leading negative lookbehind isn't part of the address shape: it
+#    stops a match attempt from starting at every position inside a long run of local-part
+#    characters. Without it, a run of n such characters with no "@" (or none before the "@")
+#    makes the engine retry the same failing match from n, n-1, n-2, ... positions, which is
+#    quadratic in n; uvicorn's access log puts the request path straight into the message, so a
+#    client sending a long URL could stall every request. With the lookbehind, only the true
+#    start of such a run is ever tried, so the whole scan stays linear.
+_EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}")
 
 
 def _redact_sensitive_kv(match: re.Match[str]) -> str:

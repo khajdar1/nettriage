@@ -2,6 +2,7 @@ import json
 import logging
 import logging.config
 import sys
+import time
 from dataclasses import dataclass
 
 import pytest
@@ -10,7 +11,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from pydantic import BaseModel
 
 from nettriage.platform.config import Settings
-from nettriage.platform.logging import REDACTED, JsonFormatter, configure_logging
+from nettriage.platform.logging import REDACTED, JsonFormatter, _sanitize_message, configure_logging
 
 
 def _record(msg: str, **extra: object) -> logging.LogRecord:
@@ -163,6 +164,13 @@ def test_message_email_address_in_an_fstring_is_redacted() -> None:
     assert "user@example.com" not in json.dumps(line)
 
 
+def test_message_email_with_subdomain_is_redacted_in_full() -> None:
+    line = _format(_record("contact a.b@mail.example.com for help"))
+
+    assert "a.b@mail.example.com" not in json.dumps(line)
+    assert ".com" not in json.dumps(line)
+
+
 def test_message_bearer_token_is_redacted() -> None:
     line = _format(_record("Authorization: Bearer xyz.abc"))
 
@@ -194,6 +202,31 @@ def test_plain_event_names_pass_through_message_sanitization_unchanged(event: st
     line = _format(_record(event))
 
     assert line["message"] == event
+
+
+_ADVERSARIAL_SANITIZE_INPUTS = [
+    ("long_run_of_word_characters", "a" * 200_000),
+    ("repeated_sensitive_key", "token" * 40_000),
+    ("long_path_with_trailing_query_marker", "/" * 200_000 + "?"),
+    ("sensitive_key_then_long_whitespace_run", "password" + " " * 200_000),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "text"),
+    _ADVERSARIAL_SANITIZE_INPUTS,
+    ids=[label for label, _ in _ADVERSARIAL_SANITIZE_INPUTS],
+)
+def test_sanitize_message_is_linear_time_on_adversarial_input(label: str, text: str) -> None:
+    # A regex whose match attempts can start at every position in a long run of the same kind of
+    # character, and then scan forward from each one, is quadratic in the length of that run.
+    # uvicorn's access log puts the request path (and query string) straight into the message, so
+    # a client sending a long URL must not be able to stall every request handling it.
+    start = time.perf_counter()
+    _sanitize_message(text)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < 2.0, f"{label}: sanitizing {len(text)} chars took {elapsed:.2f}s"
 
 
 def test_configure_logging_routes_uvicorns_loggers_through_the_json_formatter(
