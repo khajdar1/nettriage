@@ -72,8 +72,37 @@ Confirm the AWS Budgets email if one arrives.
 just preflight
 ```
 Every line must say `PASS`, including the Terraform state bucket, the Grafana token in SSM, the
-Grafana endpoint and both Lambda layers. If a layer line fails with "not found", its version
+database connection in SSM (after A7), the Grafana endpoint and both Lambda layers. If a layer line fails with "not found", its version
 moved on. Ask Claude to update the ARN in `terraform.tfvars` from the layer's release notes.
+
+### A7. Create the Neon database (once)
+The database runs on Neon's free plan. You create the project in Neon's console; the deploy
+then creates the tables and a separate login for the app. (Terraform can't manage Neon from this
+machine: Neon's Terraform provider isn't code-signed, and Windows policy here blocks unsigned
+programs.)
+1. Sign in at **console.neon.tech** and click **New project**.
+2. Fill in:
+   - **Project name:** `nettriage-dev`
+   - **Postgres version:** 17
+   - **Cloud provider:** AWS
+   - **Region:** AWS Europe Central 1 (Frankfurt)
+
+   Leave everything else as it is and click **Create project**.
+3. On the project dashboard, click **Connect**. In the dialog:
+   - leave **Branch** `main`, **Database** `neondb` and **Role** `neondb_owner` as they are;
+   - turn **Connection pooling** off, so the host has no `-pooler` in it;
+   - click **Show password**, then **Copy snippet** (or copy the `postgresql://…` string).
+4. Store it in AWS (it never goes into Git, GitHub or chat):
+   ```bash
+   just store-database-url dev
+   ```
+   Paste the string and press Enter; nothing is shown. Expected:
+   `Stored /nettriage/dev/db/owner-url as a SecureString.`
+5. Run `just preflight`: `PASS  Database connection in SSM` appears.
+
+The next `just deploy-dev` runs the migrations, gives the app's role `app_api` a generated
+password, and stores its connection string as `/nettriage/dev/db/app-api-url`. It prints
+`Database migrated. New logins: app_api.` the first time and `Database migrated.` afterwards.
 
 ### A6. Set up the GitHub repository (once)
 ```bash
@@ -176,9 +205,11 @@ command:
 1. refuses anything but a clean `main` that matches GitHub and whose CI and CodeQL passed;
 2. runs the preflight;
 3. downloads that commit's CI-built artifacts;
-4. shows the Terraform plan, and you type `yes`;
-5. publishes the site;
-6. runs the smoke tests.
+4. migrates the database and prints `Database migrated.` The first time, it also gives the
+   app's database role a login and adds `New logins: app_api.`;
+5. shows the Terraform plan, and you type `yes`;
+6. publishes the site;
+7. runs the smoke tests.
 
 If step 2's preflight has a `FAIL` line, the command stops with
 `STOP: Preflight failed; nothing was deployed.`; fix it (see Part C) and run `just deploy-dev`
@@ -222,6 +253,11 @@ passes, then run B2 again.
 | `FAIL  Lambda in eu-north-1`, `FAIL  CloudFront` or another account check (`AccessDenied`, "explicit deny") | AWS changed the account's policies. Don't retry; send the output to Claude |
 | `FAIL  Terraform state bucket` | Run A4 (bootstrap) |
 | `FAIL  Grafana token in SSM` | Run `just store-grafana-token dev` |
+| `FAIL  Database connection in SSM` | Run A7 |
+| `STOP: That isn't a Postgres connection string …`, `STOP: The database must be a Neon project in AWS Europe Central 1 (Frankfurt) …` or `STOP: Use the direct connection string …` | Copy the string again as in A7 step 3, then rerun `just store-database-url dev` |
+| `STOP: Can't read /nettriage/dev/db/owner-url from SSM. …` | Run A7 |
+| `STOP: Database migrations failed; nothing was deployed. …` | Send the output to Claude. Nothing in AWS changed |
+| `STOP: Couldn't give the database role app_api a login …` | Check the stored string (A7), then send the output to Claude |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
 | `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |

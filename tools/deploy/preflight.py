@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.deploy.config import REGION, otlp_auth_parameter, state_bucket
+from tools.deploy.config import REGION, db_owner_url_parameter, otlp_auth_parameter, state_bucket
 from tools.deploy.runner import CommandError, Runner
 
 TFVAR = re.compile(r'^\s*(\w+)\s*=\s*"([^"]*)"\s*(?:(?:#|//).*)?$', re.MULTILINE)
@@ -68,8 +68,15 @@ def layer_check(run: Runner, env: Mapping[str, str], name: str, arn: str) -> Che
 
 
 def parameter_check(run: Runner, env: Mapping[str, str], stage: str) -> Check:
-    name = otlp_auth_parameter(stage)
-    label = "Grafana token in SSM"
+    return ssm_parameter_check(
+        run, env, "Grafana token in SSM", otlp_auth_parameter(stage),
+        f"missing; run: just store-grafana-token {stage}",
+    )
+
+
+def ssm_parameter_check(
+    run: Runner, env: Mapping[str, str], label: str, name: str, missing: str
+) -> Check:
     try:
         found = run(
             ["aws", "ssm", "describe-parameters", "--parameter-filters", f"Key=Name,Values={name}",
@@ -79,7 +86,7 @@ def parameter_check(run: Runner, env: Mapping[str, str], stage: str) -> Check:
     except CommandError as exc:
         return Check(label, False, str(exc))
     if found != name:
-        return Check(label, False, f"missing; run: just store-grafana-token {stage}")
+        return Check(label, False, missing)
     return Check(label, True)
 
 
@@ -97,6 +104,10 @@ def stage_checks(
         _probe(run, env, "Terraform state bucket", ["aws", "s3api", "head-bucket", "--bucket", bucket],
                "missing; run: just bootstrap <your-email>"),
         parameter_check(run, env, stage),
+        ssm_parameter_check(
+            run, env, "Database connection in SSM", db_owner_url_parameter(stage),
+            f"missing; run: just store-database-url {stage}",
+        ),
         endpoint_check(tfvars),
         layer_check(run, env, "Lambda Web Adapter layer", tfvars.get("lwa_layer_arn", "")),
         layer_check(run, env, "OpenTelemetry collector layer", tfvars.get("otel_collector_layer_arn", "")),

@@ -1,6 +1,6 @@
 # 0002: Neon Postgres for relational data
 
-- Status: Accepted
+- Status: Accepted; provisioning amended 2026-09-28 (Plan 3a)
 - Date: 2026-09-26 (region updated 2026-09-27)
 
 ## Context
@@ -24,6 +24,12 @@ database stays portable to Aurora or RDS if the free tier is ever outgrown.
   database role per Lambda function with its own password.
 - Because only standard Postgres features are used, moving to Aurora later is a change to
   connection settings and role credentials, not a schema or query rewrite.
+- **Provisioning (amended in Plan 3a):** the owner creates each stage's Neon project in the Neon
+  console, which is spec §13.2's fallback. Neon's Terraform provider isn't code-signed, and the
+  owner's Windows machine blocks unsigned executables, so Terraform can't run it there. The
+  owner stores the owner role's connection string once (`just store-database-url`). Each deploy
+  then runs the migrations and gives every function's role a generated password, stored as its
+  own SSM SecureString. Tables, row-level security and grants stay in reviewed migrations.
 
 ## Alternatives considered
 - **RDS:** simplest AWS-native option, but its smallest instance costs about $12/month with

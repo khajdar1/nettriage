@@ -43,6 +43,8 @@ just tf-check    # Terraform format, validate and tests
 just cloud-check # CI holds no cloud access
 ```
 
+Backend tests start a local Postgres on their own (no Docker needed); `just db-down` stops it.
+
 Detector quality: `just detection-report` scores every detector's precision and recall on a
 seeded, synthetic scenario suite (target: 0.90 or more for both). CI publishes the report on
 every run as the `detection-report` artifact and in the job summary.

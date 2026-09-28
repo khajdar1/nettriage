@@ -361,7 +361,7 @@ With these limits an upload uses about 0.25 MB, so roughly 2,000 uploads fit in 
 
 - Alembic, with explicit SQL for security-critical DDL (RLS policies, grants, triggers).
 - CI builds a database from nothing, applies every migration, runs the tests, and checks that each migration can be rolled back.
-- Production follows expand → migrate → contract. CI runs migrations with the owner role before new code is deployed.
+- Production follows expand → migrate → contract. The owner's deploy runs the migrations with the owner role before new code is deployed (§11; CI has no cloud access).
 
 ## 6. Identity, access and abuse protection
 
@@ -875,9 +875,10 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 - **Deploy (owner-run, `just deploy-<stage>`):**
   1. **Guards:** `just preflight` passes (the account's policies and the Stockholm Lambda layers are still as expected), the checkout is a clean `main` equal to GitHub's `main`, and the `ci` and `codeql` workflow runs for that commit succeeded. Any failure stops the deploy.
   2. Download that commit's CI artifacts, so what's deployed is exactly what CI built and tested.
-  3. `terraform apply`, with the plan shown and confirmed by the owner. This also detects drift.
-  4. Publish the web build (hashed assets immutable, `index.html` no-cache, `demo/` preserved) and invalidate CloudFront.
-  5. Run migrations (from Plan 3) and the smoke tests; any FAIL exits non-zero.
+  3. Run the migrations as the database owner, and give any new database role its login (from Plan 3a). A failed migration stops the deploy before anything in AWS changes; migrations stay backward compatible, so the running code keeps working.
+  4. `terraform apply`, with the plan shown and confirmed by the owner. This also detects drift.
+  5. Publish the web build (hashed assets immutable, `index.html` no-cache, `demo/` preserved) and invalidate CloudFront.
+  6. Run the smoke tests; any FAIL exits non-zero.
 - **Promotion to `prod` (Plan 7):** `just deploy-prod` accepts only a commit already deployed to `dev` and smoke-tested there, and deploys the same artifacts; then it adds a Grafana deploy annotation.
 - **Scheduled:**
   - a weekly OWASP ZAP baseline scan of `dev` (an HTTP scan; it needs no AWS access),
@@ -988,7 +989,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 | The Lambda Web Adapter and OpenTelemetry collector layers, and the python3.14 runtime, in eu-north-1 (checked by `just preflight`) | `python3.13`; `force_flush` instead of the collector layer |
 | Terraform using the owner's `aws login` session through a `credential_process` helper profile (the default in `tools/deploy/`) | Export the session as environment variables for each command, keeping each run under the credentials' 15-minute lifetime |
 | Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Drop unavailable candidates; run Claude only in manual comparisons |
-| Neon Terraform provider reliability | Create the projects by hand and document it |
+| Neon Terraform provider reliability | Create the projects by hand and document it (taken in Plan 3a: the provider isn't code-signed and the owner's machine blocks unsigned executables; see ADR 0002) |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |
 | Current Lambda Function URL + OAC permission requirements (resource-policy actions, body-hash header) | Follow AWS's current docs; if needed, API Gateway HTTP API ($1 per million requests) |
 | S3 presigned PUT enforcing the signed `content-length`, checksum and metadata headers from browsers | Presigned POST with a policy (`content-length-range`) |

@@ -107,3 +107,31 @@ def runs(*items: tuple[int, str, str, str]) -> str:
     return json.dumps(
         [{"databaseId": i, "status": s, "conclusion": c, "event": e} for i, s, c, e in items]
     )
+
+
+OWNER_URL = (
+    "postgresql://neondb_owner:owner-s3cret@ep-quiet-sun-123456.eu-central-1.aws.neon.tech/"
+    "neondb?sslmode=require&channel_binding=require"
+)
+
+
+def ssm_names(missing: Sequence[str] = ()) -> Callable[[Call], str]:
+    """`aws ssm describe-parameters` answers: every parameter exists except `missing`."""
+
+    def answer(call: Call) -> str:
+        filters = [arg for arg in call.args if arg.startswith("Key=Name,Values=")]
+        if not filters:  # preflight's unfiltered "SSM in eu-north-1" probe
+            return ""
+        name = filters[0].split("=", 2)[2]
+        return "None\n" if name in missing else f"{name}\n"
+
+    return answer
+
+
+def ssm_values(values: Mapping[str, str]) -> Callable[[Call], str]:
+    """`aws ssm get-parameter` answers, by parameter name."""
+
+    def answer(call: Call) -> str:
+        return values[call.args[call.args.index("--name") + 1]] + "\n"
+
+    return answer

@@ -8,10 +8,12 @@
 ## Commands
 Run `just` to list tasks. Backend commands run inside `backend/` with `uv run …`. On the owner's
 Windows machine, run Python tools as modules (`uv run python -m pytest`); host policy blocks
-some uv launchers.
+some uv launchers and every unsigned executable outside trusted tools.
+Backend tests need Postgres: `just test` starts a local one first (`just db-up`, no Docker) and
+`just db-down` stops it; CI uses a Postgres 17 service container.
 Deploys are owner actions (`docs/runbooks/setup-and-deploy.md`). Claude may run `just preflight`
 and `just plan-dev` when the owner asks, but never runs `aws login`, `just bootstrap`,
-`just store-grafana-token` or `just deploy-*`.
+`just store-grafana-token`, `just store-database-url` or `just deploy-*`.
 
 ## Working with the owner
 - Ask instead of assuming: when a requirement or decision is ambiguous, ask a clear question.
