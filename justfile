@@ -33,10 +33,12 @@ web-check:
 edge-test:
     node --test infra/modules/edge/functions/*.test.mjs
 
-# Terraform: format, validate and test every stack
+# Terraform: format, validate and test every stack. The checks use their own data directory
+# (.terraform-check), so they never touch the S3 backend that `just bootstrap` initializes in
+# infra/bootstrap/.terraform, and they need no AWS session.
 tf-check:
     terraform fmt -check -recursive infra
-    for d in infra/bootstrap infra/modules/app infra/modules/edge; do (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
+    for d in infra/bootstrap infra/modules/app infra/modules/edge; do (cd "$d" && export TF_DATA_DIR=.terraform-check && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
 
 # CI hygiene: every workflow action pinned to a SHA
 pin-check:

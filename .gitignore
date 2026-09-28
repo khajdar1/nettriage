@@ -10,6 +10,7 @@ presentation/
 *.tfstate
 *.tfstate.*
 .terraform/
+.terraform-check/
 
 # Python
 __pycache__/
