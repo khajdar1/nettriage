@@ -1,3 +1,5 @@
+import io
+import logging
 import os
 from collections import Counter
 from collections.abc import Iterator
@@ -29,6 +31,7 @@ from nettriage.adapters.sessions import SessionStore
 from nettriage.entrypoints.api.app import create_app
 from nettriage.entrypoints.api.services import Services
 from nettriage.platform.config import Settings
+from nettriage.platform.logging import QUIET_LOGGERS, configure_logging
 from nettriage.platform.metrics import AppMetrics
 
 if TYPE_CHECKING:
@@ -197,6 +200,24 @@ def idp() -> FakeIdentityProvider:
 @pytest.fixture
 def metric_reader() -> InMemoryMetricReader:
     return InMemoryMetricReader()
+
+
+@pytest.fixture
+def logs() -> Iterator[io.StringIO]:
+    """The production logging setup at DEBUG, the most a stage could ever log, written to a
+    buffer instead of stdout."""
+    root = logging.getLogger()
+    saved = (root.handlers[:], root.level)
+    quiet = {name: logging.getLogger(name).level for name in QUIET_LOGGERS}
+    configure_logging(Settings(), level=logging.DEBUG)
+    buffer = io.StringIO()
+    handler = root.handlers[0]
+    assert isinstance(handler, logging.StreamHandler)
+    handler.setStream(buffer)
+    yield buffer
+    root.handlers, root.level = saved[0], saved[1]
+    for name, level in quiet.items():
+        logging.getLogger(name).setLevel(level)
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 
-from nettriage.entrypoints.api.access import Access, Public, SignedIn
+from nettriage.entrypoints.api.access import Access, OrgMember, Public, SignedIn
 
 # Every API route and its declared access. A new route fails the test until it is added here.
 EXPECTED = {
@@ -14,6 +14,18 @@ EXPECTED = {
     ("POST", "/api/auth/logout"): "signed in",
     ("POST", "/api/auth/logout-all"): "signed in",
     ("GET", "/api/v1/me"): "signed in",
+    ("POST", "/api/v1/orgs"): "signed in",
+    ("GET", "/api/v1/orgs/{org_id}"): "org:read",
+    ("PATCH", "/api/v1/orgs/{org_id}"): "org:update",
+    ("DELETE", "/api/v1/orgs/{org_id}"): "org:delete",
+    ("GET", "/api/v1/orgs/{org_id}/audit-log"): "audit:read",
+    ("GET", "/api/v1/orgs/{org_id}/members"): "members:read",
+    ("PATCH", "/api/v1/orgs/{org_id}/members/{user_id}"): "members:role",
+    ("DELETE", "/api/v1/orgs/{org_id}/members/{user_id}"): "members:remove or self",
+    ("GET", "/api/v1/orgs/{org_id}/invitations"): "members:invite",
+    ("POST", "/api/v1/orgs/{org_id}/invitations"): "members:invite",
+    ("DELETE", "/api/v1/orgs/{org_id}/invitations/{invitation_id}"): "members:invite",
+    ("POST", "/api/v1/invitations/accept"): "signed in",
 }
 # FastAPI's interactive docs, which only `local` and `dev` serve (spec §7).
 DOCS: set[str | None] = {"/api/docs", "/api/openapi.json"}
@@ -30,11 +42,14 @@ def declared_access(route: APIRoute) -> list[Access]:
     return found
 
 
-def describe(access: Access) -> str:
-    if isinstance(access, Public):
-        return access.policy.name
-    assert isinstance(access, SignedIn)
-    return "signed in"
+def most_specific(rules: list[Access]) -> set[str]:
+    """An org rule includes a session (OrgMember depends on SignedIn), so it speaks for both."""
+    org_rules = {rule for rule in rules if isinstance(rule, OrgMember)}
+    if org_rules:
+        return {r.permission + (" or self" if r.or_self else "") for r in org_rules}
+    if any(isinstance(rule, SignedIn) for rule in rules):
+        return {"signed in"}
+    return {rule.policy.name for rule in rules if isinstance(rule, Public)}
 
 
 def test_every_route_declares_exactly_one_access_rule(client: TestClient) -> None:
@@ -46,7 +61,7 @@ def test_every_route_declares_exactly_one_access_rule(client: TestClient) -> Non
         if not isinstance(route, APIRoute):
             others.add(context.path)
             continue
-        access = {describe(rule) for rule in declared_access(route)}
+        access = most_specific(declared_access(route))
         assert len(access) == 1, f"{context.path} declares {access or 'no access rule'}"
         for method in context.methods or ():
             actual[(method, str(context.path))] = next(iter(access))
