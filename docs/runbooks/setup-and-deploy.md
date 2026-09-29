@@ -314,12 +314,12 @@ developer console while signed in.
    `200`, with `member.invited` and `org.created`, newest first.
 8. Try a refusal:
    ```js
-   await api("DELETE", "/orgs/" + org.id, { confirm_name: "not the name" });
+   await api("DELETE", "/orgs/" + org.id + "?confirm_name=" + encodeURIComponent("not the name"));
    ```
    `422`: deleting an org needs its exact name.
 9. Delete the test org (you can have at most 3):
    ```js
-   await api("DELETE", "/orgs/" + org.id, { confirm_name: "Acme Security" });
+   await api("DELETE", "/orgs/" + org.id + "?confirm_name=" + encodeURIComponent("Acme Security"));
    ```
    `204`.
 

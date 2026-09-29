@@ -519,6 +519,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428.
 - **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads` and `POST /orgs` and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409.
 - **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests.
+- **No body on DELETE:** CloudFront's origin signing to the Lambda function URL rejects a DELETE that carries a body (found on dev in Plan 3c), so a DELETE takes its inputs from the path and the query. A test fails on any DELETE route that declares a body.
 - **Docs:** interactive API docs are enabled in `dev` only. Each build exports the OpenAPI JSON to the repository.
 
 | Method and path | Permission | Notes |
@@ -532,7 +533,7 @@ A failed condition returns the item as it was, which tells whether the request i
 | `POST /api/v1/orgs` | session | Create an org (at most 3 per user) |
 | `GET /api/v1/orgs/{org}` | `org:read` | |
 | `PATCH /api/v1/orgs/{org}` | `org:update` | Rename |
-| `DELETE /api/v1/orgs/{org}` | `org:delete` | Requires the org name as confirmation |
+| `DELETE /api/v1/orgs/{org}` | `org:delete` | Requires the org name as confirmation, as `?confirm_name=` |
 | `GET /api/v1/orgs/{org}/members` | `members:read` | |
 | `PATCH /api/v1/orgs/{org}/members/{user}` | `members:role` | |
 | `DELETE /api/v1/orgs/{org}/members/{user}` | `members:remove` or self | Leave or remove |

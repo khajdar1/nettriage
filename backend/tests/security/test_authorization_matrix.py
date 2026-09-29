@@ -23,7 +23,7 @@ ENDPOINTS: dict[str, tuple[str, str, dict[str, Any] | None]] = {
     "create org": ("POST", "/api/v1/orgs", {"name": "New org"}),
     "read org": ("GET", "/api/v1/orgs/{org}", None),
     "rename org": ("PATCH", "/api/v1/orgs/{org}", {"name": "Renamed"}),
-    "delete org": ("DELETE", "/api/v1/orgs/{org}", {"confirm_name": "{org_name}"}),
+    "delete org": ("DELETE", "/api/v1/orgs/{org}?confirm_name={org_name}", None),
     "audit log": ("GET", "/api/v1/orgs/{org}/audit-log", None),
     "list members": ("GET", "/api/v1/orgs/{org}/members", None),
     "change role": ("PATCH", "/api/v1/orgs/{org}/members/{target}", {"role": "analyst"}),
@@ -138,7 +138,10 @@ def test_the_matrix_covers_every_org_route(client: TestClient) -> None:
     covered = {
         (
             method,
-            fill(path, {"org": "{org_id}", "target": "{user_id}", "invitation": "{invitation_id}"}),
+            fill(
+                path.split("?")[0],
+                {"org": "{org_id}", "target": "{user_id}", "invitation": "{invitation_id}"},
+            ),
         )
         for method, path, _ in ENDPOINTS.values()
     }

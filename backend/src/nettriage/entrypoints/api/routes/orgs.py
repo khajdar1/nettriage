@@ -28,7 +28,6 @@ from nettriage.entrypoints.api.org_errors import org_rules
 from nettriage.entrypoints.api.schemas import (
     AuditEventOut,
     AuditLogOut,
-    DeleteOrgIn,
     NameIn,
     OrgOut,
 )
@@ -129,13 +128,14 @@ def rename(
 def delete(
     request: Request,
     org_id: UUID,
-    body: DeleteOrgIn,
+    confirm_name: Annotated[str, Query(max_length=100)],
     org: Annotated[OrgContext, Depends(OrgMember("org:delete"))],
 ) -> None:
     """Delete the org, its members, invitations and everything it owns. The caller must type
-    the org's name (spec §7). The audit log keeps its records."""
+    the org's name (spec §7), sent as `?confirm_name=`: a DELETE can't carry a body through
+    CloudFront. The audit log keeps its records."""
     with org_rules(request, "Deleting this organization", org=org, permission="org:delete"):
-        delete_org(get_services(request).database, org.org_id, org.user_id, body.confirm_name)
+        delete_org(get_services(request).database, org.org_id, org.user_id, confirm_name)
     audit(
         request,
         action="org.deleted",

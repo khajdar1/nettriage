@@ -4,6 +4,7 @@ between. Here OrgMember is made to see the role the caller had a moment ago; the
 decide with the role they have now, under the org's lock."""
 
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import pytest
@@ -77,7 +78,7 @@ def test_a_change_uses_the_role_the_caller_has_now(
     headers = signed_in_as(database_client, services.sessions, actor, clock())
     requests: dict[str, tuple[str, str, dict[str, str] | None]] = {
         "rename": ("PATCH", f"/api/v1/orgs/{org}", {"name": "Renamed"}),
-        "delete": ("DELETE", f"/api/v1/orgs/{org}", {"confirm_name": NAME}),
+        "delete": ("DELETE", f"/api/v1/orgs/{org}?confirm_name={quote(NAME)}", None),
         "promote": ("PATCH", f"/api/v1/orgs/{org}/members/{analyst}", {"role": "owner"}),
         "remove": ("DELETE", f"/api/v1/orgs/{org}/members/{analyst}", None),
         "invite": (
