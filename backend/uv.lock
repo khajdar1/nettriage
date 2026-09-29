@@ -753,7 +753,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-    { name = "types-boto3", extra = ["dynamodb", "ssm"] },
+    { name = "types-boto3", extra = ["dynamodb", "s3", "ssm"] },
 ]
 
 [package.metadata]
@@ -785,7 +785,7 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.16.9" },
-    { name = "types-boto3", extras = ["dynamodb", "ssm"], specifier = ">=1.43.103" },
+    { name = "types-boto3", extras = ["dynamodb", "s3", "ssm"], specifier = ">=1.43.103" },
 ]
 
 [[package]]
@@ -1384,6 +1384,9 @@ wheels = [
 dynamodb = [
     { name = "types-boto3-dynamodb" },
 ]
+s3 = [
+    { name = "types-boto3-s3" },
+]
 ssm = [
     { name = "types-boto3-ssm" },
 ]
@@ -1395,6 +1398,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/02/65/90fa8cd19a4dccf25dbaa9d5f50181bbb94a3f1f2d1d7808c5f14a86a998/types_boto3_dynamodb-1.43.64.tar.gz", hash = "sha256:e5eb0fa9027bafea70a00ee59a562cf1ad1f39bb7548b0dc44ccc5e0607d5c7a", size = 49846, upload-time = "2026-08-04T21:37:40.036Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7c/cd/b385b389adf2ded6c8d49d195a0047b7af1184e7eb44e7ac4adbcc97507c/types_boto3_dynamodb-1.43.64-py3-none-any.whl", hash = "sha256:43e819c4f74a0aecea0f72a60d2fc2d0052c3ae9f8ebbd7ab62e35d59f7cbda0", size = 60080, upload-time = "2026-08-04T21:37:37.989Z" },
+]
+
+[[package]]
+name = "types-boto3-s3"
+version = "1.43.93"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/1a/285aa2a27436e437aea1c6d6f964b692df3d8c349bf6a35fd476d0b2f7bb/types_boto3_s3-1.43.93.tar.gz", hash = "sha256:6a7f979872b81f6bf22eb4dc39ea9909d635ec756275eca69e9caabdc94d5a6a", size = 79218, upload-time = "2026-09-11T19:44:38.149Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1f/16/db644e738b967336fb0ca335d708c7d659a965b8ae703e9c50fe209c59be/types_boto3_s3-1.43.93-py3-none-any.whl", hash = "sha256:da9249f05ea081bb3b3f3b8cc49099a988ff5c89da8a7393532397c6174e04d3", size = 86538, upload-time = "2026-09-11T19:44:36.68Z" },
 ]
 
 [[package]]

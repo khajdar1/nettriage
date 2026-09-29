@@ -10,7 +10,7 @@ import pytest
 from browser import signed_in_as
 from conftest import Database, FakeClock
 from fastapi.testclient import TestClient
-from tenantdata import add_invitation, add_member, add_org, add_user
+from tenantdata import add_invitation, add_member, add_org, add_upload, add_user
 
 from nettriage.application.organizations import new_invitation_token, token_hash
 from nettriage.entrypoints.api.services import Services
@@ -36,6 +36,13 @@ ENDPOINTS: dict[str, tuple[str, str, dict[str, Any] | None]] = {
     ),
     "revoke invitation": ("DELETE", "/api/v1/orgs/{org}/invitations/{invitation}", None),
     "accept invitation": ("POST", "/api/v1/invitations/accept", {"token": "{token}"}),
+    "create upload": (
+        "POST",
+        "/api/v1/orgs/{org}/uploads",
+        {"filename": "flows.log", "size_bytes": 1024, "sha256": "{sha256}"},
+    ),
+    "list uploads": ("GET", "/api/v1/orgs/{org}/uploads", None),
+    "read upload": ("GET", "/api/v1/orgs/{org}/uploads/{upload}", None),
 }
 
 # Expected status per caller: owner, admin, analyst, viewer, non-member, anonymous. The target
@@ -54,6 +61,9 @@ MATRIX: dict[str, tuple[int, int, int, int, int, int]] = {
     "invite": (201, 201, 403, 403, 404, 401),
     "revoke invitation": (204, 204, 403, 403, 404, 401),
     "accept invitation": (403, 403, 403, 403, 200, 401),
+    "create upload": (201, 201, 201, 403, 404, 401),
+    "list uploads": (200, 200, 200, 200, 404, 401),
+    "read upload": (200, 200, 200, 200, 404, 401),
 }
 
 
@@ -78,6 +88,7 @@ def world(database: Database) -> World:
         add_member(connection, org, people["target"], "viewer")
         invitation = add_invitation(connection, org, people["owner"], f"{uuid4().hex}@example.com")
         add_invitation(connection, org, people["owner"], stranger_email)
+        upload = add_upload(connection, org, people["analyst"])
         connection.exec_driver_sql(
             "UPDATE invitations SET token_hash = %s WHERE lower(email) = lower(%s)",
             (token_hash(token), stranger_email),
@@ -90,6 +101,8 @@ def world(database: Database) -> World:
             "invitation": str(invitation),
             "token": token,
             "new_email": f"{uuid4().hex}@example.com",
+            "upload": str(upload),
+            "sha256": "ab" * 32,
         },
         people=people,
     )
@@ -140,7 +153,12 @@ def test_the_matrix_covers_every_org_route(client: TestClient) -> None:
             method,
             fill(
                 path.split("?")[0],
-                {"org": "{org_id}", "target": "{user_id}", "invitation": "{invitation_id}"},
+                {
+                    "org": "{org_id}",
+                    "target": "{user_id}",
+                    "invitation": "{invitation_id}",
+                    "upload": "{upload_id}",
+                },
             ),
         )
         for method, path, _ in ENDPOINTS.values()

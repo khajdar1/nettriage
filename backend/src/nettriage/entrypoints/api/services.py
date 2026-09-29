@@ -10,10 +10,12 @@ from fastapi import Request
 from sqlalchemy import Engine
 
 from nettriage.adapters.idempotency import IdempotencyStore
+from nettriage.adapters.kill_switch import KillSwitch
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
+from nettriage.adapters.upload_storage import UploadStorage
 from nettriage.application.clock import Clock
 from nettriage.application.rate_limits import UNKNOWN_SESSIONS_PER_IP, LocalLimiter
 from nettriage.platform.metrics import AppMetrics
@@ -26,6 +28,8 @@ class Services:
     login_states: LoginStateStore
     rate_limiter: RateLimiter
     idempotency: IdempotencyStore
+    upload_storage: UploadStorage
+    uploads_switch: KillSwitch
     oidc: OidcClient
     clock: Clock
     metrics: AppMetrics

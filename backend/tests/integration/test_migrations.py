@@ -7,7 +7,7 @@ from conftest import BACKEND, alembic_config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 
-TABLES = {"users", "organizations", "memberships", "invitations", "audit_log"}
+TABLES = {"users", "organizations", "memberships", "invitations", "audit_log", "uploads"}
 
 
 def tables(url: URL) -> set[str]:

@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import boto3
 import pytest
@@ -14,7 +15,10 @@ SETTINGS = Settings(
     oidc_parameter="/nettriage/dev/api/oidc",
     oidc_secret_parameter="/nettriage/dev/api/oidc-client-secret",  # noqa: S106 - a parameter name
     database_url_parameter="/nettriage/dev/db/app-api-url",
+    uploads_bucket="nettriage-dev-uploads-12345678",
+    uploads_enabled_parameter="/nettriage/dev/kill/uploads-enabled",
 )
+NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 OIDC = {
     "issuer": "https://cognito-idp.eu-north-1.amazonaws.com/eu-north-1_Abc",
     "client_id": "client-1",
@@ -32,6 +36,7 @@ def session() -> Iterator[boto3.session.Session]:
         ssm.put_parameter(
             Name=SETTINGS.oidc_secret_parameter, Value="client-secret", Type="SecureString"
         )
+        ssm.put_parameter(Name=SETTINGS.uploads_enabled_parameter, Value="true", Type="String")
         yield session
 
 
@@ -49,6 +54,11 @@ def test_services_are_built_from_ssm(session: boto3.session.Session) -> None:
     assert oidc.client_secret == "client-secret"  # noqa: S105 - the fake secret put above
     assert services.database.url.host == "ep-x-pooler.eu-central-1.aws.neon.tech"
     assert services.database.pool.size() == 1  # type: ignore[attr-defined]
+    assert services.uploads_switch.is_on()
+    put = services.upload_storage.presign_put(
+        key="orgs/o/uploads/u/raw", size_bytes=1, sha256="0" * 64, traceparent=None, now=NOW
+    )
+    assert put.url.startswith("https://nettriage-dev-uploads-12345678.s3.eu-north-1.amazonaws.com/")
 
 
 def test_a_missing_parameter_is_named_without_any_value(session: boto3.session.Session) -> None:

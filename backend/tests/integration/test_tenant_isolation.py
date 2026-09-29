@@ -12,7 +12,7 @@ from tenantdata import add_invitation, add_member, add_tenant
 from nettriage.adapters.postgres import tenant_transaction
 from nettriage.adapters.users import sign_in_user
 
-TENANT_TABLES = ("organizations", "memberships", "invitations", "audit_log")
+TENANT_TABLES = ("organizations", "memberships", "invitations", "audit_log", "uploads")
 INSERT_AUDIT_EVENT = text(
     "INSERT INTO audit_log (id, org_id, actor_type, action, outcome) "
     "VALUES (:id, :org, 'user', 'test.event', 'success')"
@@ -42,7 +42,7 @@ def test_a_query_without_an_org_filter_sees_only_its_own_org(database: Database)
     ) as connection:
         seen = {
             table: org_ids(connection, table)
-            for table in ("organizations", "memberships", "invitations")
+            for table in ("organizations", "memberships", "invitations", "uploads")
         }
 
     assert seen == {table: {mine.org_id} for table in seen}
@@ -230,6 +230,11 @@ def test_audit_events_cannot_be_written_for_another_org(database: Database) -> N
         "UPDATE invitations SET token_hash = repeat('0', 64)",
         "INSERT INTO organizations (id, name, slug, is_demo) "
         "VALUES (gen_random_uuid(), 'Demo', 'fake-demo', true)",
+        "UPDATE uploads SET status = 'analyzed'",
+        "DELETE FROM uploads",
+        "INSERT INTO uploads (id, org_id, uploaded_by, original_filename, s3_key, size_bytes, "
+        "sha256, status) SELECT gen_random_uuid(), org_id, uploaded_by, 'x', 'k', 1, sha256, "
+        "'analyzed' FROM uploads",
         "CREATE TEMP TABLE shadow (id int)",
         "CREATE TABLE sneaky (id int)",
     ],

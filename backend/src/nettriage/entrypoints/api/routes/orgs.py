@@ -2,28 +2,18 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import json
-import logging
-import re
-from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from nettriage.adapters.audit_log import list_org_events
-from nettriage.adapters.idempotency import (
-    IdempotencyInProgress,
-    IdempotencyMismatch,
-    StoredResponse,
-)
+from nettriage.adapters.idempotency import StoredResponse
 from nettriage.adapters.organizations import create_org, delete_org, get_org, rename_org
-from nettriage.entrypoints.api.access import CurrentSession, OrgContext, OrgMember, unavailable
+from nettriage.entrypoints.api.access import CurrentSession, OrgContext, OrgMember
 from nettriage.entrypoints.api.auditing import audit
+from nettriage.entrypoints.api.cursors import decode_cursor, encode_cursor
+from nettriage.entrypoints.api.idempotent import create_once, created_response
 from nettriage.entrypoints.api.org_errors import org_rules
 from nettriage.entrypoints.api.schemas import (
     AuditEventOut,
@@ -33,11 +23,7 @@ from nettriage.entrypoints.api.schemas import (
 )
 from nettriage.entrypoints.api.services import get_services
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/v1/orgs")
-
-IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9_-]{1,100}")
 
 
 @router.post("", status_code=201, response_model=OrgOut)
@@ -45,53 +31,23 @@ def create(request: Request, body: NameIn, session: CurrentSession) -> Response:
     """Create an org with the caller as its owner. An `Idempotency-Key` header makes a retry
     return the first response instead of creating a second org (spec §7)."""
     services = get_services(request)
-    key = request.headers.get("idempotency-key")
-    if key is not None and not IDEMPOTENCY_KEY.fullmatch(key):
-        raise HTTPException(
-            422, detail="Idempotency-Key must be 1 to 100 letters, digits, dashes or underscores."
-        )
-    if key is not None:
-        request_hash = hashlib.sha256(json.dumps(body.model_dump(), sort_keys=True).encode())
-        try:
-            stored = services.idempotency.begin(
-                session.user_id, key, request_hash.hexdigest(), services.clock()
-            )
-        except IdempotencyMismatch:
-            raise HTTPException(
-                422, detail="This Idempotency-Key was already used for a different request."
-            ) from None
-        except IdempotencyInProgress:
-            raise HTTPException(
-                409, detail="A request with this Idempotency-Key is still running; retry shortly."
-            ) from None
-        except BotoCoreError, ClientError:
-            logger.exception("idempotency_read_failed")
-            raise unavailable("Creating an organization") from None
-        if stored is not None:
-            return _created(stored)
-    try:
+
+    def work() -> StoredResponse:
         with org_rules(request, "Creating an organization"):
             org = create_org(services.database, user_id=session.user_id, name=body.name)
-    except Exception:
-        if key is not None:
-            _forget(request, session.user_id, key)
-        raise
-    created = StoredResponse(status=201, body=OrgOut.of(org).model_dump(mode="json"))
-    if key is not None:
-        try:
-            services.idempotency.finish(session.user_id, key, created, services.clock())
-        except BotoCoreError, ClientError:
-            logger.warning("idempotency_write_failed")
-    audit(
-        request,
-        action="org.created",
-        outcome="success",
-        actor_user_id=session.user_id,
-        org_id=org.id,
-        target_type="organization",
-        target_id=str(org.id),
-    )
-    return _created(created)
+        audit(
+            request,
+            action="org.created",
+            outcome="success",
+            actor_user_id=session.user_id,
+            org_id=org.id,
+            target_type="organization",
+            target_id=str(org.id),
+        )
+        return StoredResponse(status=201, body=OrgOut.of(org).model_dump(mode="json"))
+
+    stored = create_once(request, session.user_id, body, "Creating an organization", work)
+    return created_response(stored, f"/api/v1/orgs/{stored.body['id']}")
 
 
 @router.get("/{org_id}")
@@ -156,7 +112,7 @@ def audit_log(
     cursor: Annotated[str | None, Query(max_length=200)] = None,
 ) -> AuditLogOut:
     """The org's audit events, newest first, a page at a time (spec §7's cursor pagination)."""
-    before = _decode(cursor) if cursor else None
+    before = decode_cursor(cursor) if cursor else None
     with org_rules(request, "The audit log"):
         entries = list_org_events(
             get_services(request).database,
@@ -169,36 +125,5 @@ def audit_log(
     more = len(entries) > limit
     return AuditLogOut(
         events=[AuditEventOut(**vars(entry)) for entry in page],
-        next_cursor=_encode(page[-1].created_at, page[-1].id) if more else None,
+        next_cursor=encode_cursor(page[-1].created_at, page[-1].id) if more else None,
     )
-
-
-def _created(stored: StoredResponse) -> Response:
-    return JSONResponse(
-        stored.body,
-        status_code=stored.status,
-        headers={"Location": f"/api/v1/orgs/{stored.body['id']}"},
-    )
-
-
-def _forget(request: Request, user_id: UUID, key: str) -> None:
-    try:
-        get_services(request).idempotency.abandon(user_id, key)
-    except BotoCoreError, ClientError:
-        logger.warning("idempotency_abandon_failed")
-
-
-def _encode(created_at: datetime, event_id: UUID) -> str:
-    raw = json.dumps([created_at.isoformat(), str(event_id)]).encode()
-    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
-
-
-def _decode(cursor: str) -> tuple[datetime, UUID]:
-    try:
-        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
-        created_at, event_id = json.loads(raw)
-        return datetime.fromisoformat(created_at), UUID(event_id)
-    except (ValueError, TypeError) as error:
-        raise HTTPException(
-            422, detail="The cursor isn't valid; start from the first page."
-        ) from error

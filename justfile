@@ -49,7 +49,7 @@ edge-test:
 # infra/bootstrap/.terraform, and they need no AWS session.
 tf-check:
     terraform fmt -check -recursive infra
-    for d in infra/bootstrap infra/modules/app infra/modules/data infra/modules/edge infra/modules/identity; do (cd "$d" && export TF_DATA_DIR=.terraform-check && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
+    for d in infra/bootstrap infra/modules/app infra/modules/data infra/modules/edge infra/modules/identity infra/modules/pipeline; do (cd "$d" && export TF_DATA_DIR=.terraform-check && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
 
 # CI hygiene: every workflow action pinned to a SHA
 pin-check:
@@ -74,6 +74,13 @@ store-grafana-token stage="dev":
 # Store the Neon owner's connection string in SSM (prompts; never printed)
 store-database-url stage="dev":
     uv run --project backend python -m tools.deploy store-database-url --stage {{stage}}
+
+# AWS: pause or resume uploads in an emergency (the uploads kill switch, spec §9.7)
+pause-uploads stage="dev":
+    uv run --project backend python -m tools.deploy uploads off --stage {{stage}}
+
+resume-uploads stage="dev":
+    uv run --project backend python -m tools.deploy uploads on --stage {{stage}}
 
 # Plan the dev stage for the checked-out, pushed commit and post the changes to its PR
 plan-dev:

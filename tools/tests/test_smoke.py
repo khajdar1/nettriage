@@ -2,11 +2,15 @@ from collections.abc import Callable
 
 import httpx
 
-from tools.smoke import run_checks
+from tools.smoke import run_checks, wait_for_uploads_origin
 
 SECURITY_HEADERS = {
     "strict-transport-security": "max-age=31536000; includeSubDomains",
-    "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
+    "content-security-policy": (
+        "default-src 'self'; connect-src 'self' "
+        "https://nettriage-dev-uploads-1a2b3c4d.s3.eu-north-1.amazonaws.com; "
+        "frame-ancestors 'none'"
+    ),
     "x-content-type-options": "nosniff",
 }
 
@@ -15,8 +19,16 @@ COGNITO = "https://nettriage-dev-1a2b3c4d.auth.eu-north-1.amazoncognito.com"
 AUTHORIZE = f"{COGNITO}/oauth2/authorize?client_id=abc&code_challenge_method=S256&state=s"
 
 
+def uploads_bucket(request: httpx.Request) -> httpx.Response:
+    if request.method == "OPTIONS" and request.headers.get("origin") == "https://cdn.example":
+        return httpx.Response(200, headers={"access-control-allow-origin": "https://cdn.example"})
+    return httpx.Response(403, content=b"<Error><Code>AccessDenied</Code></Error>")
+
+
 def healthy(request: httpx.Request) -> httpx.Response:
     path = request.url.path
+    if request.url.host.endswith(".s3.eu-north-1.amazonaws.com"):
+        return uploads_bucket(request)
     if request.url.host == "fn.example":
         return httpx.Response(403, json={"Message": "Forbidden"})
     if request.url.host.endswith(".amazoncognito.com"):
@@ -130,3 +142,69 @@ def test_an_api_that_cannot_see_the_viewer_ip_is_caught() -> None:
         return healthy(request)
 
     assert checks_for(no_viewer)["api limits requests per viewer ip"] is False
+
+
+def test_a_csp_without_the_uploads_bucket_is_caught() -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        response = healthy(request)
+        if "content-security-policy" in response.headers:
+            response.headers["content-security-policy"] = "default-src 'self'; connect-src 'self'"
+        return response
+
+    assert checks_for(broken)["csp allows the uploads bucket"] is False
+
+
+def test_a_bucket_open_to_any_origin_is_caught() -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        if request.method == "OPTIONS":
+            origin = request.headers.get("origin", "")
+            return httpx.Response(200, headers={"access-control-allow-origin": origin})
+        return healthy(request)
+
+    results = checks_for(broken)
+    assert results["uploads bucket lets the app PUT"] is True
+    assert results["uploads bucket refuses other origins"] is False
+
+
+def test_a_bucket_that_takes_anonymous_writes_is_caught() -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            return httpx.Response(200)
+        return healthy(request)
+
+    assert checks_for(broken)["uploads bucket refuses anonymous writes"] is False
+
+
+UPLOADS_ORIGIN = "https://nettriage-dev-uploads-1a2b3c4d.s3.eu-north-1.amazonaws.com"
+
+
+def test_the_smoke_waits_for_the_new_csp_to_reach_the_edge() -> None:
+    """A deploy's new CSP takes a few minutes to reach CloudFront's edge; until then the
+    bucket checks would fail on the old header."""
+    roots: list[int] = []
+
+    def propagating(request: httpx.Request) -> httpx.Response:
+        response = healthy(request)
+        if request.url.host == "cdn.example" and request.url.path == "/":
+            roots.append(1)
+            if len(roots) < 3:
+                response.headers["content-security-policy"] = "default-src 'self'; connect-src 'self'"
+        return response
+
+    client = httpx.Client(transport=httpx.MockTransport(propagating))
+
+    assert wait_for_uploads_origin(client, "https://cdn.example", attempts=5, delay=0) == (
+        UPLOADS_ORIGIN
+    )
+    assert len(roots) == 3
+
+
+def test_the_wait_for_the_csp_gives_up_after_its_attempts() -> None:
+    def stale(request: httpx.Request) -> httpx.Response:
+        response = healthy(request)
+        response.headers["content-security-policy"] = "default-src 'self'"
+        return response
+
+    client = httpx.Client(transport=httpx.MockTransport(stale))
+
+    assert wait_for_uploads_origin(client, "https://cdn.example", attempts=2, delay=0) is None

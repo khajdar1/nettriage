@@ -20,18 +20,21 @@ mock_provider "aws" {
 }
 
 variables {
-  stage                    = "dev"
-  lambda_zip_path          = "tests/fixtures/app.zip"
-  app_version              = "test-sha"
-  lwa_layer_arn            = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
-  otel_collector_layer_arn = "arn:aws:lambda:eu-north-1:184161586896:layer:opentelemetry-collector-arm64-0_22_0:1"
-  grafana_otlp_endpoint    = "https://otlp-gateway.example.grafana.net/otlp"
-  grafana_otlp_auth        = "dGVzdDp0ZXN0"
-  runtime_table_name       = "nettriage-dev-runtime"
-  runtime_table_arn        = "arn:aws:dynamodb:eu-north-1:123456789012:table/nettriage-dev-runtime"
-  oidc_parameter           = "/nettriage/dev/api/oidc"
-  oidc_secret_parameter    = "/nettriage/dev/api/oidc-client-secret"
-  database_url_parameter   = "/nettriage/dev/db/app-api-url"
+  stage                     = "dev"
+  lambda_zip_path           = "tests/fixtures/app.zip"
+  app_version               = "test-sha"
+  lwa_layer_arn             = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
+  otel_collector_layer_arn  = "arn:aws:lambda:eu-north-1:184161586896:layer:opentelemetry-collector-arm64-0_22_0:1"
+  grafana_otlp_endpoint     = "https://otlp-gateway.example.grafana.net/otlp"
+  grafana_otlp_auth         = "dGVzdDp0ZXN0"
+  runtime_table_name        = "nettriage-dev-runtime"
+  runtime_table_arn         = "arn:aws:dynamodb:eu-north-1:123456789012:table/nettriage-dev-runtime"
+  oidc_parameter            = "/nettriage/dev/api/oidc"
+  oidc_secret_parameter     = "/nettriage/dev/api/oidc-client-secret"
+  database_url_parameter    = "/nettriage/dev/db/app-api-url"
+  uploads_bucket            = "nettriage-dev-uploads-12345678"
+  uploads_bucket_arn        = "arn:aws:s3:::nettriage-dev-uploads-12345678"
+  uploads_enabled_parameter = "/nettriage/dev/kill/uploads-enabled"
 }
 
 run "function_is_arm64_python_behind_iam_auth" {
@@ -110,11 +113,29 @@ run "the_api_reads_only_its_own_table_and_parameters" {
       "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/api/oidc",
       "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/api/oidc-client-secret",
       "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/db/app-api-url",
+      "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/kill/uploads-enabled",
     ])
-    error_message = "The API reads only its own three parameters (spec §6.8)."
+    error_message = "The API reads only its own parameters and the uploads kill switch (spec §6.8, §9.7)."
   }
   assert {
     condition     = aws_lambda_function.api.environment[0].variables["NETTRIAGE_DATABASE_URL_PARAMETER"] == "/nettriage/dev/db/app-api-url"
     error_message = "The function gets parameter names, never secret values."
+  }
+}
+
+run "the_api_may_only_put_uploads_under_orgs" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.api_uploads.policy).Statement[0].Action == "s3:PutObject"
+    error_message = "The API only puts objects, for presigned PUTs; it never reads uploads."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.api_uploads.policy).Statement[0].Resource == "arn:aws:s3:::nettriage-dev-uploads-12345678/orgs/*"
+    error_message = "Presigned PUTs may only write under orgs/ in the uploads bucket (spec §5.6)."
+  }
+  assert {
+    condition     = aws_lambda_function.api.environment[0].variables["NETTRIAGE_UPLOADS_BUCKET"] == "nettriage-dev-uploads-12345678" && aws_lambda_function.api.environment[0].variables["NETTRIAGE_UPLOADS_ENABLED_PARAMETER"] == "/nettriage/dev/kill/uploads-enabled"
+    error_message = "The API is told the bucket and the kill switch's name, never values."
   }
 }

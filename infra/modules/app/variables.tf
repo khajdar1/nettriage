@@ -79,3 +79,17 @@ variable "database_url_parameter" {
   type        = string
   description = "SSM SecureString with app_api's pooled Neon URL, written by the deploy (tools/deploy)."
 }
+
+variable "uploads_bucket" {
+  type        = string
+  description = "The uploads bucket, which presigned PUTs go to."
+}
+
+variable "uploads_bucket_arn" {
+  type = string
+}
+
+variable "uploads_enabled_parameter" {
+  type        = string
+  description = "Name of the SSM parameter that switches uploads on and off (spec §9.7)."
+}

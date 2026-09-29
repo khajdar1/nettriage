@@ -325,7 +325,69 @@ developer console while signed in.
 
 If the console shows `401`, your session ended: sign in again and repeat from step 4.
 
+### B6. Try an upload
+Files go from the browser straight to S3, with a presigned PUT the API hands out. Analysis comes
+in Plan 4b; for now an upload stays `pending_upload`. This also checks that S3 refuses any file
+other than the one the API signed for (spec §13.2).
+1. Do B5 steps 1 to 4 (sign in, open the console, define `api`).
+2. Create an org to upload into:
+   ```js
+   const org = await api("POST", "/orgs", { name: "Upload Test" });
+   ```
+3. Prepare a small file and its SHA-256:
+   ```js
+   const file = new TextEncoder().encode("version srcaddr dstaddr srcport dstport protocol packets bytes start end action\n");
+   const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+   const sha256 = hex(await crypto.subtle.digest("SHA-256", file));
+   ```
+4. Ask to upload it:
+   ```js
+   const created = await api("POST", "/orgs/" + org.id + "/uploads", { filename: "test.log", size_bytes: file.length, sha256 });
+   ```
+   `201`, with `upload.status: "pending_upload"`, an `upload_url` on
+   `nettriage-dev-uploads-….s3.eu-north-1.amazonaws.com` and two `upload_headers` to send with
+   the PUT: `x-amz-checksum-sha256` and `x-amz-meta-traceparent`. The browser adds the file's
+   length itself. The URL works for 5 minutes, so do steps 5 and 6 right away.
+5. Check that S3 refuses a different file. Same length, different content:
+   ```js
+   (await fetch(created.upload_url, { method: "PUT", headers: created.upload_headers, body: new TextEncoder().encode("VERSION srcaddr dstaddr srcport dstport protocol packets bytes start end action\n") })).status;
+   ```
+   `400` (the checksum doesn't match). One byte longer:
+   ```js
+   (await fetch(created.upload_url, { method: "PUT", headers: created.upload_headers, body: new TextEncoder().encode("version srcaddr dstaddr srcport dstport protocol packets bytes start end action\n\n") })).status;
+   ```
+   `403` (the signed length doesn't match). If the console shows `TypeError: Failed to fetch`
+   instead of a number, S3 refused the file too: open the **Network** tab to see the PUT's
+   `400` or `403`.
+6. Upload the real file:
+   ```js
+   (await fetch(created.upload_url, { method: "PUT", headers: created.upload_headers, body: file })).status;
+   ```
+   `200`.
+7. List the org's uploads:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/uploads");
+   ```
+   `200`, with your upload, still `pending_upload`.
+8. Delete the test org when you're done (its file is deleted from S3 after 30 days):
+   ```js
+   await api("DELETE", "/orgs/" + org.id + "?confirm_name=" + encodeURIComponent("Upload Test"));
+   ```
+
+If step 5 gives `200`, S3 accepted a file it shouldn't have: stop and tell Claude (spec §13.2's
+fallback is a presigned POST).
+
 ## Part C: when things go wrong
+
+### Pause uploads in an emergency
+Uploads have a kill switch in SSM (spec §9.7). Flipping it needs your AWS session.
+1. `aws login --profile nettriage`
+2. Pause: `just pause-uploads`. Expected:
+   `Uploads in dev are paused (/nettriage/dev/kill/uploads-enabled = false). The API picks this up within a minute.`
+3. Resume later: `just resume-uploads`. Expected: `Uploads in dev are on (… = true). …`
+
+Within a minute, new uploads get `503` ("Uploads are paused for now"); files already uploaded are
+kept. A deploy never switches uploads back on.
 
 ### Roll back
 On GitHub, open the merged PR and choose **Revert**, which opens a revert PR. Merge it after CI
@@ -360,7 +422,8 @@ passes, then run B2 again.
 | The browser lands on `/?sign_in=unavailable` | DynamoDB, Neon or Cognito didn't answer. Wait a minute and start again; if it keeps happening, tell Claude |
 | The browser lands on `/?sign_in=limited` | Too many sign-ins from your network in a short time. Wait a minute, then start again |
 | The browser lands on `/?sign_in=disabled` | This account is disabled in the database. Tell Claude if that's unexpected |
-| `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account. Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
+| `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account, or more than 5 uploads started at once in one org (20 a day). Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
+| `503` "Uploads are paused for now" | The uploads kill switch is off. Resume it as in "Pause uploads in an emergency" if that's not intended |
 | Cognito's verification email never arrives | Check spam. Cognito's built-in sender allows about 50 emails a day per account; wait until tomorrow if many sign-ups ran today |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |
 | `` STOP: `terraform apply` failed with exit code 1. `` | Terraform's own error is printed above this line (`apply` shares the terminal), so scroll up and read it. If it's `Error acquiring the state lock`, see that row; otherwise send the output to Claude. Terraform may have made some changes before failing; the next plan or deploy shows what's left |
