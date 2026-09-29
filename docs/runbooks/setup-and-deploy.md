@@ -345,8 +345,9 @@ other than the one the API signed for (spec §13.2).
    const created = await api("POST", "/orgs/" + org.id + "/uploads", { filename: "test.log", size_bytes: file.length, sha256 });
    ```
    `201`, with `upload.status: "pending_upload"`, an `upload_url` on
-   `nettriage-dev-uploads-….s3.eu-north-1.amazonaws.com` and one `upload_headers` entry per
-   signed header. The URL works for 5 minutes, so do steps 5 and 6 right away.
+   `nettriage-dev-uploads-….s3.eu-north-1.amazonaws.com` and two `upload_headers` to send with
+   the PUT: `x-amz-checksum-sha256` and `x-amz-meta-traceparent`. The browser adds the file's
+   length itself. The URL works for 5 minutes, so do steps 5 and 6 right away.
 5. Check that S3 refuses a different file. Same length, different content:
    ```js
    (await fetch(created.upload_url, { method: "PUT", headers: created.upload_headers, body: new TextEncoder().encode("VERSION srcaddr dstaddr srcport dstport protocol packets bytes start end action\n") })).status;
@@ -379,10 +380,11 @@ fallback is a presigned POST).
 ## Part C: when things go wrong
 
 ### Pause uploads in an emergency
-Uploads have a kill switch in SSM (spec §9.7). Pausing them needs your AWS session
-(`aws login --profile nettriage`).
-- Pause: `aws ssm put-parameter --profile nettriage --region eu-north-1 --name /nettriage/dev/kill/uploads-enabled --value false --overwrite`
-- Resume: the same command with `--value true`.
+Uploads have a kill switch in SSM (spec §9.7). Flipping it needs your AWS session.
+1. `aws login --profile nettriage`
+2. Pause: `just pause-uploads`. Expected:
+   `Uploads in dev are paused (/nettriage/dev/kill/uploads-enabled = false). The API picks this up within a minute.`
+3. Resume later: `just resume-uploads`. Expected: `Uploads in dev are on (… = true). …`
 
 Within a minute, new uploads get `503` ("Uploads are paused for now"); files already uploaded are
 kept. A deploy never switches uploads back on.
