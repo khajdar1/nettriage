@@ -110,7 +110,7 @@ def rename(
     body: NameIn,
     org: Annotated[OrgContext, Depends(OrgMember("org:update"))],
 ) -> OrgOut:
-    with org_rules(request, "Renaming this organization"):
+    with org_rules(request, "Renaming this organization", org=org, permission="org:update"):
         renamed = rename_org(get_services(request).database, org.org_id, org.user_id, body.name)
     audit(
         request,
@@ -134,7 +134,7 @@ def delete(
 ) -> None:
     """Delete the org, its members, invitations and everything it owns. The caller must type
     the org's name (spec §7). The audit log keeps its records."""
-    with org_rules(request, "Deleting this organization"):
+    with org_rules(request, "Deleting this organization", org=org, permission="org:delete"):
         delete_org(get_services(request).database, org.org_id, org.user_id, body.confirm_name)
     audit(
         request,

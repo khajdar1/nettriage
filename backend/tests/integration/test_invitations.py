@@ -48,7 +48,7 @@ def invite(
     now: datetime = NOW,
 ) -> str:
     _, token = create_invitation(
-        database.app_api, org, actor_id=owner, actor_role="owner", email=email, role=role, now=now
+        database.app_api, org, actor_id=owner, email=email, role=role, now=now
     )
     return token
 
@@ -61,7 +61,6 @@ def test_an_invitation_is_pending_and_only_its_tokens_hash_is_stored(database: D
         database.app_api,
         org,
         actor_id=owner,
-        actor_role="owner",
         email=email,
         role="analyst",
         now=NOW,
@@ -89,7 +88,6 @@ def test_an_admin_can_invite_only_analysts_and_viewers(database: Database, role:
             database.app_api,
             org,
             actor_id=admin,
-            actor_role="admin",
             email=f"{uuid4().hex}@example.com",
             role=role,
             now=NOW,
@@ -149,7 +147,6 @@ def test_a_revoked_invitation_is_gone_and_can_not_be_revoked_twice(database: Dat
         database.app_api,
         org,
         actor_id=owner,
-        actor_role="owner",
         email=f"{uuid4().hex}@example.com",
         role="viewer",
         now=NOW,
@@ -206,7 +203,6 @@ def test_a_revoked_expired_or_unknown_invitation_is_refused(database: Database, 
         database.app_api,
         org,
         actor_id=owner,
-        actor_role="owner",
         email=email,
         role="viewer",
         now=NOW,

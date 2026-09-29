@@ -16,6 +16,7 @@ from nettriage.adapters.organizations import (
     count_members,
     count_user_orgs,
     lock_org,
+    lock_org_for,
     lock_user,
     read_org,
     set_org,
@@ -32,6 +33,7 @@ from nettriage.application.organizations import (
     QuotaExceeded,
     WrongEmail,
     new_invitation_token,
+    require,
     token_hash,
 )
 from nettriage.application.permissions import Role, can_manage
@@ -69,18 +71,18 @@ def create_invitation(
     org_id: UUID,
     *,
     actor_id: UUID,
-    actor_role: Role,
     email: str,
     role: Role,
     now: datetime,
 ) -> tuple[Invitation, str]:
     """A new invitation, and its token, which is shown once and never stored. An expired
     invitation for the same address is revoked first (Plan 3a, Decision 6)."""
-    if not can_manage(actor_role, role):
-        raise Forbidden("Your role can't invite someone with that role.")
     token = new_invitation_token()
     with tenant_transaction(engine, org_id=org_id, user_id=actor_id) as connection:
-        lock_org(connection, org_id)
+        actor_role = lock_org_for(connection, org_id, actor_id)
+        require(actor_role, "members:invite")
+        if not can_manage(actor_role, role):
+            raise Forbidden("Your role can't invite someone with that role.")
         member = connection.execute(
             text(
                 "SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id "
@@ -143,8 +145,22 @@ def create_invitation(
 def revoke_invitation(
     engine: Engine, org_id: UUID, *, actor_id: UUID, invitation_id: UUID, now: datetime
 ) -> bool:
-    """Revoke a pending invitation. False if there's no pending invitation with that ID."""
+    """Revoke a pending invitation. False if there's no pending invitation with that ID. Like
+    inviting, it's only for a role the caller may grant (spec §6.4)."""
     with tenant_transaction(engine, org_id=org_id, user_id=actor_id) as connection:
+        actor_role = lock_org_for(connection, org_id, actor_id)
+        require(actor_role, "members:invite")
+        role = connection.execute(
+            text(
+                "SELECT role FROM invitations WHERE org_id = :org AND id = :id "
+                "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > :now"
+            ),
+            {"now": now, "org": org_id, "id": invitation_id},
+        ).scalar_one_or_none()
+        if role is None:
+            return False
+        if not can_manage(actor_role, role):
+            raise Forbidden("Your role can't revoke an invitation for that role.")
         revoked = connection.execute(
             text(
                 "UPDATE invitations SET revoked_at = :now WHERE org_id = :org AND id = :id "

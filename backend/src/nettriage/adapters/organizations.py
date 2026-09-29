@@ -1,8 +1,10 @@
 """Organizations and their members in Postgres (spec §5.2, §5.7, §6.4).
 
 Each function is one transaction as `app_api`, so row-level security applies throughout.
-Changes to an org's members lock the org's row first (`SELECT … FOR UPDATE`), so two requests
-can't both remove the last owner or both take the tenth seat.
+Every change locks the org's row first (`SELECT … FOR UPDATE`), so two requests can't both
+remove the last owner or both take the tenth seat. It then reads the caller's role again and
+decides with it: the route checked the role before the transaction, and a demotion or a removal
+may have committed since.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from nettriage.application.organizations import (
     OrgRuleError,
     QuotaExceeded,
     check_role_change,
+    require,
     slugify,
     with_suffix,
 )
@@ -108,6 +111,7 @@ def get_org(engine: Engine, org_id: UUID, user_id: UUID) -> Organization:
 
 def rename_org(engine: Engine, org_id: UUID, user_id: UUID, name: str) -> Organization:
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
+        require(lock_org_for(connection, org_id, user_id), "org:update")
         connection.execute(
             text("UPDATE organizations SET name = :name WHERE id = :org"),
             {"name": name, "org": org_id},
@@ -118,11 +122,10 @@ def rename_org(engine: Engine, org_id: UUID, user_id: UUID, name: str) -> Organi
 def delete_org(engine: Engine, org_id: UUID, user_id: UUID, confirm_name: str) -> None:
     """Delete the org and, through cascades, everything it owns. The audit log keeps its rows."""
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
-        name = connection.execute(
-            text("SELECT name FROM organizations WHERE id = :org FOR UPDATE"), {"org": org_id}
-        ).scalar_one_or_none()
-        if name is None:
-            raise NotFound("No such organization.")
+        require(lock_org_for(connection, org_id, user_id), "org:delete")
+        name: str = connection.execute(
+            text("SELECT name FROM organizations WHERE id = :org"), {"org": org_id}
+        ).scalar_one()
         if confirm_name != name:
             raise ConfirmationMismatch("Type the organization's exact name to delete it.")
         connection.execute(text("DELETE FROM organizations WHERE id = :org"), {"org": org_id})
@@ -146,13 +149,13 @@ def change_role(
     org_id: UUID,
     *,
     actor_id: UUID,
-    actor_role: Role,
     target_id: UUID,
     role: Role,
 ) -> tuple[Role, Member]:
     """Change a member's role. Returns their previous role and the member as they are now."""
     with tenant_transaction(engine, org_id=org_id, user_id=actor_id) as connection:
-        lock_org(connection, org_id)
+        actor_role = lock_org_for(connection, org_id, actor_id)
+        require(actor_role, "members:role")
         current = _role(connection, org_id, target_id)
         check_role_change(
             actor_id=actor_id, actor_role=actor_role, target_id=target_id, current=current, new=role
@@ -174,13 +177,11 @@ def change_role(
     return current, _member(row)
 
 
-def remove_member(
-    engine: Engine, org_id: UUID, *, actor_id: UUID, actor_role: Role, target_id: UUID
-) -> Removal:
+def remove_member(engine: Engine, org_id: UUID, *, actor_id: UUID, target_id: UUID) -> Removal:
     """Remove a member, or let the caller leave (spec §6.4): anyone may leave except the last
     owner; removing someone else needs `members:remove` and a role the caller may manage."""
     with tenant_transaction(engine, org_id=org_id, user_id=actor_id) as connection:
-        lock_org(connection, org_id)
+        actor_role = lock_org_for(connection, org_id, actor_id)
         current = _role(connection, org_id, target_id)
         leaving = target_id == actor_id
         if not leaving and not (
@@ -222,6 +223,16 @@ def lock_org(connection: Connection, org_id: UUID) -> None:
         raise NotFound("No such organization.")
 
 
+def lock_org_for(connection: Connection, org_id: UUID, user_id: UUID) -> Role:
+    """Lock the org's row, then return the caller's role as it is now. A caller who has just
+    been removed is refused like any non-member."""
+    lock_org(connection, org_id)
+    role = _membership(connection, org_id, user_id)
+    if role is None:
+        raise NotFound("No such organization.")
+    return role
+
+
 def count_user_orgs(connection: Connection, user_id: UUID) -> int:
     """The user's memberships. Needs a transaction with no org set, where row-level security
     shows all of the user's own memberships."""
@@ -261,13 +272,18 @@ def read_org(connection: Connection, org_id: UUID, user_id: UUID) -> Organizatio
 
 
 def _role(connection: Connection, org_id: UUID, user_id: UUID) -> Role:
+    role = _membership(connection, org_id, user_id)
+    if role is None:
+        raise NotFound("No such member in this organization.")
+    return role
+
+
+def _membership(connection: Connection, org_id: UUID, user_id: UUID) -> Role | None:
     role = connection.execute(
         text("SELECT role FROM memberships WHERE org_id = :org AND user_id = :user"),
         {"org": org_id, "user": user_id},
     ).scalar_one_or_none()
-    if role is None:
-        raise NotFound("No such member in this organization.")
-    return cast(Role, role)
+    return cast(Role | None, role)
 
 
 def _keep_an_owner(connection: Connection, org_id: UUID) -> None:

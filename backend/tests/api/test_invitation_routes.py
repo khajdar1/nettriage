@@ -127,6 +127,33 @@ def test_a_revoked_invitation_disappears_and_can_not_be_revoked_again(
     assert database_client.get(f"/api/v1/orgs/{org[0]}/invitations").json()["invitations"] == []
 
 
+def test_an_admin_can_not_revoke_an_invitation_for_a_role_they_can_not_grant(
+    database_client: TestClient,
+    services: Services,
+    clock: FakeClock,
+    org: tuple[UUID, UUID],
+    database: Database,
+) -> None:
+    """Admins manage analysts and viewers only (spec §6.4), so an owner's invitation of a new
+    admin isn't theirs to cancel."""
+    owner_headers = signed_in_as(database_client, services.sessions, org[1], clock())
+    created = invite(database_client, owner_headers, org[0], f"{uuid4().hex}@example.com", "admin")
+    invitation_id = created["invitation"]["id"]  # type: ignore[index]
+    with database.admin.begin() as connection:
+        admin = add_user(connection)
+        add_member(connection, org[0], admin, "admin")
+    admin_headers = signed_in_as(database_client, services.sessions, admin, clock())
+
+    response = database_client.delete(
+        f"/api/v1/orgs/{org[0]}/invitations/{invitation_id}", headers=admin_headers
+    )
+
+    assert response.status_code == 403
+    owner_headers = signed_in_as(database_client, services.sessions, org[1], clock())
+    listed = database_client.get(f"/api/v1/orgs/{org[0]}/invitations").json()["invitations"]
+    assert [invitation["id"] for invitation in listed] == [invitation_id]
+
+
 def test_accepting_joins_the_org_once(
     database_client: TestClient,
     services: Services,

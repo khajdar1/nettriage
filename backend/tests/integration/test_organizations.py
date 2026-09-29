@@ -147,7 +147,6 @@ def test_an_owner_can_give_any_role(database: Database) -> None:
         database.app_api,
         org,
         actor_id=people["owner"],
-        actor_role="owner",
         target_id=people["viewer"],
         role="admin",
     )
@@ -169,7 +168,6 @@ def test_an_admin_manages_only_analysts_and_viewers(
             database.app_api,
             org,
             actor_id=people["admin"],
-            actor_role="admin",
             target_id=people[target],
             role=role,
         )
@@ -189,36 +187,37 @@ def test_nobody_changes_their_own_role(database: Database) -> None:
             database.app_api,
             org,
             actor_id=people["owner"],
-            actor_role="owner",
             target_id=people["owner"],
             role="admin",
         )
 
 
-def test_the_last_owner_can_not_be_demoted_but_one_of_two_can(database: Database) -> None:
+def test_one_of_two_owners_can_be_demoted_and_then_can_not_demote_the_other(
+    database: Database,
+) -> None:
+    """A demoted owner acts with the role they have now: an admin can't change an owner."""
     org, people = org_with(database, second="owner")
     change_role(
         database.app_api,
         org,
         actor_id=people["owner"],
-        actor_role="owner",
         target_id=people["second"],
         role="admin",
     )
 
-    with pytest.raises(LastOwner):
+    with pytest.raises(Forbidden):
         change_role(
             database.app_api,
             org,
             actor_id=people["second"],
-            actor_role="owner",
             target_id=people["owner"],
             role="viewer",
         )
 
 
 def test_two_owners_demoting_each_other_at_once_leave_one_owner(database: Database) -> None:
-    """Changes lock the org's row, so the second demotion sees the first."""
+    """Changes lock the org's row and read the caller's role again, so the second demotion
+    sees the first: its caller isn't an owner anymore."""
     org, people = org_with(database, second="owner")
     url = database.url.set(username="app_api", password=APP_API_PASSWORD)
     engine = create_database_engine(url.render_as_string(hide_password=False), pool_size=2)
@@ -230,11 +229,10 @@ def test_two_owners_demoting_each_other_at_once_leave_one_owner(database: Databa
                 engine,
                 org,
                 actor_id=people[actor],
-                actor_role="owner",
                 target_id=people[target],
                 role="viewer",
             )
-        except LastOwner:
+        except Forbidden, LastOwner:
             return "refused"
         return "demoted"
 
@@ -243,6 +241,12 @@ def test_two_owners_demoting_each_other_at_once_leave_one_owner(database: Databa
     engine.dispose()
 
     assert sorted(results) == ["demoted", "refused"]
+    with database.admin.begin() as connection:
+        owners: int = connection.execute(
+            text("SELECT count(*) FROM memberships WHERE org_id = :org AND role = 'owner'"),
+            {"org": org},
+        ).scalar_one()
+    assert owners == 1
 
 
 def test_changing_someone_who_isnt_a_member_is_not_found(database: Database) -> None:
@@ -253,7 +257,6 @@ def test_changing_someone_who_isnt_a_member_is_not_found(database: Database) -> 
             database.app_api,
             org,
             actor_id=people["owner"],
-            actor_role="owner",
             target_id=new_user(database),
             role="viewer",
         )
@@ -266,7 +269,6 @@ def test_any_member_may_leave_but_not_the_last_owner(database: Database) -> None
         database.app_api,
         org,
         actor_id=people["viewer"],
-        actor_role="viewer",
         target_id=people["viewer"],
     )
 
@@ -276,7 +278,6 @@ def test_any_member_may_leave_but_not_the_last_owner(database: Database) -> None
             database.app_api,
             org,
             actor_id=people["owner"],
-            actor_role="owner",
             target_id=people["owner"],
         )
 
@@ -297,15 +298,12 @@ def test_removing_someone_else_needs_the_right_to_manage_them(
     org, people = org_with(
         database, admin="admin", other_admin="admin", analyst="analyst", viewer="viewer"
     )
-    actor_role = role_of(database.app_api, org, people[actor])
-    assert actor_role is not None
 
     def remove() -> None:
         remove_member(
             database.app_api,
             org,
             actor_id=people[actor],
-            actor_role=actor_role,
             target_id=people[target],
         )
 

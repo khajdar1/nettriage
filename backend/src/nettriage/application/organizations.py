@@ -8,7 +8,7 @@ import secrets
 import unicodedata
 from datetime import timedelta
 
-from nettriage.application.permissions import Role, can_manage
+from nettriage.application.permissions import Role, allows, can_manage
 
 MAX_MEMBERS_PER_ORG = 10
 MAX_ORGS_PER_USER = 3
@@ -100,3 +100,9 @@ def check_role_change(
         raise Forbidden("You can't change your own role.")
     if not can_manage(actor_role, current) or not can_manage(actor_role, new):
         raise Forbidden("Your role can't grant or change that role.")
+
+
+def require(role: Role, permission: str) -> None:
+    """Refuse a change the caller's role, as it is now, doesn't allow."""
+    if not allows(role, permission):
+        raise Forbidden("Your role in this organization doesn't allow that.")

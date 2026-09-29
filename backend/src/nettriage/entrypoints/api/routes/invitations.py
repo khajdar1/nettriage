@@ -62,7 +62,6 @@ def invite(
             services.database,
             org.org_id,
             actor_id=org.user_id,
-            actor_role=org.role,
             email=email,
             role=body.role,
             now=services.clock(),
@@ -91,7 +90,7 @@ def revoke(
     org: Annotated[OrgContext, Depends(OrgMember("members:invite"))],
 ) -> None:
     services = get_services(request)
-    with org_rules(request, "Revoking an invitation"):
+    with org_rules(request, "Revoking an invitation", org=org, permission="members:invite"):
         revoked = revoke_invitation(
             services.database,
             org.org_id,

@@ -39,7 +39,6 @@ def set_role(
             get_services(request).database,
             org.org_id,
             actor_id=org.user_id,
-            actor_role=org.role,
             target_id=user_id,
             role=body.role,
         )
@@ -69,7 +68,6 @@ def remove(
             get_services(request).database,
             org.org_id,
             actor_id=org.user_id,
-            actor_role=org.role,
             target_id=user_id,
         )
     audit(
