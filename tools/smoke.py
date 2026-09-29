@@ -7,6 +7,7 @@ Usage: python tools/smoke.py --base-url https://dxxxx.cloudfront.net \
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -19,6 +20,11 @@ REQUIRED_HEADERS = {
     "content-security-policy": "frame-ancestors 'none'",
     "x-content-type-options": "nosniff",
 }
+
+
+# The uploads bucket's origin: the one S3 origin in the CSP's connect-src (spec §6.7).
+UPLOADS_ORIGIN = re.compile(r"https://[a-z0-9.-]+\.s3\.eu-north-1\.amazonaws\.com")
+FOREIGN_ORIGIN = "https://smoke-test.example"
 
 
 @dataclass
@@ -74,6 +80,45 @@ def _sign_in_checks(client: httpx.Client, base_url: str) -> list[Check]:
     return checks
 
 
+def _uploads_origin(csp: str) -> str | None:
+    for directive in csp.split(";"):
+        parts = directive.split()
+        if parts and parts[0] == "connect-src":
+            found = [part for part in parts[1:] if UPLOADS_ORIGIN.fullmatch(part)]
+            return found[0] if len(found) == 1 else None
+    return None
+
+
+def _uploads_checks(client: httpx.Client, base_url: str, csp: str) -> list[Check]:
+    """Browsers PUT uploads straight to S3 (spec §4.2): the app's pages may, other sites and
+    anonymous callers may not. Nothing is written: the preflights send no body, and the
+    anonymous PUT is refused."""
+    origin = _uploads_origin(csp)
+    if origin is None:
+        return [Check("csp allows the uploads bucket", False, "no single S3 origin in connect-src")]
+    probe = f"{origin}/orgs/smoke/uploads/smoke/raw"
+    signed_headers = "x-amz-checksum-sha256,x-amz-meta-traceparent"
+    app = client.options(probe, headers={
+        "Origin": base_url,
+        "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": signed_headers,
+    })
+    foreign = client.options(probe, headers={
+        "Origin": FOREIGN_ORIGIN, "Access-Control-Request-Method": "PUT"
+    })
+    anonymous = client.put(probe, content=b"smoke")
+    allowed = app.headers.get("access-control-allow-origin")
+    return [
+        Check("csp allows the uploads bucket", True, origin),
+        Check("uploads bucket lets the app PUT", app.status_code == 200 and allowed == base_url,
+              f"{app.status_code} {allowed}"),
+        Check("uploads bucket refuses other origins", foreign.status_code == 403,
+              str(foreign.status_code)),
+        Check("uploads bucket refuses anonymous writes", anonymous.status_code == 403,
+              str(anonymous.status_code)),
+    ]
+
+
 def run_checks(client: httpx.Client, base_url: str, function_url: str, version: str) -> list[Check]:
     health = client.get(f"{base_url}/api/health")
     body = health.json() if "json" in health.headers.get("content-type", "") else {}
@@ -101,6 +146,7 @@ def run_checks(client: httpx.Client, base_url: str, function_url: str, version: 
               '"public.ip"' in health.headers.get("ratelimit-policy", ""),
               health.headers.get("ratelimit-policy", "no RateLimit-Policy header")),
         *_sign_in_checks(client, base_url),
+        *_uploads_checks(client, base_url, root.headers.get("content-security-policy", "")),
     ]
 
 

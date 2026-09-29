@@ -5,7 +5,12 @@ data "aws_region" "current" {}
 locals {
   name = "nettriage-${var.stage}-api"
   parameter_arns = [
-    for name in [var.oidc_parameter, var.oidc_secret_parameter, var.database_url_parameter] :
+    for name in [
+      var.oidc_parameter,
+      var.oidc_secret_parameter,
+      var.database_url_parameter,
+      var.uploads_enabled_parameter,
+    ] :
     "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${name}"
   ]
 }
@@ -77,6 +82,21 @@ resource "aws_iam_role_policy" "api_parameters" {
   })
 }
 
+# Presigned PUTs are signed with the API's role, so the role may put objects, and only under
+# orgs/ in the uploads bucket (spec §6.8). The API never reads an upload.
+resource "aws_iam_role_policy" "api_uploads" {
+  name = "presign-uploads"
+  role = aws_iam_role.api.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "s3:PutObject"
+      Resource = "${var.uploads_bucket_arn}/orgs/*"
+    }]
+  })
+}
+
 resource "aws_lambda_function" "api" {
   function_name    = local.name
   role             = aws_iam_role.api.arn
@@ -91,21 +111,23 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      AWS_LAMBDA_EXEC_WRAPPER            = "/opt/bootstrap"
-      AWS_LWA_PORT                       = "8080"
-      AWS_LWA_READINESS_CHECK_PATH       = "/api/health"
-      OPENTELEMETRY_COLLECTOR_CONFIG_URI = "/var/task/collector.yaml"
-      OTEL_EXPORTER_OTLP_ENDPOINT        = "http://localhost:4318"
-      OTEL_EXPORTER_OTLP_PROTOCOL        = "http/protobuf"
-      GRAFANA_OTLP_ENDPOINT              = var.grafana_otlp_endpoint
-      GRAFANA_OTLP_AUTH                  = var.grafana_otlp_auth
-      NETTRIAGE_STAGE                    = var.stage
-      NETTRIAGE_VERSION                  = var.app_version
-      NETTRIAGE_SERVICE_NAME             = "nettriage-api"
-      NETTRIAGE_RUNTIME_TABLE            = var.runtime_table_name
-      NETTRIAGE_OIDC_PARAMETER           = var.oidc_parameter
-      NETTRIAGE_OIDC_SECRET_PARAMETER    = var.oidc_secret_parameter
-      NETTRIAGE_DATABASE_URL_PARAMETER   = var.database_url_parameter
+      AWS_LAMBDA_EXEC_WRAPPER             = "/opt/bootstrap"
+      AWS_LWA_PORT                        = "8080"
+      AWS_LWA_READINESS_CHECK_PATH        = "/api/health"
+      OPENTELEMETRY_COLLECTOR_CONFIG_URI  = "/var/task/collector.yaml"
+      OTEL_EXPORTER_OTLP_ENDPOINT         = "http://localhost:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
+      GRAFANA_OTLP_ENDPOINT               = var.grafana_otlp_endpoint
+      GRAFANA_OTLP_AUTH                   = var.grafana_otlp_auth
+      NETTRIAGE_STAGE                     = var.stage
+      NETTRIAGE_VERSION                   = var.app_version
+      NETTRIAGE_SERVICE_NAME              = "nettriage-api"
+      NETTRIAGE_RUNTIME_TABLE             = var.runtime_table_name
+      NETTRIAGE_OIDC_PARAMETER            = var.oidc_parameter
+      NETTRIAGE_OIDC_SECRET_PARAMETER     = var.oidc_secret_parameter
+      NETTRIAGE_DATABASE_URL_PARAMETER    = var.database_url_parameter
+      NETTRIAGE_UPLOADS_BUCKET            = var.uploads_bucket
+      NETTRIAGE_UPLOADS_ENABLED_PARAMETER = var.uploads_enabled_parameter
     }
   }
 
@@ -114,6 +136,7 @@ resource "aws_lambda_function" "api" {
     aws_iam_role_policy.api_logs,
     aws_iam_role_policy.api_runtime_table,
     aws_iam_role_policy.api_parameters,
+    aws_iam_role_policy.api_uploads,
   ]
 }
 

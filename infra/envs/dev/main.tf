@@ -11,20 +11,29 @@ module "data" {
   stage  = "dev"
 }
 
+module "pipeline" {
+  source     = "../../modules/pipeline"
+  stage      = "dev"
+  app_origin = "https://${module.edge.distribution_domain}"
+}
+
 module "app" {
-  source                   = "../../modules/app"
-  stage                    = "dev"
-  lambda_zip_path          = var.lambda_zip_path
-  app_version              = var.app_version
-  lwa_layer_arn            = var.lwa_layer_arn
-  otel_collector_layer_arn = var.otel_collector_layer_arn
-  grafana_otlp_endpoint    = var.grafana_otlp_endpoint
-  grafana_otlp_auth        = var.grafana_otlp_auth
-  runtime_table_name       = module.data.table_name
-  runtime_table_arn        = module.data.table_arn
-  oidc_parameter           = local.oidc_parameter
-  oidc_secret_parameter    = local.oidc_secret_parameter
-  database_url_parameter   = local.database_url_parameter
+  source                    = "../../modules/app"
+  stage                     = "dev"
+  lambda_zip_path           = var.lambda_zip_path
+  app_version               = var.app_version
+  lwa_layer_arn             = var.lwa_layer_arn
+  otel_collector_layer_arn  = var.otel_collector_layer_arn
+  grafana_otlp_endpoint     = var.grafana_otlp_endpoint
+  grafana_otlp_auth         = var.grafana_otlp_auth
+  runtime_table_name        = module.data.table_name
+  runtime_table_arn         = module.data.table_arn
+  oidc_parameter            = local.oidc_parameter
+  oidc_secret_parameter     = local.oidc_secret_parameter
+  database_url_parameter    = local.database_url_parameter
+  uploads_bucket            = module.pipeline.uploads_bucket
+  uploads_bucket_arn        = module.pipeline.uploads_bucket_arn
+  uploads_enabled_parameter = module.pipeline.uploads_enabled_parameter
 }
 
 module "identity" {
@@ -36,9 +45,10 @@ module "identity" {
 }
 
 module "edge" {
-  source            = "../../modules/edge"
-  stage             = "dev"
-  api_origin_domain = module.app.function_url_domain
+  source                = "../../modules/edge"
+  stage                 = "dev"
+  api_origin_domain     = module.app.function_url_domain
+  csp_connect_src_extra = [module.pipeline.uploads_origin]
 }
 
 # Only this CloudFront distribution may invoke the Function URL. Both actions are granted
