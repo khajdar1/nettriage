@@ -207,6 +207,8 @@ After the ID token is verified, Cognito's tokens are discarded. The app never ca
 
 The login response also sets a 15-minute `__Host-sign-in` cookie holding `state`, and the callback accepts only a `state` equal to it (amended in Plan 3b; the owner raised the sign-in window from 5 to 15 minutes, Cognito's own sign-in session, because a first sign-up also verifies the email and sets up the authenticator app). This binds each sign-in to the browser that started it: otherwise an attacker could send a victim the callback link of the attacker's own sign-in, and the victim would be signed in to the attacker's account (login CSRF).
 
+Every authorize request also sends `prompt=login` (the owner's decision, Plan 3c). "Sign out everywhere" can't end Cognito's own session on other devices, so that session must never let a sign-in skip the password and the authenticator code.
+
 ### 4.2 Upload → findings → AI explanation
 
 ```mermaid
@@ -295,6 +297,8 @@ Tenant tables use `ON DELETE CASCADE` from `organizations`, so deleting an org r
 A dedicated test runs a query with no org filter and must receive zero rows from other organizations.
 
 `users` also has row-level security (the owner's decision, 2026-09-28, Plan 3b). A user sees their own row, and in an organization's transaction the members of that organization. Sign-in finds or creates the user through a `SECURITY DEFINER` function, because the API's role can't read or insert other users' rows.
+
+`invitations` has one more read policy (Plan 3c): a transaction that sets `app.invitation_token_hash` sees the one invitation with that hash. The invitee isn't a member yet, and a `SECURITY DEFINER` function can't help, because FORCE applies to the table's owner too. Knowing the hash already means holding the link.
 
 ### 5.4 Database roles and grants
 
@@ -425,7 +429,7 @@ Every member may leave an organization, except its last Owner.
 - **Object-level checks.** Every object is reached through `/orgs/{org_id}/…`, with a membership check plus RLS. An ID that belongs to another organization returns **404** (OWASP API1).
 - **No escalation.** A user can't grant a role above their own or change their own role, and an organization always keeps at least one Owner.
 - **No mass assignment.** Every endpoint has explicit request and response schemas (OWASP API3).
-- **Denials are recorded.** Each denial writes `authz.denied` to the audit log and increments a metric, and a spike raises an alert.
+- **Denials are recorded.** Each denial increments a metric, and a spike raises an alert. The audit log gets an `authz.denied` event at most once a minute per caller and permission (amended in Plan 3c): anyone can sign up, so one row per denial would let a single account fill the database.
 - **Test matrix.** Every endpoint is tested for each of: owner, admin, analyst, viewer, non-member and anonymous, against a hand-written table of expected outcomes.
 
 ### 6.5 Rate limiting (GCRA)
@@ -456,6 +460,8 @@ A failed condition returns the item as it was, which tells whether the request i
 | `uploads.org` | org | 20 / day | 5 |
 | `invites.org` | org | 20 / day | 5 |
 | `ai.rerun.user` | user | 10 / hour | 3 |
+
+`GET /api/auth/login` and `/callback` each count against `auth.ip` in a bucket of their own, so a sign-in costs one slot in each. A limited sign-in redirects to `/?sign_in=limited` instead of answering JSON. A limited `GET /api/health` counts the metric but writes no audit row, so the probe never touches the database (Plan 3c).
 
 ### 6.6 AI budgets
 
@@ -509,9 +515,9 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Paths:** `/api/v1` prefix; auth under `/api/auth`; health at `/api/health`.
 - **Payloads:** JSON with UUIDv7 IDs.
 - **Errors:** RFC 9457 Problem Details (`type`, `title`, `status`, `detail`, `instance`, `trace_id`), never stack traces.
-- **Pagination:** cursor-based (`cursor`, `limit` ≤ 100).
+- **Pagination:** cursor-based (`cursor`, `limit` ≤ 100). Lists that §5.7's quotas keep small (members, invitations) return every item; the audit log pages with a cursor.
 - **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428.
-- **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads` and `POST /orgs` and is kept for 24 hours.
+- **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads` and `POST /orgs` and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409.
 - **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests.
 - **Docs:** interactive API docs are enabled in `dev` only. Each build exports the OpenAPI JSON to the repository.
 
@@ -701,7 +707,7 @@ Metric names follow OTel conventions where they exist:
 
 ### 9.4 Audit events
 
-`auth.session_created`, `auth.logout`, `auth.logout_all`, `org.created`, `org.renamed`, `org.deleted`, `member.invited`, `member.joined`, `member.role_changed`, `member.removed`, `member.left`, `invitation.revoked`, `upload.created`, `finding.status_changed`, `finding.assigned`, `finding.commented`, `ai.rerun_requested`, `authz.denied`, `budget.exhausted`, and `ratelimit.limited` (sampled: at most one per subject and policy per minute).
+`auth.session_created`, `auth.logout`, `auth.logout_all`, `org.created`, `org.renamed`, `org.deleted`, `member.invited`, `member.joined`, `member.role_changed`, `member.removed`, `member.left`, `invitation.revoked`, `upload.created`, `finding.status_changed`, `finding.assigned`, `finding.commented`, `ai.rerun_requested`, `authz.denied` (sampled: at most one per caller and permission per minute), `budget.exhausted`, and `ratelimit.limited` (sampled: at most one per subject and policy per minute).
 
 ### 9.5 Dashboards
 
