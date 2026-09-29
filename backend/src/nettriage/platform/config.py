@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     oidc_parameter: str = ""
     oidc_secret_parameter: str = ""
     database_url_parameter: str = ""
+    # The uploads bucket, and the SSM parameter that switches uploads on and off (spec §9.7).
+    uploads_bucket: str = ""
+    uploads_enabled_parameter: str = ""
 
     @property
     def running_in_lambda(self) -> bool:

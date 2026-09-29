@@ -26,6 +26,9 @@ EXPECTED = {
     ("POST", "/api/v1/orgs/{org_id}/invitations"): "members:invite",
     ("DELETE", "/api/v1/orgs/{org_id}/invitations/{invitation_id}"): "members:invite",
     ("POST", "/api/v1/invitations/accept"): "signed in",
+    ("POST", "/api/v1/orgs/{org_id}/uploads"): "uploads:create",
+    ("GET", "/api/v1/orgs/{org_id}/uploads"): "uploads:read",
+    ("GET", "/api/v1/orgs/{org_id}/uploads/{upload_id}"): "uploads:read",
 }
 # FastAPI's interactive docs, which only `local` and `dev` serve (spec §7).
 DOCS: set[str | None] = {"/api/docs", "/api/openapi.json"}

@@ -23,11 +23,13 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import URL
 
 from nettriage.adapters.idempotency import IdempotencyStore
+from nettriage.adapters.kill_switch import KillSwitch
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.postgres import create_database_engine, engine_url
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
+from nettriage.adapters.upload_storage import UploadStorage, uploads_client
 from nettriage.entrypoints.api.app import create_app
 from nettriage.entrypoints.api.services import Services
 from nettriage.platform.config import Settings
@@ -190,6 +192,16 @@ def clock() -> FakeClock:
 
 APP_ORIGIN = "https://app.test"
 NO_DATABASE = "postgresql://unused@db.nettriage.invalid/unused"  # fails fast if ever used
+UPLOADS_BUCKET = "nettriage-test-uploads-00000000"
+
+
+def presigning_session() -> boto3.session.Session:
+    """Presigning is offline: dummy credentials sign URLs that nothing ever calls."""
+    return boto3.session.Session(
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",  # noqa: S106 - not a secret
+        region_name="eu-north-1",
+    )
 
 
 @pytest.fixture
@@ -234,6 +246,8 @@ def services(
         login_states=LoginStateStore(client, table),
         rate_limiter=RateLimiter(client, table, clock),
         idempotency=IdempotencyStore(client, table),
+        upload_storage=UploadStorage(uploads_client(presigning_session()), UPLOADS_BUCKET),
+        uploads_switch=KillSwitch(lambda: "true", clock),
         oidc=OidcClient(idp_settings(), httpx.Client(transport=idp.transport()), clock),
         clock=clock,
         metrics=AppMetrics(MeterProvider(metric_readers=[metric_reader])),

@@ -12,11 +12,13 @@ import httpx
 from botocore.config import Config
 
 from nettriage.adapters.idempotency import IdempotencyStore
+from nettriage.adapters.kill_switch import KillSwitch, ssm_parameter
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient, OidcSettings
 from nettriage.adapters.postgres import create_database_engine
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
+from nettriage.adapters.upload_storage import UploadStorage, uploads_client
 from nettriage.application.clock import system_clock
 from nettriage.entrypoints.api.services import Services
 from nettriage.platform.config import Settings
@@ -46,8 +48,9 @@ def read_parameters(ssm: SSMClient, names: Sequence[str]) -> dict[str, str]:
 
 def build_services(settings: Settings, session: boto3.session.Session | None = None) -> Services:
     session = session or boto3.session.Session()
+    ssm = session.client("ssm", config=AWS_CONFIG)
     values = read_parameters(
-        session.client("ssm", config=AWS_CONFIG),
+        ssm,
         [settings.oidc_parameter, settings.oidc_secret_parameter, settings.database_url_parameter],
     )
     oidc = json.loads(values[settings.oidc_parameter])
@@ -59,6 +62,10 @@ def build_services(settings: Settings, session: boto3.session.Session | None = N
         login_states=LoginStateStore(dynamodb, table),
         rate_limiter=RateLimiter(dynamodb, table, system_clock),
         idempotency=IdempotencyStore(dynamodb, table),
+        upload_storage=UploadStorage(uploads_client(session), settings.uploads_bucket),
+        uploads_switch=KillSwitch(
+            ssm_parameter(ssm, settings.uploads_enabled_parameter), system_clock
+        ),
         oidc=OidcClient(
             OidcSettings(
                 issuer=oidc["issuer"],

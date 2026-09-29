@@ -21,8 +21,8 @@ NAME = "Stale Roles Inc"
 
 
 def snapshot(database: Database, org: UUID) -> tuple[Any, ...]:
-    """Everything a change could touch: the name, the members and their roles, and the
-    pending invitations."""
+    """Everything a change could touch: the name, the members and their roles, the pending
+    invitations and the uploads."""
     with database.admin.begin() as connection:
         name = connection.execute(
             text("SELECT name FROM organizations WHERE id = :org"), {"org": org}
@@ -37,7 +37,10 @@ def snapshot(database: Database, org: UUID) -> tuple[Any, ...]:
             ),
             {"org": org},
         ).all()
-    return name, tuple(members), tuple(invitations)
+        uploads = connection.execute(
+            text("SELECT id FROM uploads WHERE org_id = :org ORDER BY id"), {"org": org}
+        ).all()
+    return name, tuple(members), tuple(invitations), tuple(uploads)
 
 
 @pytest.mark.parametrize(
@@ -49,6 +52,7 @@ def snapshot(database: Database, org: UUID) -> tuple[Any, ...]:
         ("remove", "admin", "viewer", 403),
         ("invite", "admin", None, 404),
         ("revoke", "admin", None, 404),
+        ("upload", "analyst", "viewer", 403),
     ],
 )
 def test_a_change_uses_the_role_the_caller_has_now(
@@ -76,7 +80,7 @@ def test_a_change_uses_the_role_the_caller_has_now(
         invitation = add_invitation(connection, org, owner, f"{uuid4().hex}@example.com")
     monkeypatch.setattr(access, "role_of", lambda engine, org_id, user_id: then)
     headers = signed_in_as(database_client, services.sessions, actor, clock())
-    requests: dict[str, tuple[str, str, dict[str, str] | None]] = {
+    requests: dict[str, tuple[str, str, dict[str, Any] | None]] = {
         "rename": ("PATCH", f"/api/v1/orgs/{org}", {"name": "Renamed"}),
         "delete": ("DELETE", f"/api/v1/orgs/{org}?confirm_name={quote(NAME)}", None),
         "promote": ("PATCH", f"/api/v1/orgs/{org}/members/{analyst}", {"role": "owner"}),
@@ -87,6 +91,11 @@ def test_a_change_uses_the_role_the_caller_has_now(
             {"email": f"{uuid4().hex}@example.com", "role": "viewer"},
         ),
         "revoke": ("DELETE", f"/api/v1/orgs/{org}/invitations/{invitation}", None),
+        "upload": (
+            "POST",
+            f"/api/v1/orgs/{org}/uploads",
+            {"filename": "flows.log", "size_bytes": 1, "sha256": "0" * 64},
+        ),
     }
     method, path, body = requests[change]
     before = snapshot(database, org)
