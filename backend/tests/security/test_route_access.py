@@ -68,3 +68,18 @@ def test_every_route_declares_exactly_one_access_rule(client: TestClient) -> Non
 
     assert actual == EXPECTED
     assert others <= DOCS
+
+
+def test_no_delete_route_takes_a_body(client: TestClient) -> None:
+    """CloudFront signs every request to the Lambda function URL, and a DELETE that carries a
+    body fails that signature (spec §7), so a DELETE takes its inputs from the path and query."""
+    app: FastAPI = client.app  # type: ignore[assignment]
+    with_body = [
+        str(context.path)
+        for context in iter_route_contexts(app.routes)
+        if isinstance(context.original_route, APIRoute)
+        and "DELETE" in (context.methods or ())
+        and context.original_route.body_field is not None
+    ]
+
+    assert with_body == []

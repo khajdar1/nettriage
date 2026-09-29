@@ -30,10 +30,6 @@ class NameIn(Strict):
     name: OrgName
 
 
-class DeleteOrgIn(Strict):
-    confirm_name: Annotated[str, StringConstraints(max_length=100)]
-
-
 class RoleIn(Strict):
     role: Role
 

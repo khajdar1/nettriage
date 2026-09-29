@@ -162,15 +162,19 @@ def test_deleting_an_org_needs_its_exact_name(
 ) -> None:
     org = create(database_client, headers, "Doomed Org")
 
-    wrong = database_client.request(
-        "DELETE", f"/api/v1/orgs/{org['id']}", json={"confirm_name": "doomed org"}, headers=headers
-    )
-    deleted = database_client.request(
-        "DELETE", f"/api/v1/orgs/{org['id']}", json={"confirm_name": "Doomed Org"}, headers=headers
-    )
-    after = database_client.get(f"/api/v1/orgs/{org['id']}")
+    path = f"/api/v1/orgs/{org['id']}"
 
-    assert (wrong.status_code, deleted.status_code, after.status_code) == (422, 204, 404)
+    wrong = database_client.delete(path, params={"confirm_name": "doomed org"}, headers=headers)
+    missing = database_client.delete(path, headers=headers)
+    deleted = database_client.delete(path, params={"confirm_name": "Doomed Org"}, headers=headers)
+    after = database_client.get(path)
+
+    assert (wrong.status_code, missing.status_code, deleted.status_code, after.status_code) == (
+        422,
+        422,
+        204,
+        404,
+    )
     assert actions(database, org["id"])[-1] == "org.deleted"
 
 
