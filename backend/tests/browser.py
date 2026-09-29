@@ -3,11 +3,16 @@ code, and the callback. The test client keeps the session cookie like a browser 
 
 from __future__ import annotations
 
+from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
+from uuid import UUID
 
 import httpx2
 from fake_idp import APP_ORIGIN, FakeIdentityProvider
 from fastapi.testclient import TestClient
+
+from nettriage.adapters.sessions import SessionStore
+from nettriage.application.sessions import COOKIE_NAME
 
 VIEWER = {"CloudFront-Viewer-Address": "203.0.113.7:4444"}
 
@@ -64,3 +69,17 @@ def set_cookie(response: httpx2.Response, name: str) -> str | None:
         if header.startswith(f"{name}="):
             return header
     return None
+
+
+def signed_in_as(
+    client: TestClient, sessions: SessionStore, user_id: UUID, now: datetime
+) -> dict[str, str]:
+    """Give the client a session for the user, without the Cognito round trip. Returns the
+    headers the SPA sends on state-changing requests."""
+    session_id, session = sessions.create(user_id=user_id, now=now, ip=None, user_agent=None)
+    client.cookies.set(COOKIE_NAME, session_id, domain="app.test")
+    return {
+        "X-CSRF-Token": session.csrf_token,
+        "Sec-Fetch-Site": "same-origin",
+        "Origin": APP_ORIGIN,
+    }

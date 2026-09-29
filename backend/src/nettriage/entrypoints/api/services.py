@@ -9,6 +9,7 @@ from typing import cast
 from fastapi import Request
 from sqlalchemy import Engine
 
+from nettriage.adapters.idempotency import IdempotencyStore
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.rate_limiter import RateLimiter
@@ -24,6 +25,7 @@ class Services:
     sessions: SessionStore
     login_states: LoginStateStore
     rate_limiter: RateLimiter
+    idempotency: IdempotencyStore
     oidc: OidcClient
     clock: Clock
     metrics: AppMetrics

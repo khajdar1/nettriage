@@ -11,6 +11,7 @@ from nettriage.application.rate_limits import header_values
 from nettriage.entrypoints.api.access import RedirectInstead
 from nettriage.entrypoints.api.routes import auth, health, me
 from nettriage.entrypoints.api.services import Services
+from nettriage.platform.body_limit import BodySizeLimit
 from nettriage.platform.config import Settings
 from nettriage.platform.errors import register_error_handlers
 from nettriage.platform.telemetry import instrument_app
@@ -36,6 +37,9 @@ def create_app(
     app.state.services = services
     register_error_handlers(app)
     app.add_exception_handler(RedirectInstead, redirect_instead)
+    # Innermost, so a body counted over the limit reaches FastAPI as the HTTPException it is;
+    # the header middleware wraps the request stream in a task group, which would regroup it.
+    app.add_middleware(BodySizeLimit)
     app.middleware("http")(add_rate_limit_headers)
     for module in (health, auth, me):
         app.include_router(module.router, prefix="/api")

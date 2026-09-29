@@ -76,11 +76,11 @@ def test_limits_are_audited_at_most_once_per_minute_per_subject(
 ) -> None:
     limits = limiter(runtime_table, clock)
 
-    first = limits.should_audit(POLICY, "user-1")
-    again = limits.should_audit(POLICY, "user-1")
-    someone_else = limits.should_audit(POLICY, "user-2")
+    first = limits.should_audit(POLICY.name, "user-1")
+    again = limits.should_audit(POLICY.name, "user-1")
+    someone_else = limits.should_audit(POLICY.name, "user-2")
     clock.advance(timedelta(minutes=1))
-    later = limits.should_audit(POLICY, "user-1")
+    later = limits.should_audit(POLICY.name, "user-1")
 
     assert (first, again, someone_else, later) == (True, False, True, True)
 
@@ -127,7 +127,7 @@ def test_limits_are_sampled_for_the_audit_log_without_extra_writes(
 ) -> None:
     limits, client = counting(runtime_table, clock)
 
-    sampled = [limits.should_audit(POLICY, "user-1") for _ in range(20)]
+    sampled = [limits.should_audit(POLICY.name, "user-1") for _ in range(20)]
 
     assert sampled.count(True) == 1
     assert client.calls["put_item"] == 1

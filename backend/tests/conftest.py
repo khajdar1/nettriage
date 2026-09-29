@@ -20,6 +20,7 @@ from opentelemetry.sdk.metrics.export import InMemoryMetricReader, NumberDataPoi
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import URL
 
+from nettriage.adapters.idempotency import IdempotencyStore
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.postgres import create_database_engine, engine_url
@@ -211,6 +212,7 @@ def services(
         sessions=SessionStore(client, table),
         login_states=LoginStateStore(client, table),
         rate_limiter=RateLimiter(client, table, clock),
+        idempotency=IdempotencyStore(client, table),
         oidc=OidcClient(idp_settings(), httpx.Client(transport=idp.transport()), clock),
         clock=clock,
         metrics=AppMetrics(MeterProvider(metric_readers=[metric_reader])),

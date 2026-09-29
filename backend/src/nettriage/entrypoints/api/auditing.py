@@ -28,6 +28,9 @@ def audit(
     action: str,
     outcome: Outcome,
     actor_user_id: UUID | None = None,
+    org_id: UUID | None = None,
+    target_type: str | None = None,
+    target_id: str | None = None,
     details: Mapping[str, object] | None = None,
 ) -> None:
     """Append an audit event. A failed write is logged, not raised: the request it describes
@@ -37,6 +40,9 @@ def audit(
         outcome=outcome,
         actor_type="user" if actor_user_id else "anonymous",
         actor_user_id=actor_user_id,
+        org_id=org_id,
+        target_type=target_type,
+        target_id=target_id,
         ip=viewer_ip(request.headers.get(VIEWER_ADDRESS)),
         user_agent=request.headers.get("user-agent"),
         request_id=request.headers.get(REQUEST_ID),

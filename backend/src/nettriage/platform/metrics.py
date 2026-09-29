@@ -16,6 +16,9 @@ class AppMetrics:
         self.rate_limited = meter.create_counter(
             "nettriage.ratelimit.limited", description="Requests refused with 429, by policy"
         )
+        self.authz_denied = meter.create_counter(
+            "nettriage.authz.denied", description="Requests refused by authorization, by permission"
+        )
         self.rate_limit_errors = meter.create_counter(
             "nettriage.ratelimit.errors",
             description="Rate-limit checks that failed and let the request through, by policy",

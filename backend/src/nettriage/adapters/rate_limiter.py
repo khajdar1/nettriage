@@ -95,11 +95,11 @@ class RateLimiter:
         logger.warning("rate_limit_undecided", extra={"policy": policy.name})
         return failed_open(policy)
 
-    def should_audit(self, policy: Policy, subject: str) -> bool:
-        """True at most once per subject and policy per minute: the audit log samples
-        `ratelimit.limited` (spec §9.4)."""
+    def should_audit(self, event: str, subject: str) -> bool:
+        """True at most once per subject and event kind per minute: the audit log samples
+        `ratelimit.limited` (spec §9.4) and `authz.denied`, which anyone can cause."""
         now = self._clock()
-        name = f"RLAUDIT#{policy.name}#{subject}"
+        name = f"RLAUDIT#{event}#{subject}"
         if epoch_millis(now) < self._audited_until.get(name, 0):
             return False
         _bounded(self._audited_until)[name] = epoch_millis(now + AUDIT_SAMPLE_WINDOW)
@@ -116,10 +116,10 @@ class RateLimiter:
         except ClientError as error:
             if is_condition_failure(error):
                 return False
-            logger.warning("rate_limit_audit_sample_failed", extra={"policy": policy.name})
+            logger.warning("audit_sample_failed", extra={"event": event})
             return False
         except BotoCoreError:
-            logger.warning("rate_limit_audit_sample_failed", extra={"policy": policy.name})
+            logger.warning("audit_sample_failed", extra={"event": event})
             return False
         return True
 
