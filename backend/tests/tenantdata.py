@@ -1,5 +1,5 @@
-"""Seed users, organizations, memberships and invitations for integration tests. Seeding uses
-the superuser engine, which row-level security doesn't apply to."""
+"""Seed users, organizations, memberships, invitations and uploads for integration tests.
+Seeding uses the superuser engine, which row-level security doesn't apply to."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ class Tenant:
     org_id: UUID
     owner_id: UUID
     invitation_id: UUID
+    upload_id: UUID
 
 
 def add_user(connection: Connection, email: str | None = None) -> UUID:
@@ -69,11 +70,33 @@ def add_invitation(
     return invitation_id
 
 
+def add_upload(
+    connection: Connection, org_id: UUID, uploaded_by: UUID, status: str = "pending_upload"
+) -> UUID:
+    upload_id = uuid7()
+    connection.execute(
+        text(
+            "INSERT INTO uploads (id, org_id, uploaded_by, original_filename, s3_key, size_bytes, "
+            "sha256, status) VALUES (:id, :org, :by, 'flows.log', :key, 1024, :sha256, :status)"
+        ),
+        {
+            "id": upload_id,
+            "org": org_id,
+            "by": uploaded_by,
+            "key": f"orgs/{org_id}/uploads/{upload_id}/raw",
+            "sha256": "0" * 64,
+            "status": status,
+        },
+    )
+    return upload_id
+
+
 def add_tenant(admin: Engine) -> Tenant:
-    """An org with an owner, and a pending invitation."""
+    """An org with an owner, a pending invitation and an upload."""
     with admin.begin() as connection:
         owner = add_user(connection)
         org = add_org(connection, owner)
         add_member(connection, org, owner, "owner")
         invitation = add_invitation(connection, org, owner, f"invitee-{org.hex}@example.com")
-    return Tenant(org_id=org, owner_id=owner, invitation_id=invitation)
+        upload = add_upload(connection, org, owner)
+    return Tenant(org_id=org, owner_id=owner, invitation_id=invitation, upload_id=upload)

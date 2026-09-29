@@ -67,7 +67,7 @@ def test_a_revoked_invitation_does_not_block_a_new_one(database: Database) -> No
         )
 
 
-def test_deleting_an_org_removes_its_memberships_and_invitations_not_its_audit_log(
+def test_deleting_an_org_removes_its_members_invitations_and_uploads_not_its_audit_log(
     database: Database,
 ) -> None:
     tenant = add_tenant(database.admin)
@@ -87,9 +87,9 @@ def test_deleting_an_org_removes_its_memberships_and_invitations_not_its_audit_l
                 text(f"SELECT count(*) FROM {table} WHERE org_id = :org"),  # noqa: S608
                 {"org": tenant.org_id},
             ).scalar_one()
-            for table in ("memberships", "invitations", "audit_log")
+            for table in ("memberships", "invitations", "uploads", "audit_log")
         }
-    assert remaining == {"memberships": 0, "invitations": 0, "audit_log": 1}
+    assert remaining == {"memberships": 0, "invitations": 0, "uploads": 0, "audit_log": 1}
 
 
 @pytest.mark.parametrize(
