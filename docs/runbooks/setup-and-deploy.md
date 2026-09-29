@@ -268,7 +268,8 @@ on another `/?sign_in=...` address, see Part C.
 ### B5. Try organizations
 The organization pages come in Plan 6. Until then, you can call the API from the browser's
 developer console while signed in.
-1. Sign in as in B4 (steps 2 to 6). You're on `https://<id>.cloudfront.net/app`.
+1. Open `https://<id>.cloudfront.net/api/auth/login` and sign in with your email, your password
+   and a fresh code from the authenticator app. You land on `https://<id>.cloudfront.net/app`.
 2. Press **F12** and choose the **Console** tab.
 3. The first time you paste into the console, the browser refuses and asks you to type
    `allow pasting`. Type it and press **Enter**.
@@ -288,7 +289,8 @@ developer console while signed in.
          .join("");
      }
      const response = await fetch("/api/v1" + path, { method, headers, body: text });
-     const answer = response.status === 204 ? null : await response.json();
+     const type = response.headers.get("content-type") || "";
+     const answer = type.includes("json") ? await response.json() : await response.text();
      console.log(response.status, answer);
      return answer;
    }
