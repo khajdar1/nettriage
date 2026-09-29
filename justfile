@@ -75,6 +75,13 @@ store-grafana-token stage="dev":
 store-database-url stage="dev":
     uv run --project backend python -m tools.deploy store-database-url --stage {{stage}}
 
+# AWS: pause or resume uploads in an emergency (the uploads kill switch, spec §9.7)
+pause-uploads stage="dev":
+    uv run --project backend python -m tools.deploy uploads off --stage {{stage}}
+
+resume-uploads stage="dev":
+    uv run --project backend python -m tools.deploy uploads on --stage {{stage}}
+
 # Plan the dev stage for the checked-out, pushed commit and post the changes to its PR
 plan-dev:
     uv run --project backend python -m tools.deploy plan --stage dev

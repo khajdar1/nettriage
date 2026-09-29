@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import httpx
 
-from tools.smoke import run_checks
+from tools.smoke import run_checks, wait_for_uploads_origin
 
 SECURITY_HEADERS = {
     "strict-transport-security": "max-age=31536000; includeSubDomains",
@@ -173,3 +173,38 @@ def test_a_bucket_that_takes_anonymous_writes_is_caught() -> None:
         return healthy(request)
 
     assert checks_for(broken)["uploads bucket refuses anonymous writes"] is False
+
+
+UPLOADS_ORIGIN = "https://nettriage-dev-uploads-1a2b3c4d.s3.eu-north-1.amazonaws.com"
+
+
+def test_the_smoke_waits_for_the_new_csp_to_reach_the_edge() -> None:
+    """A deploy's new CSP takes a few minutes to reach CloudFront's edge; until then the
+    bucket checks would fail on the old header."""
+    roots: list[int] = []
+
+    def propagating(request: httpx.Request) -> httpx.Response:
+        response = healthy(request)
+        if request.url.host == "cdn.example" and request.url.path == "/":
+            roots.append(1)
+            if len(roots) < 3:
+                response.headers["content-security-policy"] = "default-src 'self'; connect-src 'self'"
+        return response
+
+    client = httpx.Client(transport=httpx.MockTransport(propagating))
+
+    assert wait_for_uploads_origin(client, "https://cdn.example", attempts=5, delay=0) == (
+        UPLOADS_ORIGIN
+    )
+    assert len(roots) == 3
+
+
+def test_the_wait_for_the_csp_gives_up_after_its_attempts() -> None:
+    def stale(request: httpx.Request) -> httpx.Response:
+        response = healthy(request)
+        response.headers["content-security-policy"] = "default-src 'self'"
+        return response
+
+    client = httpx.Client(transport=httpx.MockTransport(stale))
+
+    assert wait_for_uploads_origin(client, "https://cdn.example", attempts=2, delay=0) is None

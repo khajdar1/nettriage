@@ -164,6 +164,25 @@ def wait_for_version(
     return False
 
 
+def wait_for_uploads_origin(
+    client: httpx.Client, base_url: str, attempts: int = 30, delay: float = 10.0
+) -> str | None:
+    """A changed CSP takes minutes to reach CloudFront's edge, and Terraform doesn't wait for
+    it; wait until the page's CSP names the uploads bucket, so the bucket checks don't fail on
+    the old header."""
+    for attempt in range(attempts):
+        try:
+            csp = client.get(f"{base_url}/").headers.get("content-security-policy", "")
+        except httpx.HTTPError:
+            csp = ""
+        origin = _uploads_origin(csp)
+        if origin is not None:
+            return origin
+        if attempt + 1 < attempts:
+            time.sleep(delay)
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
@@ -175,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         if not wait_for_version(client, base_url, args.version):
             print(f"FAIL: {base_url}/api/health never reported version {args.version}")
             return 1
+        wait_for_uploads_origin(client, base_url)
         checks = run_checks(client, base_url, args.function_url, args.version)
     for check in checks:
         print(f"{'PASS' if check.ok else 'FAIL'}  {check.name}  {check.detail}")

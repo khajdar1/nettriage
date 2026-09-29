@@ -40,6 +40,11 @@ def stage_dir(stage: str) -> Path:
     return REPO / "infra" / "envs" / stage
 
 
+def uploads_enabled_parameter(stage: str) -> str:
+    """The uploads kill switch (spec §9.7), which Terraform creates as "true"."""
+    return f"/nettriage/{stage}/kill/uploads-enabled"
+
+
 def db_owner_url_parameter(stage: str) -> str:
     return f"/nettriage/{stage}/db/owner-url"
 

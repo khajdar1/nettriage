@@ -5,6 +5,7 @@
   python -m tools.deploy store-grafana-token [--stage dev]
   python -m tools.deploy plan [--stage dev] [--no-comment]
   python -m tools.deploy deploy [--stage dev]
+  python -m tools.deploy uploads on|off [--stage dev]
 
 Every command uses the owner's short-lived `aws login` session: profile "nettriage", or
 $NETTRIAGE_AWS_PROFILE, or --profile before the command name.
@@ -184,6 +185,21 @@ def store_grafana_token(
     print(f"Stored {config.otlp_auth_parameter(stage)} as a SecureString.")
 
 
+def switch_uploads(run: Runner, env: Mapping[str, str], stage: str, on: bool) -> None:
+    """Pause or resume uploads (spec §9.7): the API re-reads the switch within a minute. The
+    name goes to the AWS CLI as an argument list, so no shell can rewrite it."""
+    name = config.uploads_enabled_parameter(stage)
+    wanted = "true" if on else "false"
+    run(["aws", "ssm", "put-parameter", "--name", name, "--type", "String", "--overwrite",
+         "--value", wanted], env=env)
+    value = run(["aws", "ssm", "get-parameter", "--name", name, "--query", "Parameter.Value",
+                 "--output", "text"], env=env).stdout.strip()
+    if value != wanted:
+        raise CommandError(f"{name} reads {value!r} after setting it to {wanted!r}. Run the command again.")
+    print(f"Uploads in {stage} are {'on' if on else 'paused'} ({name} = {value}). "
+          "The API picks this up within a minute.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m tools.deploy", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -193,6 +209,9 @@ def build_parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--stage", choices=config.STAGES, default="dev")
     commands.choices["plan"].add_argument("--no-comment", action="store_true")
+    uploads = commands.add_parser("uploads")
+    uploads.add_argument("state", choices=("on", "off"))
+    uploads.add_argument("--stage", choices=config.STAGES, default="dev")
     boot = commands.add_parser("bootstrap")
     boot.add_argument("--budget-email", required=True)
     boot.add_argument("--anomaly-monitor-arn", default="")
@@ -213,6 +232,8 @@ def main(argv: list[str] | None = None, run: Runner = runner.run) -> int:
             store_grafana_token(run, env, args.stage)
         elif args.command == "store-database-url":
             store_database_url(run, env, args.stage)
+        elif args.command == "uploads":
+            switch_uploads(run, env, args.stage, on=args.state == "on")
         elif args.command == "plan":
             plan(run, env, args.stage, post_comment=not args.no_comment)
         else:
