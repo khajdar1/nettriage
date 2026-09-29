@@ -1,8 +1,13 @@
 """Who may call a route (spec §6.2, §6.4, §6.5). Deny by default: every route declares
-`Public(policy)` or `SignedIn`, and tests/security/test_route_access.py fails on any route that
-declares neither.
+`Public(policy)`, `SignedIn` or `OrgMember(permission)`, and tests/security/test_route_access.py
+fails on any route that declares none of them.
 
-- `Public(policy)` rate-limits by client IP.
+- `Public(policy)` rate-limits by client IP. A `scope` gives a route its own bucket under the
+  policy; `limited_redirect` sends a limited browser navigation to a page instead of JSON; and
+  `audit_limits=False` keeps a limited route from writing to the audit log (and so to Postgres).
+- `OrgMember(permission)` needs a session and a membership in the path's `{org_id}` whose role
+  has the permission (spec §6.4). A non-member gets 404, as if the org didn't exist (OWASP API1);
+  a member without the permission gets 403. Both are recorded as `authz.denied`.
 - `SignedIn` needs a valid session. It fails closed: an unreadable session store gives 503.
   State-changing methods also pass the CSRF checks. Requests are rate-limited per user, and
   state-changing ones also by `api.mutation.user`.
@@ -16,16 +21,19 @@ from __future__ import annotations
 
 import hmac
 import logging
-import re
+from dataclasses import dataclass
 from typing import Annotated, NoReturn
 from uuid import UUID
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy.exc import SQLAlchemyError
 
+from nettriage.adapters.organizations import role_of
 from nettriage.adapters.runtime_table import epoch_millis
+from nettriage.application.permissions import PERMISSIONS, Role, allows
 from nettriage.application.rate_limits import POLICIES, Policy, ip_subject
-from nettriage.application.sessions import COOKIE_NAME, Session
+from nettriage.application.sessions import COOKIE_NAME, Session, is_secret
 from nettriage.entrypoints.api.auditing import VIEWER_ADDRESS, audit
 from nettriage.entrypoints.api.cookies import EXPIRED_SESSION_COOKIE
 from nettriage.entrypoints.api.services import Services, get_services
@@ -33,7 +41,6 @@ from nettriage.entrypoints.api.services import Services, get_services
 logger = logging.getLogger(__name__)
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-SESSION_ID = re.compile(r"[A-Za-z0-9_-]{43}")  # 32 bytes, base64url without padding
 SAME_SITE = frozenset({"same-origin", "none"})
 
 
@@ -41,14 +48,42 @@ class Access:
     """A route's access declaration."""
 
 
+class RedirectInstead(Exception):
+    """Answer with a redirect to `location` instead of Problem Details; the app turns it into a
+    302 (see app.py)."""
+
+    def __init__(self, location: str, headers: dict[str, str] | None = None) -> None:
+        super().__init__(location)
+        self.location = location
+        self.headers = headers or {}
+
+
 class Public(Access):
-    def __init__(self, policy: str) -> None:
+    def __init__(
+        self,
+        policy: str,
+        *,
+        scope: str | None = None,
+        limited_redirect: str | None = None,
+        audit_limits: bool = True,
+    ) -> None:
         self.policy = POLICIES[policy]
+        self.scope = scope
+        self.limited_redirect = limited_redirect
+        self.audit_limits = audit_limits
 
     def __call__(self, request: Request) -> None:
         subject = ip_subject(request.headers.get(VIEWER_ADDRESS))
-        if subject is not None:
-            enforce(request, self.policy, subject, actor=None)
+        if subject is None:
+            return
+        enforce(
+            request,
+            self.policy,
+            f"{self.scope}:{subject}" if self.scope else subject,
+            actor=None,
+            audit_limits=self.audit_limits,
+            limited_redirect=self.limited_redirect,
+        )
 
 
 class SignedIn(Access):
@@ -69,6 +104,102 @@ signed_in = SignedIn()
 CurrentSession = Annotated[Session, Depends(signed_in)]
 
 
+@dataclass(frozen=True)
+class OrgContext:
+    """The caller inside one org: their session, the org and their role in it."""
+
+    session: Session
+    org_id: UUID
+    role: Role
+
+    @property
+    def user_id(self) -> UUID:
+        return self.session.user_id
+
+
+class OrgMember(Access):
+    """A member of the path's `{org_id}` whose role has `permission`. With `or_self`, a member
+    may also act on themselves, when the path's `{user_id}` is theirs (leaving an org)."""
+
+    def __init__(self, permission: str, *, or_self: bool = False) -> None:
+        if permission not in PERMISSIONS:
+            raise ValueError(f"unknown permission {permission!r}")
+        self.permission = permission
+        self.or_self = or_self
+
+    def __call__(self, request: Request, session: CurrentSession) -> OrgContext:
+        org_id = _path_uuid(request, "org_id")
+        if org_id is None:
+            raise not_found()
+        try:
+            role = role_of(get_services(request).database, org_id, session.user_id)
+        except SQLAlchemyError:
+            logger.exception("membership_read_failed")
+            raise unavailable("This organization") from None
+        if role is None:
+            deny(
+                request,
+                session.user_id,
+                self.permission,
+                org_id=None,
+                target=org_id,
+                reason="not_a_member",
+            )
+            raise not_found()
+        is_self = self.or_self and _path_uuid(request, "user_id") == session.user_id
+        if allows(role, self.permission) or is_self:
+            return OrgContext(session=session, org_id=org_id, role=role)
+        deny(request, session.user_id, self.permission, org_id=org_id, target=org_id, reason="role")
+        raise forbidden()
+
+
+def deny(
+    request: Request,
+    actor: UUID,
+    permission: str,
+    *,
+    org_id: UUID | None,
+    target: UUID,
+    reason: str,
+) -> None:
+    """Record a denial (spec §6.4): a metric by permission, and an `authz.denied` audit event,
+    sampled at most once a minute per caller and permission: anyone can sign up, so one row per
+    denial would let a single account fill the database. A non-member's attempt isn't written
+    into that org's log (`org_id` None), so outsiders can't fill it either; the org's ID is kept
+    as the target."""
+    services = get_services(request)
+    services.metrics.authz_denied.add(1, {"permission": permission})
+    if not services.rate_limiter.should_audit("authz.denied", f"{actor}:{permission}"):
+        return
+    route = getattr(request.scope.get("route"), "path", request.url.path)
+    audit(
+        request,
+        action="authz.denied",
+        outcome="denied",
+        actor_user_id=actor,
+        org_id=org_id,
+        target_type="organization",
+        target_id=str(target),
+        details={"permission": permission, "route": route, "reason": reason},
+    )
+
+
+def not_found() -> HTTPException:
+    return HTTPException(404)
+
+
+def forbidden(detail: str = "Your role in this organization doesn't allow that.") -> HTTPException:
+    return HTTPException(403, detail=detail)
+
+
+def _path_uuid(request: Request, name: str) -> UUID | None:
+    value = request.path_params.get(name)
+    try:
+        return UUID(str(value)) if value is not None else None
+    except ValueError:
+        return None
+
+
 def unauthorized() -> HTTPException:
     """401 that also clears the browser's stale session cookie."""
     return HTTPException(401, headers={"Set-Cookie": EXPIRED_SESSION_COOKIE})
@@ -78,7 +209,15 @@ def unavailable(what: str) -> HTTPException:
     return HTTPException(503, detail=f"{what} is unavailable right now; try again shortly.")
 
 
-def enforce(request: Request, policy: Policy, subject: str, *, actor: UUID | None) -> None:
+def enforce(
+    request: Request,
+    policy: Policy,
+    subject: str,
+    *,
+    actor: UUID | None,
+    audit_limits: bool = True,
+    limited_redirect: str | None = None,
+) -> None:
     """Check one rate limit, and remember the decision for the RateLimit headers."""
     services = get_services(request)
     decision = services.rate_limiter.check(policy, subject)
@@ -89,7 +228,7 @@ def enforce(request: Request, policy: Policy, subject: str, *, actor: UUID | Non
     if decision.allowed:
         return
     services.metrics.rate_limited.add(1, {"policy": policy.name})
-    if services.rate_limiter.should_audit(policy, subject):
+    if audit_limits and services.rate_limiter.should_audit(policy.name, subject):
         audit(
             request,
             action="ratelimit.limited",
@@ -97,11 +236,10 @@ def enforce(request: Request, policy: Policy, subject: str, *, actor: UUID | Non
             actor_user_id=actor,
             details={"policy": policy.name},
         )
-    raise HTTPException(
-        429,
-        detail="Too many requests; try again later.",
-        headers={"Retry-After": str(decision.retry_after_seconds)},
-    )
+    retry_after = {"Retry-After": str(decision.retry_after_seconds)}
+    if limited_redirect:
+        raise RedirectInstead(limited_redirect, retry_after)
+    raise HTTPException(429, detail="Too many requests; try again later.", headers=retry_after)
 
 
 def _valid_session(request: Request, services: Services) -> Session:
@@ -112,7 +250,7 @@ def _valid_session(request: Request, services: Services) -> Session:
     now = epoch_millis(services.clock())
     if subject is not None and services.unknown_sessions.exhausted(subject, now):
         raise unauthorized()
-    if not SESSION_ID.fullmatch(session_id):
+    if not is_secret(session_id):
         _unknown_session(services, subject, now)
     try:
         session = services.sessions.get(session_id)

@@ -265,6 +265,66 @@ Do steps 2 to 5 in one go: the API gives a sign-in 15 minutes. If it takes longe
 `/?sign_in=expired`; your account is kept, so start again at step 2 and just sign in. If you land
 on another `/?sign_in=...` address, see Part C.
 
+### B5. Try organizations
+The organization pages come in Plan 6. Until then, you can call the API from the browser's
+developer console while signed in.
+1. Open `https://<id>.cloudfront.net/api/auth/login` and sign in with your email, your password
+   and a fresh code from the authenticator app. You land on `https://<id>.cloudfront.net/app`.
+2. Press **F12** and choose the **Console** tab.
+3. The first time you paste into the console, the browser refuses and asks you to type
+   `allow pasting`. Type it and press **Enter**.
+4. Paste this and press **Enter**. It defines `api(method, path, body)`, which calls the API the
+   way the app will: with your CSRF token, and with the body's SHA-256 in `x-amz-content-sha256`,
+   which CloudFront needs before it passes a body on to the API.
+   ```js
+   const me = await (await fetch("/api/v1/me")).json();
+   async function api(method, path, body) {
+     const headers = { "X-CSRF-Token": me.csrf_token };
+     const text = body === undefined ? undefined : JSON.stringify(body);
+     if (text !== undefined) {
+       const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+       headers["Content-Type"] = "application/json";
+       headers["x-amz-content-sha256"] = [...new Uint8Array(hash)]
+         .map((byte) => byte.toString(16).padStart(2, "0"))
+         .join("");
+     }
+     const response = await fetch("/api/v1" + path, { method, headers, body: text });
+     const type = response.headers.get("content-type") || "";
+     const answer = type.includes("json") ? await response.json() : await response.text();
+     console.log(response.status, answer);
+     return answer;
+   }
+   ```
+5. Create an organization:
+   ```js
+   const org = await api("POST", "/orgs", { name: "Acme Security" });
+   ```
+   The console shows `201` and the org, with `slug: "acme-security"`, `role: "owner"` and
+   `member_count: 1`.
+6. Invite someone. Any address works; nothing is emailed yet:
+   ```js
+   await api("POST", "/orgs/" + org.id + "/invitations", { email: "colleague@example.com", role: "viewer" });
+   ```
+   `201`, with an `invite_url` ending in `/invite#` and a long token. The link is shown only this
+   once. The page it opens comes in Plan 6.
+7. Read the audit log:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/audit-log");
+   ```
+   `200`, with `member.invited` and `org.created`, newest first.
+8. Try a refusal:
+   ```js
+   await api("DELETE", "/orgs/" + org.id, { confirm_name: "not the name" });
+   ```
+   `422`: deleting an org needs its exact name.
+9. Delete the test org (you can have at most 3):
+   ```js
+   await api("DELETE", "/orgs/" + org.id, { confirm_name: "Acme Security" });
+   ```
+   `204`.
+
+If the console shows `401`, your session ended: sign in again and repeat from step 4.
+
 ## Part C: when things go wrong
 
 ### Roll back
@@ -298,6 +358,7 @@ passes, then run B2 again.
 | The browser lands on `/?sign_in=expired` | The sign-in took longer than 15 minutes, was finished in a different browser from the one that started it, or a page was reloaded or opened twice. Start again from `/api/auth/login` |
 | The browser lands on `/?sign_in=failed` | The sign-in was cancelled, or Cognito's answer was refused. Start again; if it keeps happening, send Claude the time it happened (the logs record why, as `sign_in_failed`) |
 | The browser lands on `/?sign_in=unavailable` | DynamoDB, Neon or Cognito didn't answer. Wait a minute and start again; if it keeps happening, tell Claude |
+| The browser lands on `/?sign_in=limited` | Too many sign-ins from your network in a short time. Wait a minute, then start again |
 | The browser lands on `/?sign_in=disabled` | This account is disabled in the database. Tell Claude if that's unexpected |
 | `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account. Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
 | Cognito's verification email never arrives | Check spam. Cognito's built-in sender allows about 50 emails a day per account; wait until tomorrow if many sign-ups ran today |

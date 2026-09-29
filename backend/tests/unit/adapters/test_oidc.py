@@ -9,7 +9,7 @@ import pytest
 from conftest import FakeClock
 from fake_idp import CLIENT_ID, CLIENT_SECRET, FakeIdentityProvider, settings
 
-from nettriage.adapters.oidc import OidcClient, OidcError
+from nettriage.adapters.oidc import OidcClient, OidcError, OidcUnavailableError
 
 
 @pytest.fixture
@@ -41,6 +41,7 @@ def test_the_authorization_url_asks_for_a_code_with_pkce(oidc: OidcClient) -> No
         "nonce": "n",
         "code_challenge": "c",
         "code_challenge_method": "S256",
+        "prompt": "login",
     }
 
 
@@ -147,7 +148,7 @@ def test_an_unreachable_cognito_is_an_error(clock: FakeClock) -> None:
 
     client = OidcClient(settings(), httpx.Client(transport=httpx.MockTransport(down)), clock)
 
-    with pytest.raises(OidcError, match="couldn't be reached"):
+    with pytest.raises(OidcUnavailableError, match="couldn't be reached"):
         client.identity(code="c", code_verifier="v", nonce="n")
 
 
@@ -183,7 +184,7 @@ def test_a_failed_key_fetch_is_retried_on_the_next_sign_in(
         return idp.transport().handle_request(request)
 
     client = OidcClient(settings(), httpx.Client(transport=httpx.MockTransport(flaky)), clock)
-    with pytest.raises(OidcError, match="signing keys couldn't be fetched"):
+    with pytest.raises(OidcUnavailableError, match="signing keys couldn't be fetched"):
         client.identity(code=idp.issue_code(nonce="n"), code_verifier="v", nonce="n")
 
     identity = client.identity(
@@ -191,3 +192,16 @@ def test_a_failed_key_fetch_is_retried_on_the_next_sign_in(
     )
 
     assert identity.sub == "abc"
+
+
+def test_a_cognito_server_error_is_unavailable_but_a_refused_code_is_not(
+    oidc: OidcClient, idp: FakeIdentityProvider
+) -> None:
+    idp.token_status = 503
+    with pytest.raises(OidcUnavailableError, match="answered 503"):
+        oidc.identity(code=idp.issue_code(nonce="n"), code_verifier="v", nonce="n")
+
+    idp.token_status = 400
+    with pytest.raises(OidcError, match="answered 400") as refused:
+        oidc.identity(code=idp.issue_code(nonce="n"), code_verifier="v", nonce="n")
+    assert not isinstance(refused.value, OidcUnavailableError)

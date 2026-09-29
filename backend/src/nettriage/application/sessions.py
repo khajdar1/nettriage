@@ -4,6 +4,7 @@ SHA-256, so a leaked session table can't be replayed as cookies."""
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -16,9 +17,17 @@ ABSOLUTE_TIMEOUT = timedelta(hours=12)
 TOUCH_INTERVAL = timedelta(minutes=5)
 
 
+SECRET = re.compile(r"[A-Za-z0-9_-]{43}")  # 32 bytes, base64url without padding
+
+
 def new_secret() -> str:
-    """32 random bytes, base64url-encoded: a session ID or a CSRF token."""
+    """32 random bytes, base64url-encoded: a session ID, a CSRF token or a sign-in state."""
     return secrets.token_urlsafe(32)
+
+
+def is_secret(value: str) -> bool:
+    """Whether a value could be one of our secrets; anything else is refused unread."""
+    return SECRET.fullmatch(value) is not None
 
 
 def session_key(session_id: str) -> str:

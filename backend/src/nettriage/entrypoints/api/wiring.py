@@ -11,6 +11,7 @@ import boto3
 import httpx
 from botocore.config import Config
 
+from nettriage.adapters.idempotency import IdempotencyStore
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient, OidcSettings
 from nettriage.adapters.postgres import create_database_engine
@@ -57,6 +58,7 @@ def build_services(settings: Settings, session: boto3.session.Session | None = N
         sessions=SessionStore(dynamodb, table),
         login_states=LoginStateStore(dynamodb, table),
         rate_limiter=RateLimiter(dynamodb, table, system_clock),
+        idempotency=IdempotencyStore(dynamodb, table),
         oidc=OidcClient(
             OidcSettings(
                 issuer=oidc["issuer"],

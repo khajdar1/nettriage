@@ -3,12 +3,15 @@
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import RedirectResponse
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 
 from nettriage.application.rate_limits import header_values
-from nettriage.entrypoints.api.routes import auth, health, me
+from nettriage.entrypoints.api.access import RedirectInstead
+from nettriage.entrypoints.api.routes import auth, health, invitations, me, members, orgs
 from nettriage.entrypoints.api.services import Services
+from nettriage.platform.body_limit import BodySizeLimit
 from nettriage.platform.config import Settings
 from nettriage.platform.errors import register_error_handlers
 from nettriage.platform.telemetry import instrument_app
@@ -33,8 +36,12 @@ def create_app(
     app.state.settings = settings
     app.state.services = services
     register_error_handlers(app)
+    app.add_exception_handler(RedirectInstead, redirect_instead)
+    # Innermost, so a body counted over the limit reaches FastAPI as the HTTPException it is;
+    # the header middleware wraps the request stream in a task group, which would regroup it.
+    app.add_middleware(BodySizeLimit)
     app.middleware("http")(add_rate_limit_headers)
-    for module in (health, auth, me):
+    for module in (health, auth, me, orgs, members, invitations):
         app.include_router(module.router, prefix="/api")
     if tracer_provider is not None:
         instrument_app(app, tracer_provider, meter_provider)
@@ -49,3 +56,11 @@ async def add_rate_limit_headers(
     response = await call_next(request)
     response.headers.update(header_values(getattr(request.state, "rate_limits", [])))
     return response
+
+
+async def redirect_instead(request: Request, exc: Exception) -> Response:
+    if not isinstance(exc, RedirectInstead):
+        raise TypeError(type(exc))
+    return RedirectResponse(
+        exc.location, status_code=302, headers={"Cache-Control": "no-store", **exc.headers}
+    )
