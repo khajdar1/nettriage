@@ -16,10 +16,10 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
-from nettriage.adapters.oidc import OidcError
+from nettriage.adapters.oidc import OidcError, OidcUnavailableError
 from nettriage.adapters.users import sign_in_user
 from nettriage.application.rate_limits import viewer_ip
-from nettriage.application.sessions import COOKIE_NAME, new_secret
+from nettriage.application.sessions import COOKIE_NAME, is_secret, new_secret
 from nettriage.application.sign_in import (
     LoginState,
     code_challenge,
@@ -54,7 +54,15 @@ def sign_in_failed(reason: str) -> RedirectResponse:
     return redirect(f"/?sign_in={reason}")
 
 
-@router.get("/login", dependencies=[Depends(Public("auth.ip"))])
+# A sign-in is one login and one callback; each has its own auth.ip bucket, so a sign-in costs
+# one slot in each, and a limited one lands on the landing page instead of a JSON error.
+SIGN_IN_LIMITED = "/?sign_in=limited"
+
+
+@router.get(
+    "/login",
+    dependencies=[Depends(Public("auth.ip", scope="login", limited_redirect=SIGN_IN_LIMITED))],
+)
 def login(request: Request, return_to: str | None = None) -> RedirectResponse:
     services = get_services(request)
     state, nonce, verifier = new_secret(), new_secret(), new_code_verifier()
@@ -74,7 +82,10 @@ def login(request: Request, return_to: str | None = None) -> RedirectResponse:
     return response
 
 
-@router.get("/callback", dependencies=[Depends(Public("auth.ip"))])
+@router.get(
+    "/callback",
+    dependencies=[Depends(Public("auth.ip", scope="callback", limited_redirect=SIGN_IN_LIMITED))],
+)
 def callback(
     request: Request, code: str | None = None, state: str | None = None
 ) -> RedirectResponse:
@@ -86,7 +97,9 @@ def callback(
 def _finish_sign_in(request: Request, code: str | None, state: str | None) -> RedirectResponse:
     services = get_services(request)
     started_here = request.cookies.get(SIGN_IN_COOKIE, "")
-    if not state or not hmac.compare_digest(started_here.encode(), state.encode()):
+    if not state or not is_secret(state):
+        return sign_in_failed("expired")  # not a state this API issued; DynamoDB isn't asked
+    if not hmac.compare_digest(started_here.encode(), state.encode()):
         return sign_in_failed("expired")  # not started in this browser, or over 15 minutes ago
     try:
         login = services.login_states.take(state, services.clock())
@@ -101,6 +114,9 @@ def _finish_sign_in(request: Request, code: str | None, state: str | None) -> Re
         identity = services.oidc.identity(
             code=code, code_verifier=login.code_verifier, nonce=login.nonce
         )
+    except OidcUnavailableError as error:
+        logger.warning("sign_in_unavailable", extra={"reason": str(error)})
+        return sign_in_failed("unavailable")
     except OidcError as error:
         logger.warning("sign_in_failed", extra={"reason": str(error)})
         return sign_in_failed("failed")

@@ -4,6 +4,8 @@ Only `install_global_providers` touches global state, and only the production
 entrypoint calls it. Tests pass in-memory exporters and readers instead.
 """
 
+from typing import Any
+
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
@@ -14,6 +16,7 @@ from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetr
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+from opentelemetry.trace import Span
 
 from nettriage.platform.config import Settings
 
@@ -58,9 +61,26 @@ def install_global_providers(
     metrics.set_meter_provider(meter_provider)
 
 
+def hide_sign_in_query(span: Span, scope: dict[str, Any]) -> None:
+    """The sign-in callback's query holds Cognito's authorization code and the sign-in state.
+    Spans of /api/auth/* keep their URL without it."""
+    if not span.is_recording() or not str(scope.get("path", "")).startswith("/api/auth/"):
+        return
+    attributes = getattr(span, "attributes", None) or {}
+    for name in ("http.url", "http.target", "url.full"):
+        value = attributes.get(name)
+        if isinstance(value, str) and "?" in value:
+            span.set_attribute(name, value.split("?", 1)[0])
+    if "url.query" in attributes:
+        span.set_attribute("url.query", "")
+
+
 def instrument_app(
     app: FastAPI, tracer_provider: TracerProvider, meter_provider: MeterProvider | None
 ) -> None:
     FastAPIInstrumentor.instrument_app(
-        app, tracer_provider=tracer_provider, meter_provider=meter_provider
+        app,
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+        server_request_hook=hide_sign_in_query,
     )

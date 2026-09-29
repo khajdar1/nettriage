@@ -87,3 +87,21 @@ def test_requests_succeed_when_the_telemetry_backend_is_down(
     response = _client(services, tracer_provider).get("/api/health")
 
     assert response.status_code == 200
+
+
+def test_sign_in_urls_in_traces_carry_no_code_or_state(services: Services) -> None:
+    exporter = InMemorySpanExporter()
+    tracer_provider = create_tracer_provider(SETTINGS, exporter)
+
+    _client(services, tracer_provider).get(
+        "/api/auth/callback?code=SECRETCODE&state=SECRETSTATE", follow_redirects=False
+    )
+    tracer_provider.force_flush()
+
+    recorded = [
+        f"{key}={value}"
+        for span in exporter.get_finished_spans()
+        for key, value in (span.attributes or {}).items()
+    ]
+    assert recorded
+    assert [item for item in recorded if "SECRET" in item] == []

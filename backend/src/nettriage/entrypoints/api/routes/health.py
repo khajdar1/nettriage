@@ -18,7 +18,9 @@ class Health(BaseModel):
     version: str
 
 
-@router.get("/health", dependencies=[Depends(Public("public.ip"))])
+# A limited health check only counts a metric: an audit row would wake Neon, and the probe
+# must never touch the database.
+@router.get("/health", dependencies=[Depends(Public("public.ip", audit_limits=False))])
 def health(response: Response, settings: Annotated[Settings, Depends(get_settings)]) -> Health:
     response.headers["Cache-Control"] = "no-store"
     return Health(status="ok", version=settings.version)

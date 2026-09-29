@@ -52,6 +52,10 @@ class OidcError(Exception):
     """Sign-in couldn't be completed. The message says why, without any token."""
 
 
+class OidcUnavailableError(OidcError):
+    """Cognito couldn't be reached or failed on its side; trying again later may work."""
+
+
 class OidcClient:
     def __init__(self, settings: OidcSettings, http: httpx.Client, clock: Clock) -> None:
         self.settings = settings
@@ -71,6 +75,10 @@ class OidcClient:
                 "nonce": nonce,
                 "code_challenge": code_challenge,
                 "code_challenge_method": "S256",
+                # Always ask for the password and the authenticator code, even while Cognito's
+                # own session is alive: "sign out everywhere" can't end that session on other
+                # devices (the owner's decision, Plan 3c).
+                "prompt": "login",
             }
         )
         return f"{self.settings.domain}/oauth2/authorize?{query}"
@@ -100,7 +108,9 @@ class OidcClient:
                 headers={"Accept": "application/json"},
             )
         except httpx.HTTPError:
-            raise OidcError("the token endpoint couldn't be reached") from None
+            raise OidcUnavailableError("the token endpoint couldn't be reached") from None
+        if response.status_code >= httpx.codes.INTERNAL_SERVER_ERROR:
+            raise OidcUnavailableError(f"the token endpoint answered {response.status_code}")
         if response.status_code != httpx.codes.OK:
             raise OidcError(f"the token endpoint answered {response.status_code}")
         try:
@@ -168,5 +178,5 @@ class OidcClient:
                 if key.get("kty") == "RSA" and key.get("use", "sig") == "sig"
             }
         except httpx.HTTPError, ValueError, KeyError, TypeError, jwt.PyJWTError:
-            raise OidcError("Cognito's signing keys couldn't be fetched") from None
+            raise OidcUnavailableError("Cognito's signing keys couldn't be fetched") from None
         self._fetched_at = self._clock()

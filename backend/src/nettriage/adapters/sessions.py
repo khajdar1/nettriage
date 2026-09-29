@@ -148,15 +148,23 @@ class SessionStore:
                     "Update": {
                         "TableName": self._table,
                         "Key": {"pk": {"S": _user_pk(session.user_id)}},
-                        "UpdateExpression": "DELETE sessions :key",
-                        "ExpressionAttributeValues": {":key": {"SS": [session.key]}},
+                        # If "sign out everywhere" already removed the set, this recreates only
+                        # its key; give it an expiry so TTL still cleans it up.
+                        "UpdateExpression": (
+                            "DELETE sessions :key SET expires_at = if_not_exists(expires_at, :exp)"
+                        ),
+                        "ExpressionAttributeValues": {
+                            ":key": {"SS": [session.key]},
+                            ":exp": {"N": str(epoch_seconds(session.expires_at))},
+                        },
                     }
                 },
             ]
         )
 
     def delete_all(self, user_id: UUID) -> int:
-        """Delete every session the user has. Returns how many were listed."""
+        """Delete every session the user has. Returns how many were listed. A session created
+        while this runs survives, and stays listed for the next call."""
         response = self._client.get_item(
             TableName=self._table, Key={"pk": {"S": _user_pk(user_id)}}, ConsistentRead=True
         )
@@ -168,5 +176,13 @@ class SessionStore:
             while requests:
                 result = self._client.batch_write_item(RequestItems={self._table: requests})
                 requests = result.get("UnprocessedItems", {}).get(self._table, [])
-        self._client.delete_item(TableName=self._table, Key={"pk": {"S": _user_pk(user_id)}})
+        if keys:
+            # Remove only the keys read above: a session created meanwhile stays listed, so the
+            # next "sign out everywhere" still finds it.
+            self._client.update_item(
+                TableName=self._table,
+                Key={"pk": {"S": _user_pk(user_id)}},
+                UpdateExpression="DELETE sessions :keys",
+                ExpressionAttributeValues={":keys": {"SS": keys}},
+            )
         return len(keys)

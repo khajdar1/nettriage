@@ -53,7 +53,7 @@ def sign_in(
 
 
 def csrf_headers(client: TestClient) -> dict[str, str]:
-    """What the SPA sends on a state-changing request (spec Â§6.2, Â§7)."""
+    """What the SPA sends on a state-changing request (spec §6.2, §7)."""
     token = client.get("/api/v1/me").json()["csrf_token"]
     return {"X-CSRF-Token": token, "Sec-Fetch-Site": "same-origin", "Origin": APP_ORIGIN}
 

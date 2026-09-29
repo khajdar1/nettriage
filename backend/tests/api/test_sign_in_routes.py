@@ -1,7 +1,9 @@
 """Sign-in through Cognito (spec §4.1, §6.2, §6.3)."""
 
+from datetime import datetime
 from uuid import uuid4
 
+import pytest
 from browser import finish_sign_in, query, set_cookie, sign_in, start_sign_in
 from conftest import Database, RuntimeTable, counter
 from fake_idp import DOMAIN, FakeIdentityProvider
@@ -11,6 +13,7 @@ from sqlalchemy import text
 
 from nettriage.application.sessions import COOKIE_NAME
 from nettriage.application.sign_in import code_challenge
+from nettriage.entrypoints.api.services import Services
 
 
 def audit_rows(database: Database, action: str, email: str) -> list[tuple[str, dict[str, object]]]:
@@ -214,3 +217,48 @@ def test_the_sign_in_cookie_lives_fifteen_minutes_and_the_callback_clears_it(
     assert set_cookie(callback, "__Host-sign-in") == (
         "__Host-sign-in=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax"
     )
+
+
+def test_every_sign_in_asks_for_the_password_and_the_code_again(client: TestClient) -> None:
+    """Cognito's own session survives "sign out everywhere" on other devices, so it must never
+    let a sign-in skip the password and the authenticator code (the owner's decision)."""
+    assert start_sign_in(client)["prompt"] == "login"
+
+
+def test_a_state_can_not_be_replayed_even_with_its_sign_in_cookie(
+    database_client: TestClient, idp: FakeIdentityProvider
+) -> None:
+    login = start_sign_in(database_client)
+    finish_sign_in(database_client, idp, login, sub=f"sub-{uuid4()}")
+    database_client.cookies.set("__Host-sign-in", login["state"], domain="app.test")
+
+    replayed = finish_sign_in(database_client, idp, login, sub=f"sub-{uuid4()}")
+
+    assert replayed.headers["location"] == "/?sign_in=expired"
+    assert set_cookie(replayed, COOKIE_NAME) is None
+
+
+def test_a_state_the_api_never_issued_is_refused_before_dynamodb(
+    client: TestClient, services: Services, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def untouched(state: str, now: datetime) -> None:
+        raise AssertionError("the sign-in store was read")
+
+    monkeypatch.setattr(services.login_states, "take", untouched)
+    client.cookies.set("__Host-sign-in", "x" * 3000, domain="app.test")
+
+    response = client.get(
+        "/api/auth/callback", params={"code": "c", "state": "x" * 3000}, follow_redirects=False
+    )
+
+    assert response.headers["location"] == "/?sign_in=expired"
+
+
+def test_an_unreachable_cognito_sends_the_browser_to_the_unavailable_page(
+    client: TestClient, idp: FakeIdentityProvider
+) -> None:
+    idp.token_status = 503
+
+    response = finish_sign_in(client, idp, start_sign_in(client))
+
+    assert response.headers["location"] == "/?sign_in=unavailable"

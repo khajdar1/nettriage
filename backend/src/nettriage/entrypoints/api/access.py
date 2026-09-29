@@ -2,7 +2,9 @@
 `Public(policy)` or `SignedIn`, and tests/security/test_route_access.py fails on any route that
 declares neither.
 
-- `Public(policy)` rate-limits by client IP.
+- `Public(policy)` rate-limits by client IP. A `scope` gives a route its own bucket under the
+  policy; `limited_redirect` sends a limited browser navigation to a page instead of JSON; and
+  `audit_limits=False` keeps a limited route from writing to the audit log (and so to Postgres).
 - `SignedIn` needs a valid session. It fails closed: an unreadable session store gives 503.
   State-changing methods also pass the CSRF checks. Requests are rate-limited per user, and
   state-changing ones also by `api.mutation.user`.
@@ -16,7 +18,6 @@ from __future__ import annotations
 
 import hmac
 import logging
-import re
 from typing import Annotated, NoReturn
 from uuid import UUID
 
@@ -25,7 +26,7 @@ from fastapi import Depends, HTTPException, Request
 
 from nettriage.adapters.runtime_table import epoch_millis
 from nettriage.application.rate_limits import POLICIES, Policy, ip_subject
-from nettriage.application.sessions import COOKIE_NAME, Session
+from nettriage.application.sessions import COOKIE_NAME, Session, is_secret
 from nettriage.entrypoints.api.auditing import VIEWER_ADDRESS, audit
 from nettriage.entrypoints.api.cookies import EXPIRED_SESSION_COOKIE
 from nettriage.entrypoints.api.services import Services, get_services
@@ -33,7 +34,6 @@ from nettriage.entrypoints.api.services import Services, get_services
 logger = logging.getLogger(__name__)
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-SESSION_ID = re.compile(r"[A-Za-z0-9_-]{43}")  # 32 bytes, base64url without padding
 SAME_SITE = frozenset({"same-origin", "none"})
 
 
@@ -41,14 +41,42 @@ class Access:
     """A route's access declaration."""
 
 
+class RedirectInstead(Exception):
+    """Answer with a redirect to `location` instead of Problem Details; the app turns it into a
+    302 (see app.py)."""
+
+    def __init__(self, location: str, headers: dict[str, str] | None = None) -> None:
+        super().__init__(location)
+        self.location = location
+        self.headers = headers or {}
+
+
 class Public(Access):
-    def __init__(self, policy: str) -> None:
+    def __init__(
+        self,
+        policy: str,
+        *,
+        scope: str | None = None,
+        limited_redirect: str | None = None,
+        audit_limits: bool = True,
+    ) -> None:
         self.policy = POLICIES[policy]
+        self.scope = scope
+        self.limited_redirect = limited_redirect
+        self.audit_limits = audit_limits
 
     def __call__(self, request: Request) -> None:
         subject = ip_subject(request.headers.get(VIEWER_ADDRESS))
-        if subject is not None:
-            enforce(request, self.policy, subject, actor=None)
+        if subject is None:
+            return
+        enforce(
+            request,
+            self.policy,
+            f"{self.scope}:{subject}" if self.scope else subject,
+            actor=None,
+            audit_limits=self.audit_limits,
+            limited_redirect=self.limited_redirect,
+        )
 
 
 class SignedIn(Access):
@@ -78,7 +106,15 @@ def unavailable(what: str) -> HTTPException:
     return HTTPException(503, detail=f"{what} is unavailable right now; try again shortly.")
 
 
-def enforce(request: Request, policy: Policy, subject: str, *, actor: UUID | None) -> None:
+def enforce(
+    request: Request,
+    policy: Policy,
+    subject: str,
+    *,
+    actor: UUID | None,
+    audit_limits: bool = True,
+    limited_redirect: str | None = None,
+) -> None:
     """Check one rate limit, and remember the decision for the RateLimit headers."""
     services = get_services(request)
     decision = services.rate_limiter.check(policy, subject)
@@ -89,7 +125,7 @@ def enforce(request: Request, policy: Policy, subject: str, *, actor: UUID | Non
     if decision.allowed:
         return
     services.metrics.rate_limited.add(1, {"policy": policy.name})
-    if services.rate_limiter.should_audit(policy, subject):
+    if audit_limits and services.rate_limiter.should_audit(policy, subject):
         audit(
             request,
             action="ratelimit.limited",
@@ -97,11 +133,10 @@ def enforce(request: Request, policy: Policy, subject: str, *, actor: UUID | Non
             actor_user_id=actor,
             details={"policy": policy.name},
         )
-    raise HTTPException(
-        429,
-        detail="Too many requests; try again later.",
-        headers={"Retry-After": str(decision.retry_after_seconds)},
-    )
+    retry_after = {"Retry-After": str(decision.retry_after_seconds)}
+    if limited_redirect:
+        raise RedirectInstead(limited_redirect, retry_after)
+    raise HTTPException(429, detail="Too many requests; try again later.", headers=retry_after)
 
 
 def _valid_session(request: Request, services: Services) -> Session:
@@ -112,7 +147,7 @@ def _valid_session(request: Request, services: Services) -> Session:
     now = epoch_millis(services.clock())
     if subject is not None and services.unknown_sessions.exhausted(subject, now):
         raise unauthorized()
-    if not SESSION_ID.fullmatch(session_id):
+    if not is_secret(session_id):
         _unknown_session(services, subject, now)
     try:
         session = services.sessions.get(session_id)
