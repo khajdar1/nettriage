@@ -341,9 +341,11 @@ The partition key is `pk` (string), and the TTL attribute is `expires_at`.
 | Bucket | Layout | Policy |
 |---|---|---|
 | `nettriage-<stage>-web` | SPA assets; `demo/*.json` | Private; read only by CloudFront through OAC |
-| `nettriage-<stage>-uploads` | `orgs/{org_id}/uploads/{upload_id}/raw` | Private, TLS-only, SSE-S3, public access blocked. CORS allows `PUT` from the app origin only. Lifecycle: delete after 30 days, abort incomplete multipart uploads after 1 day. Event notification → SQS `analyze` |
+| `nettriage-<stage>-uploads-<suffix>` | `orgs/{org_id}/uploads/{upload_id}/raw` | Private, TLS-only, SSE-S3, public access blocked. CORS allows `PUT` from the app origin only. Lifecycle: delete after 30 days, abort incomplete multipart uploads after 1 day. Event notification → SQS `analyze` |
 | `nettriage-backups-<suffix>` | `pg/<stage>/<date>.dump` | Private, SSE-S3, deleted after 7 days |
 | `nettriage-tfstate-<suffix>` | Terraform state | Versioned, encrypted, TLS-only, native locking |
+
+The uploads bucket's `<suffix>` is the first 8 hex characters of the account ID's SHA-256, like the sign-in domain's (Plan 4a): bucket names are global, and this one appears in every page's CSP header, so it can't hold the account ID.
 
 ### 5.7 Retention, quotas and storage budget
 
@@ -478,7 +480,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **CloudFront Function** (viewer request, on `/api/*`): returns 401 when there is no `__Host-session` cookie, except on `/api/auth/*` and `/api/health`.
 - **Response headers policy:**
   - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
-  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://nettriage-<stage>-uploads.s3.eu-north-1.amazonaws.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`
+  - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://nettriage-<stage>-uploads-<suffix>.s3.eu-north-1.amazonaws.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests`
   - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera, microphone and geolocation disabled), `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`
   - Fonts are self-hosted, so the CSP needs no third-party origins.
 - **Request limits:** JSON request bodies are at most 64 KB. Files never pass through the API.
@@ -517,7 +519,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Errors:** RFC 9457 Problem Details (`type`, `title`, `status`, `detail`, `instance`, `trace_id`), never stack traces.
 - **Pagination:** cursor-based (`cursor`, `limit` ≤ 100). Lists that §5.7's quotas keep small (members, invitations) return every item; the audit log pages with a cursor.
 - **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428.
-- **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads` and `POST /orgs` and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409.
+- **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads` and `POST /orgs` and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409. A request is its method, path and body, so a key can't be reused across routes or orgs (Plan 4a).
 - **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests.
 - **No body on DELETE:** CloudFront's origin signing to the Lambda function URL rejects a DELETE that carries a body (found on dev in Plan 3c), so a DELETE takes its inputs from the path and the query. A test fails on any DELETE route that declares a body.
 - **Docs:** interactive API docs are enabled in `dev` only. Each build exports the OpenAPI JSON to the repository.
@@ -540,7 +542,7 @@ A failed condition returns the item as it was, which tells whether the request i
 | `GET`, `POST /api/v1/orgs/{org}/invitations` | `members:invite` | |
 | `DELETE /api/v1/orgs/{org}/invitations/{id}` | `members:invite` | Revoke |
 | `POST /api/v1/invitations/accept` | session | Body: token |
-| `POST /api/v1/orgs/{org}/uploads` | `uploads:create` | Returns a presigned PUT that expires in 5 minutes |
+| `POST /api/v1/orgs/{org}/uploads` | `uploads:create` | Body: `filename`, `size_bytes` (at most 25 MB), `sha256` (hex). Returns a presigned PUT that expires in 5 minutes. It signs `Content-Length`, `x-amz-checksum-sha256` and `x-amz-meta-traceparent`, so S3 accepts only the declared file; the response lists the headers to send. Counts against `uploads.org`; 503 while uploads are paused |
 | `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
 | `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload |
@@ -743,7 +745,7 @@ CI adds a deploy annotation for every deploy.
 
 ### 9.7 Operations
 
-- **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM and are re-read every 60 seconds.
+- **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM (`/nettriage/<stage>/kill/<name>`, `true` or anything else) and are re-read every 60 seconds. A switch that can't be read keeps its last value, and counts as off until it has been read once (Plan 4a). Terraform only creates them, so a deploy never turns a paused switch back on.
 - **Maintenance:** the `ops` Lambda runs daily. It expires `pending_upload` rows older than 1 hour and invitations past their date, and purges audit rows older than 180 days.
 - **Backups:**
   - A nightly `pg_dump -Fc` to S3, kept for 7 days. Plan 7 decides the runner: the `ops` Lambda, or an owner-run command if packaging `pg_dump` for Lambda proves impractical (Revision 2, D7).
@@ -1007,7 +1009,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 | Neon Terraform provider reliability | Create the projects by hand and document it (taken in Plan 3a: the provider isn't code-signed and the owner's machine blocks unsigned executables; see ADR 0002) |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |
 | Current Lambda Function URL + OAC permission requirements (resource-policy actions, body-hash header) | Follow AWS's current docs; if needed, API Gateway HTTP API ($1 per million requests) |
-| S3 presigned PUT enforcing the signed `content-length`, checksum and metadata headers from browsers | Presigned POST with a policy (`content-length-range`) |
+| S3 presigned PUT enforcing the signed `content-length`, checksum and metadata headers from browsers (Plan 4a signs them; runbook B6 checks S3 refuses a changed file) | Presigned POST with a policy (`content-length-range`) |
 | The OpenTelemetry Lambda collector layer for python3.14/arm64 | `force_flush` at the end of each invocation |
 | Python 3.14 arm64 wheels for every dependency | `python3.13` runtime |
 | Short-lived AWS credentials for local development | Resolved: `aws login` (Revision 2, D4) |
