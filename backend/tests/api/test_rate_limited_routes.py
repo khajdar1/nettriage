@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from browser import VIEWER, sign_in, start_sign_in
 from conftest import Database, RuntimeTable, counter
-from fake_idp import FakeIdentityProvider
+from fake_idp import DOMAIN, FakeIdentityProvider
 from fastapi.testclient import TestClient
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from sqlalchemy import text
@@ -36,7 +36,7 @@ def test_too_many_sign_ins_from_one_ip_land_on_the_limited_page(
     ]
 
     assert [r.status_code for r in responses] == [302] * 7
-    assert all("amazoncognito.com" in r.headers["location"] for r in responses[:5])
+    assert all(r.headers["location"].startswith(f"{DOMAIN}/") for r in responses[:5])
     limited = responses[5]
     assert limited.headers["location"] == "/?sign_in=limited"
     assert limited.headers["retry-after"] == "6"
