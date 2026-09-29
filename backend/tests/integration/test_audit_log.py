@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from tenantdata import add_tenant
 
-from nettriage.adapters.audit_log import record
+from nettriage.adapters.audit_log import list_org_events, record
 from nettriage.application.audit import AuditEvent
 
 
@@ -74,3 +74,35 @@ def test_the_owner_cannot_truncate_the_audit_log(database: Database) -> None:
 
     with pytest.raises(DBAPIError, match="append-only"):
         truncate()
+
+
+def test_an_orgs_events_are_listed_newest_first_page_by_page(database: Database) -> None:
+    tenant, other = add_tenant(database.admin), add_tenant(database.admin)
+    for number in range(5):
+        record(
+            database.app_api,
+            AuditEvent(
+                action=f"org.event{number}",
+                outcome="success",
+                actor_type="user",
+                actor_user_id=tenant.owner_id,
+                org_id=tenant.org_id,
+                ip="203.0.113.9",
+            ),
+        )
+    record(
+        database.app_api,
+        AuditEvent(action="other.org", outcome="success", actor_type="system", org_id=other.org_id),
+    )
+
+    first = list_org_events(database.app_api, tenant.org_id, tenant.owner_id, limit=3)
+    rest = list_org_events(
+        database.app_api,
+        tenant.org_id,
+        tenant.owner_id,
+        limit=3,
+        before=(first[-1].created_at, first[-1].id),
+    )
+
+    assert [e.action for e in first + rest] == [f"org.event{n}" for n in (4, 3, 2, 1, 0)]
+    assert not hasattr(first[0], "ip")

@@ -8,6 +8,8 @@ import secrets
 import unicodedata
 from datetime import timedelta
 
+from nettriage.application.permissions import Role, can_manage
+
 MAX_MEMBERS_PER_ORG = 10
 MAX_ORGS_PER_USER = 3
 MAX_PENDING_INVITATIONS = 20
@@ -51,3 +53,50 @@ def normalize_email(value: str) -> str | None:
     if len(email) > MAX_EMAIL or not _EMAIL.fullmatch(email):
         return None
     return email
+
+
+class OrgRuleError(Exception):
+    """A request the organization rules refuse. The message is safe to show to the caller."""
+
+
+class NotFound(OrgRuleError):
+    """No such member or invitation in this organization."""
+
+
+class Forbidden(OrgRuleError):
+    """The caller's role doesn't allow this (spec §6.4's no-escalation rules)."""
+
+
+class LastOwner(OrgRuleError):
+    """An organization always keeps at least one owner (spec §6.4)."""
+
+
+class QuotaExceeded(OrgRuleError):
+    """One of §5.7's limits: 3 orgs per user, 10 members per org, 20 pending invitations."""
+
+
+class Conflict(OrgRuleError):
+    """The request clashes with what exists: already a member, already invited."""
+
+
+class InvitationInvalid(OrgRuleError):
+    """The invitation doesn't exist, was used or revoked, or has expired."""
+
+
+class WrongEmail(OrgRuleError):
+    """The invitation is for a different email address."""
+
+
+class ConfirmationMismatch(OrgRuleError):
+    """Deleting an org needs its exact name as confirmation (spec §7)."""
+
+
+def check_role_change(
+    *, actor_id: object, actor_role: Role, target_id: object, current: Role, new: Role
+) -> None:
+    """No escalation (spec §6.4): nobody changes their own role, and a manager changes only
+    roles they may manage, to roles they may grant."""
+    if actor_id == target_id:
+        raise Forbidden("You can't change your own role.")
+    if not can_manage(actor_role, current) or not can_manage(actor_role, new):
+        raise Forbidden("Your role can't grant or change that role.")
