@@ -23,3 +23,36 @@ class AppMetrics:
             "nettriage.ratelimit.errors",
             description="Rate-limit checks that failed and let the request through, by policy",
         )
+
+
+class AnalyzeMetrics:
+    """The analyze worker's metrics (spec §9.2)."""
+
+    def __init__(self, meter_provider: MeterProvider | None = None) -> None:
+        meter = (meter_provider or get_meter_provider()).get_meter("nettriage")
+        self.uploads_processed = meter.create_counter(
+            "nettriage.uploads.processed",
+            description="Upload events handled, by outcome: analyzed, failed, ignored, duplicate",
+        )
+        self.processing_duration = meter.create_histogram(
+            "nettriage.upload.processing.duration",
+            unit="s",
+            description="Time to parse, detect and store one upload",
+        )
+        self.rows_parsed = meter.create_counter(
+            "nettriage.rows.parsed", description="Flow records parsed"
+        )
+        self.rows_rejected = meter.create_counter(
+            "nettriage.rows.rejected", description="Lines that weren't valid flow records"
+        )
+        self.findings_created = meter.create_counter(
+            "nettriage.findings.created", description="Findings stored, by detector and severity"
+        )
+        self.upload_rejected = meter.create_counter(
+            "nettriage.upload.rejected", description="Uploads that failed analysis, by reason"
+        )
+        self.queue_message_age = meter.create_histogram(
+            "nettriage.queue.message.age",
+            unit="s",
+            description="How long a message waited in its queue, by queue",
+        )

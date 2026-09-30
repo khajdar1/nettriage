@@ -1,0 +1,274 @@
+"""The analyze worker end to end (spec §4.2, §8.6, §9.1 to §9.3): an S3 event from the queue, the
+object from S3 (moto), and the findings in Postgres as `app_analyze`."""
+
+import gzip
+import hashlib
+import io
+import json
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
+from urllib.parse import quote_plus
+from uuid import UUID
+
+import boto3
+import pytest
+from conftest import NO_DATABASE, Database, FakeClock, counter
+from flowlogs import port_scan
+from moto import mock_aws
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
+from tenantdata import add_member, add_org, add_user
+
+from nettriage.adapters.analysis_store import ClaimedUpload, claim_upload
+from nettriage.adapters.postgres import create_database_engine
+from nettriage.adapters.upload_objects import UploadObjects
+from nettriage.application.analysis import UploadKey
+from nettriage.application.uploads import s3_key
+from nettriage.domain.parsing.vpc_flow_logs import ParseLimits
+from nettriage.entrypoints.analyze import handler
+from nettriage.entrypoints.analyze.worker import SIZE_MISMATCH, Worker
+from nettriage.platform.metrics import AnalyzeMetrics
+
+BUCKET = "nettriage-test-uploads-00000000"
+TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+
+
+@dataclass
+class Rig:
+    worker: Worker
+    s3: object
+    spans: InMemorySpanExporter
+    metrics: InMemoryMetricReader
+
+
+@pytest.fixture
+def rig(database: Database, clock: FakeClock) -> Iterator[Rig]:
+    with mock_aws():
+        s3 = boto3.client("s3", region_name="eu-north-1")
+        s3.create_bucket(
+            Bucket=BUCKET, CreateBucketConfiguration={"LocationConstraint": "eu-north-1"}
+        )
+        spans = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
+        reader = InMemoryMetricReader()
+        worker = Worker(
+            database=database.app_analyze,
+            objects=UploadObjects(s3, BUCKET),
+            clock=clock,
+            metrics=AnalyzeMetrics(MeterProvider(metric_readers=[reader])),
+            tracer=tracer_provider.get_tracer("test"),
+            sleep=lambda seconds: None,
+        )
+        yield Rig(worker=worker, s3=s3, spans=spans, metrics=reader)
+
+
+def uploaded(
+    database: Database,
+    rig: Rig,
+    content: bytes,
+    *,
+    declared_size: int | None = None,
+    traceparent: str | None = None,
+) -> str:
+    """A pending upload whose file is in the bucket, as the browser would have PUT it."""
+    with database.admin.begin() as connection:
+        owner = add_user(connection)
+        org = add_org(connection, owner)
+        add_member(connection, org, owner, "owner")
+        upload = UUID(int=int(hashlib.sha256(content + org.bytes).hexdigest()[:32], 16))
+        key = s3_key(org, upload)
+        connection.execute(
+            text(
+                "INSERT INTO uploads (id, org_id, uploaded_by, original_filename, s3_key, "
+                "size_bytes, sha256) VALUES (:id, :org, :by, 'flows.log', :key, :size, :sha)"
+            ),
+            {
+                "id": upload,
+                "org": org,
+                "by": owner,
+                "key": key,
+                "size": declared_size or len(content),
+                "sha": hashlib.sha256(content).hexdigest(),
+            },
+        )
+    metadata = {"traceparent": traceparent} if traceparent else {}
+    rig.s3.put_object(Bucket=BUCKET, Key=key, Body=content, Metadata=metadata)  # type: ignore[attr-defined]
+    return key
+
+
+def message(key: str, sent_millis: int = 1_790_683_200_000) -> dict[str, object]:
+    """An SQS record carrying S3's ObjectCreated notification, with its URL-encoded key."""
+    body = {
+        "Records": [{"eventName": "ObjectCreated:Put", "s3": {"object": {"key": quote_plus(key)}}}]
+    }
+    return {"body": json.dumps(body), "attributes": {"SentTimestamp": str(sent_millis)}}
+
+
+def upload_of(database: Database, key: str) -> tuple[str, str | None, int]:
+    with database.admin.begin() as connection:
+        row = connection.execute(
+            text(
+                "SELECT u.status, u.failure_reason, count(f.id) AS findings FROM uploads u "
+                "LEFT JOIN findings f ON f.upload_id = u.id WHERE u.s3_key = :key "
+                "GROUP BY u.status, u.failure_reason"
+            ),
+            {"key": key},
+        ).one()
+    return row.status, row.failure_reason, row.findings
+
+
+def test_an_uploaded_port_scan_is_analyzed_and_its_finding_stored(
+    database: Database, rig: Rig
+) -> None:
+    key = uploaded(database, rig, port_scan())
+
+    rig.worker.handle_message(message(key))
+
+    assert upload_of(database, key) == ("analyzed", None, 1)
+    assert counter(rig.metrics, "nettriage.uploads.processed") == 1
+    assert counter(rig.metrics, "nettriage.findings.created") == 1
+    assert counter(rig.metrics, "nettriage.rows.parsed") == 150
+
+
+def test_the_workers_span_links_to_the_upload_request_and_times_each_step(
+    database: Database, rig: Rig
+) -> None:
+    key = uploaded(database, rig, port_scan(), traceparent=TRACEPARENT)
+
+    rig.worker.handle_message(message(key))
+
+    spans = {span.name: span for span in rig.spans.get_finished_spans()}
+    upload = spans["analyze.upload"]
+    [link] = upload.links
+    assert format(link.context.trace_id, "032x") == TRACEPARENT.split("-")[1]
+    assert upload.context is not None
+    for step in ("analyze.parse", "analyze.detect"):
+        parent = spans[step].parent
+        assert parent is not None
+        assert parent.span_id == upload.context.span_id
+
+
+def test_a_file_that_is_not_a_flow_log_fails_its_upload_with_a_reason(
+    database: Database, rig: Rig
+) -> None:
+    key = uploaded(database, rig, b"<html><body>not flows</body></html>\n" * 20)
+
+    rig.worker.handle_message(message(key))
+
+    status, reason, findings = upload_of(database, key)
+    assert (status, findings) == ("failed", 0)
+    assert reason
+    assert counter(rig.metrics, "nettriage.upload.rejected") == 1
+
+
+def test_a_file_of_another_size_than_declared_fails(database: Database, rig: Rig) -> None:
+    key = uploaded(database, rig, port_scan(), declared_size=len(port_scan()) + 1)
+
+    rig.worker.handle_message(message(key))
+
+    assert upload_of(database, key) == ("failed", SIZE_MISMATCH, 0)
+
+
+def test_a_zip_bomb_fails_early_instead_of_filling_memory(database: Database, rig: Rig) -> None:
+    key = uploaded(database, rig, gzip.compress(port_scan() * 1_000))
+    worker = replace(rig.worker, limits=ParseLimits(max_decompressed_bytes=1_000_000))
+
+    worker.handle_message(message(key))
+
+    status, reason, _ = upload_of(database, key)
+    assert status == "failed"
+    assert reason is not None
+    assert "MB" in reason or "bytes" in reason
+
+
+def test_a_second_delivery_of_the_same_event_changes_nothing(database: Database, rig: Rig) -> None:
+    key = uploaded(database, rig, port_scan())
+    rig.worker.handle_message(message(key))
+
+    again = rig.worker.process(key)
+
+    assert again == "ignored"
+    assert upload_of(database, key) == ("analyzed", None, 1)
+
+
+def test_objects_that_are_not_uploads_and_s3s_test_event_are_ignored(rig: Rig) -> None:
+    rig.worker.handle_message({"body": json.dumps({"Event": "s3:TestEvent"})})
+
+    outcome = rig.worker.process("somewhere/else.txt")
+
+    assert outcome == "ignored"
+
+
+def test_a_brief_database_outage_is_retried(
+    database: Database, rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = uploaded(database, rig, port_scan())
+    calls: list[str] = []
+
+    def flaky_claim(engine: Engine, upload_key: UploadKey) -> ClaimedUpload | None:
+        calls.append(upload_key.key)
+        if len(calls) == 1:
+            raise OperationalError("SELECT", {}, Exception("server closed the connection"))
+        return claim_upload(engine, upload_key)
+
+    monkeypatch.setattr("nettriage.entrypoints.analyze.worker.claim_upload", flaky_claim)
+    slept: list[float] = []
+    worker = replace(rig.worker, sleep=slept.append)
+
+    outcome = worker.process(key)
+
+    assert outcome == "analyzed"
+    assert slept == [1.0]
+    assert upload_of(database, key) == ("analyzed", None, 1)
+
+
+def test_a_longer_database_outage_raises_so_sqs_delivers_the_message_again(
+    database: Database, rig: Rig
+) -> None:
+    key = uploaded(database, rig, port_scan())
+    slept: list[float] = []
+    offline = replace(rig.worker, database=create_database_engine(NO_DATABASE), sleep=slept.append)
+
+    with pytest.raises(OperationalError):
+        offline.handle_message(message(key))
+
+    assert slept == [1.0, 3.0]
+    assert upload_of(database, key) == ("pending_upload", None, 0)
+
+
+def test_the_logs_never_contain_a_line_of_the_file(
+    database: Database, rig: Rig, logs: io.StringIO
+) -> None:
+    secret = b"ACCOUNT-SECRET-7f3a not a flow record\n"
+    key = uploaded(database, rig, port_scan() + secret * 40)
+
+    rig.worker.handle_message(message(key))
+
+    assert upload_of(database, key)[0] == "failed"
+    assert "ACCOUNT-SECRET-7f3a" not in logs.getvalue()
+
+
+def test_the_handler_flushes_telemetry_even_when_a_message_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flushed: list[bool] = []
+
+    class Failing:
+        def handle_message(self, record: object) -> None:
+            raise RuntimeError("boom")
+
+        def flush(self) -> None:
+            flushed.append(True)
+
+    monkeypatch.setattr(handler, "worker", lambda: Failing())
+
+    with pytest.raises(RuntimeError):
+        handler.handle({"Records": [{"body": "{}"}]}, None)
+
+    assert flushed == [True]

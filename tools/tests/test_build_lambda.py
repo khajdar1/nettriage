@@ -19,6 +19,7 @@ def make_package(
         "run.sh": run_sh,
         "collector.yaml": b"receivers: {}\n",
         "nettriage/entrypoints/api/main.py": b"app = None\n",
+        "nettriage/entrypoints/analyze/handler.py": b"def handle(event, context): pass\n",
         "fastapi-1.0.dist-info/WHEEL": f"Wheel-Version: 1.0\nTag: {wheel_tag}\n".encode(),
         **(extra or {}),
     }
@@ -83,6 +84,16 @@ def test_missing_entrypoint_is_rejected(tmp_path: Path) -> None:
     write_zip(package, out)
 
     with pytest.raises(PackageError, match="missing nettriage/entrypoints/api/main.py"):
+        validate_zip(out)
+
+
+def test_a_package_without_the_analyze_handler_is_rejected(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    (package / "nettriage/entrypoints/analyze/handler.py").unlink()
+    out = tmp_path / "backend.zip"
+    write_zip(package, out)
+
+    with pytest.raises(PackageError, match="missing nettriage/entrypoints/analyze/handler.py"):
         validate_zip(out)
 
 

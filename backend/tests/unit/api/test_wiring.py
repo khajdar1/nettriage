@@ -6,7 +6,8 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from nettriage.entrypoints.api.wiring import MissingParameterError, build_services
+from nettriage.adapters.parameters import MissingParameterError
+from nettriage.entrypoints.api.wiring import build_services
 from nettriage.platform.config import Settings
 
 SETTINGS = Settings(

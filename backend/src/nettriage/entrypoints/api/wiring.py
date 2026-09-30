@@ -4,17 +4,15 @@ come from SSM Parameter Store, never from environment variables or the package."
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 import boto3
 import httpx
-from botocore.config import Config
 
 from nettriage.adapters.idempotency import IdempotencyStore
 from nettriage.adapters.kill_switch import KillSwitch, ssm_parameter
 from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient, OidcSettings
+from nettriage.adapters.parameters import AWS_CONFIG, read_parameters
 from nettriage.adapters.postgres import create_database_engine
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
@@ -24,26 +22,7 @@ from nettriage.entrypoints.api.services import Services
 from nettriage.platform.config import Settings
 from nettriage.platform.metrics import AppMetrics
 
-if TYPE_CHECKING:
-    from types_boto3_ssm.client import SSMClient
-
-# Fail fast inside the API's 29-second timeout, with a few quick retries (spec §3.5).
-AWS_CONFIG = Config(
-    connect_timeout=2, read_timeout=5, retries={"mode": "standard", "max_attempts": 3}
-)
 COGNITO_TIMEOUT = httpx.Timeout(5.0)
-
-
-class MissingParameterError(RuntimeError):
-    """An SSM parameter the API needs doesn't exist. The message names it; it has no value."""
-
-
-def read_parameters(ssm: SSMClient, names: Sequence[str]) -> dict[str, str]:
-    response = ssm.get_parameters(Names=list(names), WithDecryption=True)
-    missing = response.get("InvalidParameters", [])
-    if missing:
-        raise MissingParameterError(f"Missing SSM parameters: {', '.join(sorted(missing))}")
-    return {parameter["Name"]: parameter["Value"] for parameter in response["Parameters"]}
 
 
 def build_services(settings: Settings, session: boto3.session.Session | None = None) -> Services:
