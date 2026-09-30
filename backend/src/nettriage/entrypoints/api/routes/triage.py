@@ -1,5 +1,6 @@
 """Triage (spec §7): change a finding's status or assignee against the version the caller read,
-and comment on it. Each change is in the finding's history and the org's audit log."""
+and comment on it. Each change is in the finding's history and the org's audit log, and counts
+against the org's `triage.org` quota: 500 a day, 50 at once (the owner's decision, Plan 4c)."""
 
 from __future__ import annotations
 
@@ -11,8 +12,9 @@ from fastapi.responses import JSONResponse
 
 from nettriage.adapters.idempotency import StoredResponse
 from nettriage.adapters.triage import add_comment, triage_finding
+from nettriage.application.rate_limits import POLICIES
 from nettriage.application.triage import etag, expected_version
-from nettriage.entrypoints.api.access import OrgContext, OrgMember
+from nettriage.entrypoints.api.access import OrgContext, OrgMember, enforce
 from nettriage.entrypoints.api.auditing import audit
 from nettriage.entrypoints.api.finding_schemas import FindingEventOut, FindingOut
 from nettriage.entrypoints.api.idempotent import create_once
@@ -41,6 +43,7 @@ def triage(
         raise HTTPException(
             428, detail='Send If-Match with the ETag of the finding you read, such as "1".'
         )
+    enforce(request, POLICIES["triage.org"], str(org.org_id), actor=org.user_id)
     with org_rules(request, "Triaging this finding", org=org, permission="findings:triage"):
         triaged = triage_finding(
             get_services(request).database,
@@ -87,6 +90,7 @@ def comment(
     services = get_services(request)
 
     def work() -> StoredResponse:
+        enforce(request, POLICIES["triage.org"], str(org.org_id), actor=org.user_id)
         with org_rules(
             request, "Commenting on this finding", org=org, permission="findings:comment"
         ):

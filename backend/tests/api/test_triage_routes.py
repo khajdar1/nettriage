@@ -1,6 +1,7 @@
 """Triage through the API (spec §7): a finding's status and assignee change only with `If-Match`
 naming the version the caller read, comments join its history, and each is audited."""
 
+from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
@@ -162,6 +163,7 @@ def test_a_comment_joins_the_history_once_per_idempotency_key(
     assert comment["payload"] == {"text": "Our weekly scanner.\nSafe to close."}
     detail = database_client.get(url(world))
     assert [event["type"] for event in detail.json()["events"]] == ["created", "commented"]
+    assert detail.json()["events_total"] == 2
     assert detail.headers["etag"] == '"1"'
 
 
@@ -195,3 +197,28 @@ def test_triage_and_comments_are_audited_without_the_comments_text(
         ("finding.assigned", {"from": None, "to": str(world["analyst"])}),
         ("finding.commented", {}),
     ]
+
+
+def test_an_org_may_triage_50_times_at_once_and_500_a_day(
+    database_client: TestClient,
+    headers: dict[str, str],
+    world: dict[str, UUID],
+    clock: FakeClock,
+) -> None:
+    """Comments and changes share the org's `triage.org` quota, so no member can fill the shared
+    database with history (the owner's decision, Plan 4c). Two seconds between requests keep
+    the member's own `api.mutation.user` limit out of the way."""
+    statuses = []
+    for n in range(51):
+        clock.advance(timedelta(seconds=2))
+        response = database_client.post(
+            url(world, "/comments"), json={"text": f"note {n}"}, headers=headers
+        )
+        statuses.append(response.status_code)
+    clock.advance(timedelta(seconds=2))
+    change = patch(database_client, world, headers, {"status": "resolved"})
+
+    assert statuses == [201] * 50 + [429]
+    assert response.json()["detail"]
+    assert int(response.headers["retry-after"]) > 0
+    assert change.status_code == 429

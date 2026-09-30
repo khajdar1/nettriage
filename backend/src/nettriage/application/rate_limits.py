@@ -44,6 +44,9 @@ POLICIES: dict[str, Policy] = {
         Policy("public.ip", 60, timedelta(minutes=1), 20),
         Policy("uploads.org", 20, timedelta(days=1), 5),
         Policy("invites.org", 20, timedelta(days=1), 5),
+        # Triage changes and comments (the owner's decision, Plan 4c): history only grows,
+        # so this keeps any one org from filling the shared database with it.
+        Policy("triage.org", 500, timedelta(days=1), 50),
         Policy("ai.rerun.user", 10, timedelta(hours=1), 3),
     )
 }

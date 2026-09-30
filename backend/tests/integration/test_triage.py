@@ -214,3 +214,15 @@ def test_a_comment_joins_the_history_without_changing_the_version(database: Data
     detail = get_finding(database.app_api, tenant.org_id, tenant.owner_id, tenant.finding_id)
     assert detail.finding.version == 1
     assert detail.events[-1].id == event.id
+
+
+def test_the_detail_lists_the_latest_100_events_and_counts_them_all(database: Database) -> None:
+    """A finding's history only grows; its detail stays inside the API's response limit."""
+    tenant = add_tenant(database.admin)
+    for n in range(105):
+        add_comment(database.app_api, tenant.org_id, tenant.owner_id, tenant.finding_id, f"c{n}")
+
+    detail = get_finding(database.app_api, tenant.org_id, tenant.owner_id, tenant.finding_id)
+
+    assert detail.events_total == 106
+    assert [event.payload["text"] for event in detail.events] == [f"c{n}" for n in range(5, 105)]

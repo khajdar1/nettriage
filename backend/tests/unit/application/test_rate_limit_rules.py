@@ -24,6 +24,7 @@ def test_the_spec_policies_have_whole_millisecond_intervals() -> None:
         "public.ip",
         "uploads.org",
         "invites.org",
+        "triage.org",
         "ai.rerun.user",
     }
     for policy in POLICIES.values():
