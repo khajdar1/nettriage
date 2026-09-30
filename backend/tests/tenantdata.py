@@ -93,15 +93,20 @@ def add_upload(
 
 
 def add_finding(
-    connection: Connection, org_id: UUID, upload_id: UUID, severity: str = "high"
+    connection: Connection,
+    org_id: UUID,
+    upload_id: UUID,
+    severity: str = "high",
+    detector: str = "port_scan",
 ) -> UUID:
-    """A port-scan finding with one evidence row, its detector technique and its created event."""
+    """A finding (a port scan unless told otherwise) with one evidence row, its detector
+    technique and its created event."""
     finding_id = uuid7()
     connection.execute(
         text(
             "INSERT INTO findings (id, org_id, upload_id, detector_id, detector_version, "
             "fingerprint, severity, title, src_ip, dst_ip, time_window) VALUES (:id, :org, "
-            ":upload, 'port_scan', 1, :fingerprint, :severity, 'Port scan from 203.0.113.9', "
+            ":upload, :detector, 1, :fingerprint, :severity, 'Port scan from 203.0.113.9', "
             "'203.0.113.9', '10.0.0.5', tstzrange('2026-09-28 12:00+00', '2026-09-28 12:05+00'))"
         ),
         {
@@ -110,6 +115,7 @@ def add_finding(
             "upload": upload_id,
             "fingerprint": finding_id.hex * 2,
             "severity": severity,
+            "detector": detector,
         },
     )
     connection.execute(
