@@ -155,8 +155,10 @@ def migrate_database(run: Runner, env: Mapping[str, str], stage: str) -> None:
         run, env, config.db_owner_url_parameter(stage), f"just store-database-url {stage}"
     )
     database.migrate(run, env, owner_url)
+    synced = database.sync_reference_data(run, env, owner_url)
     created = database.ensure_role_logins(run, env, stage, owner_url)
     print("Database migrated." + (f" New logins: {', '.join(created)}." if created else ""))
+    print(synced)
 
 
 def store_database_url(

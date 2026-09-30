@@ -77,6 +77,19 @@ def test_a_role_without_a_login_gets_a_new_password_stored_as_its_pooled_url() -
     assert put.redact == (stored,)
 
 
+def test_the_analyze_worker_gets_its_own_login() -> None:
+    missing = "/nettriage/dev/db/app-analyze-url"
+    run = FakeRun().on("aws", "ssm", "describe-parameters", returns=ssm_names(missing=[missing]))
+    run.on("aws", "ssm", "put-parameter")
+
+    created = database.ensure_role_logins(run, {}, "dev", OWNER_URL, set_password=lambda *a: None)
+
+    assert created == ["app_analyze"]
+    [put] = run.called("aws", "ssm", "put-parameter")
+    assert put.args[put.args.index("--name") + 1] == missing
+    assert urlsplit(put.args[put.args.index("--value") + 1]).username == "app_analyze"
+
+
 def test_an_existing_login_is_kept() -> None:
     run = FakeRun().on("aws", "ssm", "describe-parameters", returns=ssm_names())
 

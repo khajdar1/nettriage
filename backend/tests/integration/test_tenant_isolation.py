@@ -12,7 +12,17 @@ from tenantdata import add_invitation, add_member, add_tenant
 from nettriage.adapters.postgres import tenant_transaction
 from nettriage.adapters.users import sign_in_user
 
-TENANT_TABLES = ("organizations", "memberships", "invitations", "audit_log", "uploads")
+TENANT_TABLES = (
+    "organizations",
+    "memberships",
+    "invitations",
+    "audit_log",
+    "uploads",
+    "findings",
+    "finding_evidence",
+    "finding_techniques",
+    "finding_events",
+)
 INSERT_AUDIT_EVENT = text(
     "INSERT INTO audit_log (id, org_id, actor_type, action, outcome) "
     "VALUES (:id, :org, 'user', 'test.event', 'success')"
@@ -42,7 +52,16 @@ def test_a_query_without_an_org_filter_sees_only_its_own_org(database: Database)
     ) as connection:
         seen = {
             table: org_ids(connection, table)
-            for table in ("organizations", "memberships", "invitations", "uploads")
+            for table in (
+                "organizations",
+                "memberships",
+                "invitations",
+                "uploads",
+                "findings",
+                "finding_evidence",
+                "finding_techniques",
+                "finding_events",
+            )
         }
 
     assert seen == {table: {mine.org_id} for table in seen}
@@ -235,6 +254,16 @@ def test_audit_events_cannot_be_written_for_another_org(database: Database) -> N
         "INSERT INTO uploads (id, org_id, uploaded_by, original_filename, s3_key, size_bytes, "
         "sha256, status) SELECT gen_random_uuid(), org_id, uploaded_by, 'x', 'k', 1, sha256, "
         "'analyzed' FROM uploads",
+        "INSERT INTO findings (id, org_id, upload_id, detector_id, detector_version, "
+        "fingerprint, severity, title, src_ip, time_window) SELECT gen_random_uuid(), org_id, "
+        "upload_id, detector_id, 1, repeat('1', 64), severity, title, src_ip, time_window "
+        "FROM findings",
+        "UPDATE findings SET severity = 'low'",
+        "DELETE FROM findings",
+        "UPDATE detectors SET version = 99",
+        "INSERT INTO attack_techniques (id, stix_id, name, tactics, description, url, "
+        "attack_version, is_subtechnique) VALUES ('T9999', 'x', 'x', '{}', 'x', "
+        "'https://attack.mitre.org/techniques/T9999', '19.2', false)",
         "CREATE TEMP TABLE shadow (id int)",
         "CREATE TABLE sneaky (id int)",
     ],

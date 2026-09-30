@@ -19,8 +19,8 @@ PLUGIN_CACHE = Path.home() / ".terraform.d" / "plugin-cache"
 # (spec §13.2): the Neon Terraform provider isn't code-signed, and the owner's Windows host
 # blocks unsigned executables.
 NEON_HOST_SUFFIX = ".eu-central-1.aws.neon.tech"
-# Database roles that get a login from the deploy. Plans 4, 5 and 7 add theirs.
-APP_DB_ROLES = ("app_api",)
+# Database roles that get a login from the deploy. Plans 5 and 7 add theirs.
+APP_DB_ROLES = ("app_api", "app_analyze")
 MIGRATIONS_CONFIG = REPO / "backend" / "alembic.ini"
 
 
