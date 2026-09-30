@@ -19,6 +19,7 @@ from tools.tests.deploy_fakes import (
 )
 
 SHA = "d" * 40
+SYNCED = "Reference data synced: 3 detectors, 12 ATT&CK techniques.\n"
 LWA = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
 OTEL = "arn:aws:lambda:eu-north-1:184161586896:layer:opentelemetry-collector-arm64-0_22_0:1"
 OUTPUTS = json.dumps(
@@ -70,6 +71,7 @@ def deployable() -> FakeRun:
     run.on("gh", "run", "list", returns=runs((9, "completed", "success", "push")))
     run.on("gh", "run", "download").on("terraform", "output", returns=OUTPUTS).on("terraform")
     run.on(sys.executable, "-m", "alembic")
+    run.on(sys.executable, "-m", "nettriage.adapters.reference_data", returns=SYNCED)
     return healthy_account(run)
 
 
@@ -466,6 +468,41 @@ def test_deploy_migrates_the_database_before_terraform_applies_the_new_code(stag
     assert migrate.env is not None
     assert migrate.env["NETTRIAGE_MIGRATION_DATABASE_URL"] == OWNER_URL
     assert run.first(sys.executable) < run.first("terraform", "init") < run.first("terraform", "apply")
+
+
+def test_deploy_syncs_reference_data_after_migrating_and_before_terraform(
+    stage_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = deployable()
+
+    cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    [sync] = run.called(sys.executable, "-m", "nettriage.adapters.reference_data")
+    assert sync.env is not None
+    assert sync.env["NETTRIAGE_MIGRATION_DATABASE_URL"] == OWNER_URL
+    assert set(sync.redact) == {OWNER_URL, "owner-s3cret"}
+    assert (
+        run.first(sys.executable, "-m", "alembic")
+        < run.first(sys.executable, "-m", "nettriage.adapters.reference_data")
+        < run.first("terraform", "init")
+    )
+    assert SYNCED.strip() in capsys.readouterr().out
+
+
+def test_a_failed_reference_sync_stops_the_deploy_before_terraform(stage_dir: Path) -> None:
+    run = deployable()
+    run.rules.insert(
+        0,
+        (
+            (sys.executable, "-m", "nettriage.adapters.reference_data"),
+            CommandError("`python -m` failed with exit code 1: Error: bad data"),
+        ),
+    )
+
+    with pytest.raises(CommandError, match="Syncing reference data failed"):
+        cli.deploy(run, {}, "dev", smoke_main=lambda argv: 0)
+
+    assert run.called("terraform") == []
 
 
 def test_deploy_never_puts_the_database_owner_url_in_any_call_args(stage_dir: Path) -> None:

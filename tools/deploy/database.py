@@ -71,6 +71,23 @@ def migrate(run: Runner, env: Mapping[str, str], owner_url: str) -> None:
         ) from exc
 
 
+def sync_reference_data(run: Runner, env: Mapping[str, str], owner_url: str) -> str:
+    """Upsert the detectors and ATT&CK techniques from this checkout (spec §5.2), as the
+    database owner, right after migrating. Returns its one-line summary."""
+    try:
+        result = run(
+            [sys.executable, "-m", "nettriage.adapters.reference_data"],
+            env={**env, MIGRATION_URL_ENV: owner_url},
+            redact=[owner_url, urlsplit(owner_url).password or owner_url],
+        )
+    except CommandError as exc:
+        reason = str(exc).partition(" failed with ")[2] or str(exc)
+        raise CommandError(
+            f"Syncing reference data failed; nothing in AWS changed. It stopped with {reason}"
+        ) from exc
+    return result.stdout.strip()
+
+
 def set_role_password(owner_url: str, role: str, password: str) -> None:
     from nettriage.adapters.postgres import set_login_password  # the backend's own client
 

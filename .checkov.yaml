@@ -4,12 +4,12 @@ skip-check:
   - CKV_AWS_18     # S3 access logging: cost; CloudTrail and app telemetry cover it (spec §9)
   - CKV_AWS_144    # S3 cross-region replication: cost; state is versioned (spec §5.6)
   - CKV_AWS_145    # S3 KMS encryption: SSE-S3 by design; KMS customer keys cost money (spec §6.8)
-  - CKV2_AWS_62    # S3 event notifications: not needed for state or web buckets; the uploads bucket gets its notification with the analyze queue (Plan 4b)
+  - CKV2_AWS_62    # S3 event notifications: not needed for the state or web buckets; the uploads bucket notifies the analyze queue
   - CKV2_AWS_61    # S3 lifecycle on the web bucket: deploys replace its content
   - CKV_AWS_21     # S3 versioning: the web bucket is rebuilt from Git on every deploy; raw uploads are never changed and are deleted after 30 days (spec §5.7)
   - CKV_AWS_300    # S3 abort-multipart rule on the web bucket: the owner's deploy uploads small files only
   - CKV_AWS_115    # Lambda reserved concurrency: new accounts may have too low a quota (spec §13.2)
-  - CKV_AWS_116    # Lambda DLQ: the API function is synchronous
+  - CKV_AWS_116    # Lambda DLQ: the API is synchronous, and the analyze worker is fed by SQS, whose redrive policy is its DLQ (spec §8.6)
   - CKV_AWS_117    # Lambda in a VPC: no VPC by design (ADR 0009)
   - CKV_AWS_173    # Lambda env var CMK encryption: AWS-managed encryption; CMKs cost money
   - CKV_AWS_272    # Lambda code signing: planned hardening (Milestone 5)

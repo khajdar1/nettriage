@@ -19,7 +19,12 @@ BACKEND = REPO / "backend"
 PLATFORM = "aarch64-manylinux_2_28"
 PYTHON_VERSION = "3.14"
 EXECUTABLES = frozenset({"run.sh"})
-REQUIRED = ("run.sh", "collector.yaml", "nettriage/entrypoints/api/main.py")
+REQUIRED = (
+    "run.sh",
+    "collector.yaml",
+    "nettriage/entrypoints/api/main.py",
+    "nettriage/entrypoints/analyze/handler.py",
+)
 ALLOWED_WHEEL_TAG = re.compile(
     r"^Tag: \S+-\S+-(any|(manylinux|musllinux)\S*_aarch64|linux_aarch64)$"
 )

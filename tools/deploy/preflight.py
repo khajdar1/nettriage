@@ -52,6 +52,7 @@ def account_checks(run: Runner, env: Mapping[str, str], account_id: str) -> list
         _denial_probe(run, env, f"SSM in {REGION}", ["aws", "ssm", "describe-parameters", "--region", REGION, "--max-results", "1"]),
         _denial_probe(run, env, f"DynamoDB in {REGION}", ["aws", "dynamodb", "list-tables", "--region", REGION, "--max-items", "1"]),
         _denial_probe(run, env, f"Cognito in {REGION}", ["aws", "cognito-idp", "list-user-pools", "--region", REGION, "--max-results", "1"]),
+        _denial_probe(run, env, f"SQS in {REGION}", ["aws", "sqs", "list-queues", "--region", REGION, "--max-results", "1"]),
     ]
 
 

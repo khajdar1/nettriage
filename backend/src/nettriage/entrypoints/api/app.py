@@ -10,7 +10,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from nettriage.application.rate_limits import header_values
 from nettriage.entrypoints.api.access import RedirectInstead
 from nettriage.entrypoints.api.routes import (
+    attack_techniques,
     auth,
+    findings,
     health,
     invitations,
     me,
@@ -49,7 +51,17 @@ def create_app(
     # the header middleware wraps the request stream in a task group, which would regroup it.
     app.add_middleware(BodySizeLimit)
     app.middleware("http")(add_rate_limit_headers)
-    for module in (health, auth, me, orgs, members, invitations, uploads):
+    for module in (
+        health,
+        auth,
+        me,
+        orgs,
+        members,
+        invitations,
+        uploads,
+        findings,
+        attack_techniques,
+    ):
         app.include_router(module.router, prefix="/api")
     if tracer_provider is not None:
         instrument_app(app, tracer_provider, meter_provider)

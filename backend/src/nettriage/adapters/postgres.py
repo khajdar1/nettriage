@@ -42,6 +42,9 @@ def create_database_engine(url: str, *, pool_size: int = 2) -> Engine:
         pool_size=pool_size,
         max_overflow=0,
         pool_pre_ping=True,
+        # Errors reach logs and traces; the values a query was given, such as a sample of an
+        # uploaded line, must not (spec §9.3).
+        hide_parameters=True,
     )
 
 

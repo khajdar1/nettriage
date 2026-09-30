@@ -28,6 +28,7 @@ from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.postgres import create_database_engine, engine_url
 from nettriage.adapters.rate_limiter import RateLimiter
+from nettriage.adapters.reference_data import sync_reference_data
 from nettriage.adapters.sessions import SessionStore
 from nettriage.adapters.upload_storage import UploadStorage, uploads_client
 from nettriage.entrypoints.api.app import create_app
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
 TEST_DATABASE_ENV = "NETTRIAGE_TEST_DATABASE_URL"
 BACKEND = Path(__file__).resolve().parents[1]
 APP_API_PASSWORD = "app-api-test-only"  # noqa: S105 - a throwaway password on a test server
+APP_ANALYZE_PASSWORD = "app-analyze-test-only"  # noqa: S105 - the same, for the worker's role
 
 
 @pytest.fixture
@@ -56,12 +58,14 @@ def settings() -> Settings:
 
 @dataclass(frozen=True)
 class Database:
-    """A database with every migration applied. `admin` is a superuser engine that seeds data
-    past row-level security; `app_api` connects as the API's role."""
+    """A database with every migration applied and the reference data synced. `admin` is a
+    superuser engine that seeds data past row-level security; `app_api` connects as the API's
+    role and `app_analyze` as the analyze worker's."""
 
     url: URL
     admin: Engine
     app_api: Engine
+    app_analyze: Engine
 
 
 def server_url() -> URL:
@@ -102,11 +106,20 @@ def database() -> Iterator[Database]:
     url = create_database(server)
     command.upgrade(alembic_config(url), "head")
     admin = create_engine(url)
+    sync_reference_data(admin)
     with admin.begin() as connection:
         connection.execute(text(f"ALTER ROLE app_api WITH LOGIN PASSWORD '{APP_API_PASSWORD}'"))
+        connection.execute(
+            text(f"ALTER ROLE app_analyze WITH LOGIN PASSWORD '{APP_ANALYZE_PASSWORD}'")
+        )
     app_url = url.set(username="app_api", password=APP_API_PASSWORD)
     app_api = create_database_engine(app_url.render_as_string(hide_password=False), pool_size=1)
-    yield Database(url=url, admin=admin, app_api=app_api)
+    analyze_url = url.set(username="app_analyze", password=APP_ANALYZE_PASSWORD)
+    app_analyze = create_database_engine(
+        analyze_url.render_as_string(hide_password=False), pool_size=1
+    )
+    yield Database(url=url, admin=admin, app_api=app_api, app_analyze=app_analyze)
+    app_analyze.dispose()
     app_api.dispose()
     admin.dispose()
     drop_database(server, url)
