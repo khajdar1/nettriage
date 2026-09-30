@@ -18,6 +18,7 @@ from psycopg import errors
 from sqlalchemy import Connection, Engine, Row, text
 from sqlalchemy.exc import IntegrityError
 
+from nettriage.adapters.assignments import release_assignments
 from nettriage.adapters.postgres import tenant_transaction
 from nettriage.application.organizations import (
     MAX_ORGS_PER_USER,
@@ -166,6 +167,10 @@ def change_role(
             text("UPDATE memberships SET role = :role WHERE org_id = :org AND user_id = :user"),
             {"role": role, "org": org_id, "user": target_id},
         )
+        if not allows(role, "findings:triage"):
+            release_assignments(
+                connection, org_id, target_id, actor_id=actor_id, reason="role_changed"
+            )
         row = connection.execute(
             text(
                 "SELECT m.user_id, u.email, u.display_name, m.role, m.created_at "
@@ -190,6 +195,13 @@ def remove_member(engine: Engine, org_id: UUID, *, actor_id: UUID, target_id: UU
             raise Forbidden("Your role can't remove that member.")
         if current == "owner":
             _keep_an_owner(connection, org_id)
+        release_assignments(
+            connection,
+            org_id,
+            target_id,
+            actor_id=actor_id,
+            reason="member_left" if leaving else "member_removed",
+        )
         connection.execute(
             text("DELETE FROM memberships WHERE org_id = :org AND user_id = :user"),
             {"org": org_id, "user": target_id},
