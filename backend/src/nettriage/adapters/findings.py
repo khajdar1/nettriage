@@ -133,22 +133,27 @@ def list_findings(
 
 def get_finding(engine: Engine, org_id: UUID, user_id: UUID, finding_id: UUID) -> FindingDetail:
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
-        row = connection.execute(
-            text(
-                f"SELECT {_SUMMARY}, f.metrics FROM findings f "  # noqa: S608
-                "WHERE f.org_id = :org AND f.id = :id"
-            ),
-            {"org": org_id, "id": finding_id},
-        ).one_or_none()
-        if row is None:
-            raise NotFound("No such finding.")
-        return FindingDetail(
-            finding=_summary(row),
-            metrics=row.metrics,
-            evidence=_evidence(connection, finding_id),
-            techniques=_techniques(connection, finding_id),
-            events=_events(connection, finding_id),
-        )
+        return read_finding(connection, org_id, finding_id)
+
+
+def read_finding(connection: Connection, org_id: UUID, finding_id: UUID) -> FindingDetail:
+    """One finding in full, inside the caller's transaction (triage returns what it wrote)."""
+    row = connection.execute(
+        text(
+            f"SELECT {_SUMMARY}, f.metrics FROM findings f "  # noqa: S608
+            "WHERE f.org_id = :org AND f.id = :id"
+        ),
+        {"org": org_id, "id": finding_id},
+    ).one_or_none()
+    if row is None:
+        raise NotFound("No such finding.")
+    return FindingDetail(
+        finding=_summary(row),
+        metrics=row.metrics,
+        evidence=_evidence(connection, finding_id),
+        techniques=_techniques(connection, finding_id),
+        events=_events(connection, finding_id),
+    )
 
 
 def _evidence(connection: Connection, finding_id: UUID) -> list[Evidence]:
