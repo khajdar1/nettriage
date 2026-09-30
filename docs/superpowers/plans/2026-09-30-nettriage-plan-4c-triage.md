@@ -83,7 +83,7 @@ The triage queue and AI explanations are Plan 5. The web app's triage controls a
    - `entrypoints/api/routes/triage.py` and `triage_schemas.py` (HTTP).
 
    `adapters/findings.py` gains `read_finding(connection, …)`, so a change returns what it wrote from inside its own transaction.
-9. **No infrastructure change.** The deploy applies migration 0007; Terraform only updates the API function's code.
+9. **No infrastructure change.** The deploy applies migration 0007; Terraform only updates the two functions' code (the API and the analyze worker share `backend.zip`; corrected after the final review).
 
 ## Review Focus
 
@@ -96,7 +96,7 @@ The triage queue and AI explanations are Plan 5. The web app's triage controls a
 ## Owner prerequisites
 
 - **Nothing is needed to build or review this plan.** Tests use the local Postgres.
-- **Nothing new is needed before the deploy.** It applies migration `0007`; Terraform changes only the API function.
+- **Nothing new is needed before the deploy.** It applies migration `0007`; Terraform changes only the two functions' code.
 - **To try it afterwards** (runbook B8, which Task 5 adds), you only need to be signed in to dev.
 
 ## File map
@@ -1994,7 +1994,7 @@ git commit -m "docs: triage in the spec, runbook and README" -m "Co-Authored-By:
   - Get a final review of the whole branch, fix what it finds, then push `plan-4c/triage`.
   - Open the PR and watch CI.
   - Request a Copilot review.
-- [ ] **Step 2 (owner):** Review the PR. Optionally run `just plan-dev` (runbook B1). Expected: `Plan: 0 to add, 1 to change, 0 to destroy`, the API function's new code.
+- [ ] **Step 2 (owner):** Review the PR. Optionally run `just plan-dev` (runbook B1). Expected: `Plan: 0 to add, 2 to change, 0 to destroy`: the API and analyze functions' new code, since both are built from `backend.zip` (corrected after the final review).
 - [ ] **Step 3 (owner):** Squash-merge the PR.
 - [ ] **Step 4 (owner):** Runbook B2 (`just deploy-dev`). Expected:
   - `Database migrated.` (migration `0007`, with no new logins), then `Reference data synced: 3 detectors, 12 ATT&CK techniques.`;

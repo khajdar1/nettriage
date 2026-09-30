@@ -566,7 +566,7 @@ passes, then run B2 again.
 | The browser lands on `/?sign_in=unavailable` | DynamoDB, Neon or Cognito didn't answer. Wait a minute and start again; if it keeps happening, tell Claude |
 | The browser lands on `/?sign_in=limited` | Too many sign-ins from your network in a short time. Wait a minute, then start again |
 | The browser lands on `/?sign_in=disabled` | This account is disabled in the database. Tell Claude if that's unexpected |
-| `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account, or more than 5 uploads started at once in one org (20 a day). Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
+| `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account, or more than 5 uploads started at once in one org (20 a day), or more than 50 triage changes and comments at once in one org (500 a day). Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
 | `412` "This finding changed since you read it" | Someone changed the finding after you read it. Read it again (its `ETag` header is the new version), then repeat the change with that ETag |
 | `428` "Send If-Match with the ETag of the finding you read" | A status or assignee change needs the finding's `ETag` in an `If-Match` header, as in B8 |
 | `503` "Uploads are paused for now" | The uploads kill switch is off. Resume it as in "Pause uploads in an emergency" if that's not intended |

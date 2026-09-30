@@ -363,6 +363,7 @@ The uploads bucket's `<suffix>` is the first 8 hex characters of the account ID'
 - **Uploads:** at most 25 MB per file (enforced by S3 through the signed `content-length`), 250 MB decompressed, 1,000,000 rows, 4 KB per line, 20 uploads per org per day.
 - **Organizations:** at most 10 members per org, 3 orgs per user, 20 pending invitations per org.
 - **Findings:** at most 50 per upload (highest severity first; the rest are counted in `findings_truncated`) and at most 50 evidence rows per finding.
+- **Triage:** 500 status or assignee changes and comments per org per day, 50 at once (`triage.org`); a finding's detail lists its latest 100 events (the owner's decisions, Plan 4c). A finding's history only grows, so this keeps one org from filling the database or making a finding too large to read.
 - **Automatic AI triage:** up to 20 findings per upload, highest severity first. Other findings can be explained on request.
 
 With these limits an upload uses about 0.25 MB, so roughly 2,000 uploads fit in Neon's 0.5 GB.
@@ -463,6 +464,7 @@ A failed condition returns the item as it was, which tells whether the request i
 | `public.ip` | IP | 60 / min | 20 |
 | `uploads.org` | org | 20 / day | 5 |
 | `invites.org` | org | 20 / day | 5 |
+| `triage.org` | org | 500 / day | 50 |
 | `ai.rerun.user` | user | 10 / hour | 3 |
 
 `GET /api/auth/login` and `/callback` each count against `auth.ip` in a bucket of their own, so a sign-in costs one slot in each. A limited sign-in redirects to `/?sign_in=limited` instead of answering JSON. A limited `GET /api/health` counts the metric but writes no audit row, so the probe never touches the database (Plan 3c).
@@ -548,7 +550,7 @@ A failed condition returns the item as it was, which tells whether the request i
 | `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
 | `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. Newest first, a page at a time |
-| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, latest AI analysis (Plan 5), events; the `ETag` is the finding's version |
+| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, latest AI analysis (Plan 5), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
 | `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Body: `status`, `assignee_id` (`null` unassigns), or both; `If-Match`. Any status can change to any other, and the assignee must be an Owner, Admin or Analyst of the org (422 otherwise; the owner's decisions, Plan 4c). Each change is an event in the finding's history and an audit event |
 | `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | Body: `text`, 1 to 2,000 characters, line breaks allowed. A comment joins the history without changing the finding's version; the audit event never holds its text |
 | `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits |
