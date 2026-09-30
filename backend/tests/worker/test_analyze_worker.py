@@ -21,7 +21,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy import Engine, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DataError, OperationalError
 from tenantdata import add_member, add_org, add_user
 
 from nettriage.adapters.analysis_store import ClaimedUpload, claim_upload
@@ -31,7 +31,7 @@ from nettriage.application.analysis import UploadKey
 from nettriage.application.uploads import s3_key
 from nettriage.domain.parsing.vpc_flow_logs import ParseLimits
 from nettriage.entrypoints.analyze import handler
-from nettriage.entrypoints.analyze.worker import SIZE_MISMATCH, Worker
+from nettriage.entrypoints.analyze.worker import GAVE_UP, SIZE_MISMATCH, AnalysisFailed, Worker
 from nettriage.platform.metrics import AnalyzeMetrics
 
 BUCKET = "nettriage-test-uploads-00000000"
@@ -102,12 +102,16 @@ def uploaded(
     return key
 
 
-def message(key: str, sent_millis: int = 1_790_683_200_000) -> dict[str, object]:
-    """An SQS record carrying S3's ObjectCreated notification, with its URL-encoded key."""
+def message(
+    key: str, sent_millis: int = 1_790_683_200_000, receive_count: int = 1
+) -> dict[str, object]:
+    """An SQS record carrying S3's ObjectCreated notification, with its URL-encoded key, on its
+    `receive_count`th delivery."""
     body = {
         "Records": [{"eventName": "ObjectCreated:Put", "s3": {"object": {"key": quote_plus(key)}}}]
     }
-    return {"body": json.dumps(body), "attributes": {"SentTimestamp": str(sent_millis)}}
+    attributes = {"SentTimestamp": str(sent_millis), "ApproximateReceiveCount": str(receive_count)}
+    return {"body": json.dumps(body), "attributes": attributes}
 
 
 def upload_of(database: Database, key: str) -> tuple[str, str | None, int]:
@@ -235,7 +239,7 @@ def test_a_longer_database_outage_raises_so_sqs_delivers_the_message_again(
     slept: list[float] = []
     offline = replace(rig.worker, database=create_database_engine(NO_DATABASE), sleep=slept.append)
 
-    with pytest.raises(OperationalError):
+    with pytest.raises(AnalysisFailed):
         offline.handle_message(message(key))
 
     assert slept == [1.0, 3.0]
@@ -272,3 +276,63 @@ def test_the_handler_flushes_telemetry_even_when_a_message_fails(
         handler.handle({"Records": [{"body": "{}"}]}, None)
 
     assert flushed == [True]
+
+
+def test_an_unexpected_error_is_raised_and_logged_without_the_files_content(
+    database: Database, rig: Rig, logs: io.StringIO, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A database error quotes the values it was given, such as a rejected line's sample
+    (spec §9.3). Lambda logs whatever the handler raises, and spans go to Grafana."""
+    private_line = "ACCOUNT-SECRET-7f3a not a flow record"
+    key = uploaded(database, rig, port_scan() + f"{private_line}\n".encode())
+
+    def failing_store(*args: object) -> bool:
+        quoted = Exception(f'bad value "{private_line}"')
+        raise DataError("UPDATE uploads", {"samples": private_line}, quoted)
+
+    monkeypatch.setattr("nettriage.entrypoints.analyze.worker.store_analysis", failing_store)
+
+    with pytest.raises(AnalysisFailed) as raised:
+        rig.worker.handle_message(message(key))
+
+    assert str(raised.value) == "DataError"
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__
+    assert "analyze_failed" in logs.getvalue()
+    assert private_line not in logs.getvalue()
+    for span in rig.spans.get_finished_spans():
+        assert private_line not in str(span.status.description)
+        assert all(private_line not in str(event.attributes) for event in span.events)
+
+
+def test_the_last_delivery_fails_an_upload_the_worker_cant_finish(
+    database: Database, rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = uploaded(database, rig, port_scan())
+
+    def failing_store(*args: object) -> bool:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr("nettriage.entrypoints.analyze.worker.store_analysis", failing_store)
+
+    with pytest.raises(AnalysisFailed):
+        rig.worker.handle_message(message(key, receive_count=3))
+
+    assert upload_of(database, key) == ("failed", GAVE_UP, 0)
+    assert counter(rig.metrics, "nettriage.upload.rejected") == 1
+
+
+def test_an_earlier_delivery_leaves_the_upload_for_sqs_to_try_again(
+    database: Database, rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key = uploaded(database, rig, port_scan())
+
+    def failing_store(*args: object) -> bool:
+        raise RuntimeError("a bug")
+
+    monkeypatch.setattr("nettriage.entrypoints.analyze.worker.store_analysis", failing_store)
+
+    with pytest.raises(AnalysisFailed):
+        rig.worker.handle_message(message(key, receive_count=2))
+
+    assert upload_of(database, key) == ("processing", None, 0)

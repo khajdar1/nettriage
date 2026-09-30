@@ -83,6 +83,27 @@ def store_analysis(
     return True
 
 
+def give_up_upload(engine: Engine, key: UploadKey, reason: str, now: datetime) -> bool:
+    """Fail an upload the worker couldn't finish by its last delivery, so it doesn't wait
+    forever. False if it had finished after all (a result is never overwritten)."""
+    with tenant_transaction(engine, org_id=key.org_id) as connection:
+        failed = connection.execute(
+            text(
+                "UPDATE uploads SET status = 'failed', failure_reason = :reason, "
+                "processed_at = :now WHERE org_id = :org AND id = :id AND s3_key = :key "
+                "AND status IN ('pending_upload', 'processing')"
+            ),
+            {
+                "reason": reason[:500],
+                "now": now,
+                "org": key.org_id,
+                "id": key.upload_id,
+                "key": key.key,
+            },
+        ).rowcount
+    return failed == 1
+
+
 def fail_upload(engine: Engine, upload: ClaimedUpload, reason: str, now: datetime) -> bool:
     """Mark the upload failed with a readable reason. False if it's no longer processing."""
     with tenant_transaction(engine, org_id=upload.org_id) as connection:
