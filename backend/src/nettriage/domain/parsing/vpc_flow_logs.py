@@ -30,10 +30,12 @@ type FailureCode = Literal["not_a_flow_log", "limit_exceeded"]
 
 @dataclass(frozen=True)
 class ParseLimits:
-    """Spec §8.1's streaming limits. Sizes are binary: 1 MB = 1,048,576 bytes."""
+    """Spec §8.1's streaming limits. Sizes are binary: 1 MB = 1,048,576 bytes. Parsed flows stay
+    in memory for the detectors, so the row limit keeps a file inside the worker's 2,048 MB:
+    2,000,000 rows needed about 2.1 GB (Plan 4b)."""
 
     max_decompressed_bytes: int = 250 * 1024 * 1024
-    max_rows: int = 2_000_000
+    max_rows: int = 1_000_000
     max_line_bytes: int = 4 * 1024
 
 

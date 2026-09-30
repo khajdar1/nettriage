@@ -3,11 +3,12 @@ yields."""
 
 import gzip
 import io
+import tracemalloc
 from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-from flowlogs import port_scan, quiet
+from flowlogs import busy_network, port_scan, quiet
 
 from nettriage.application.analysis import analyze_flow_log, parse_upload_key
 from nettriage.domain.parsing.vpc_flow_logs import FlowLogError, ParseLimits
@@ -80,3 +81,23 @@ def test_a_file_that_inflates_past_the_limit_fails_early() -> None:
         analyze_flow_log(io.BytesIO(bomb), ParseLimits(max_decompressed_bytes=1_000_000))
 
     assert failed.value.code == "limit_exceeded"
+
+
+# Of the worker's 2,048 MB (spec §3.5), the Python runtime, the libraries and the telemetry
+# collector take about 300 MB. Parsing and detection get 1,280 MB, leaving room for files more
+# varied than this one: a 2,000,000-row file measured about 30% more per row than it does.
+ANALYSIS_MEMORY_BUDGET = 1280 * 1024 * 1024
+
+
+def test_a_file_at_the_row_limit_fits_the_workers_memory() -> None:
+    rows = 20_000
+    data = busy_network(rows)
+
+    tracemalloc.start()
+    try:
+        analyze_flow_log(io.BytesIO(data))
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert peak / rows * ParseLimits().max_rows < ANALYSIS_MEMORY_BUDGET
