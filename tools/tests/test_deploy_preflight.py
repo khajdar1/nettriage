@@ -59,7 +59,7 @@ def test_a_denied_service_fails_only_its_own_check() -> None:
     assert [check.name for check in checks if not check.ok] == ["CloudFront"]
     assert [check.name for check in checks] == [
         "Lambda in eu-north-1", "IAM", "CloudFront", "Budgets", "SSM in eu-north-1",
-        "DynamoDB in eu-north-1", "Cognito in eu-north-1",
+        "DynamoDB in eu-north-1", "Cognito in eu-north-1", "SQS in eu-north-1",
     ]
 
 

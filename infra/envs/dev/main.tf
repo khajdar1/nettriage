@@ -1,9 +1,10 @@
-# The API's SSM parameters. identity writes the first two; the deploy writes the database URL
-# (tools/deploy/config.py, db_role_url_parameter). The function gets only these names.
+# The functions' SSM parameters. identity writes the first two; the deploy writes the database
+# URLs (tools/deploy/config.py, db_role_url_parameter). Each function gets only its own names.
 locals {
-  oidc_parameter         = "/nettriage/dev/api/oidc"
-  oidc_secret_parameter  = "/nettriage/dev/api/oidc-client-secret"
-  database_url_parameter = "/nettriage/dev/db/app-api-url"
+  oidc_parameter                 = "/nettriage/dev/api/oidc"
+  oidc_secret_parameter          = "/nettriage/dev/api/oidc-client-secret"
+  database_url_parameter         = "/nettriage/dev/db/app-api-url"
+  analyze_database_url_parameter = "/nettriage/dev/db/app-analyze-url"
 }
 
 module "data" {
@@ -12,9 +13,15 @@ module "data" {
 }
 
 module "pipeline" {
-  source     = "../../modules/pipeline"
-  stage      = "dev"
-  app_origin = "https://${module.edge.distribution_domain}"
+  source                   = "../../modules/pipeline"
+  stage                    = "dev"
+  app_origin               = "https://${module.edge.distribution_domain}"
+  lambda_zip_path          = var.lambda_zip_path
+  app_version              = var.app_version
+  otel_collector_layer_arn = var.otel_collector_layer_arn
+  grafana_otlp_endpoint    = var.grafana_otlp_endpoint
+  grafana_otlp_auth        = var.grafana_otlp_auth
+  database_url_parameter   = local.analyze_database_url_parameter
 }
 
 module "app" {
