@@ -18,6 +18,7 @@ from nettriage.application.organizations import (
     OrgRuleError,
     WrongEmail,
 )
+from nettriage.application.triage import InvalidAssignee, StaleVersion, etag
 from nettriage.entrypoints.api.access import OrgContext, deny, forbidden, unavailable
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ def org_rules(
     """Run organization work, answering its refusals and outages as HTTP errors:
     - Forbidden (no escalation) is 403, and recorded as `authz.denied` for `permission`;
     - NotFound and InvitationInvalid are 404; WrongEmail is 403;
-    - ConfirmationMismatch is 422; the rest (last owner, conflicts, quotas) are 409;
+    - ConfirmationMismatch and InvalidAssignee are 422;
+    - StaleVersion is 412, with the finding's current `ETag`;
+    - the rest (last owner, conflicts, quotas) are 409;
     - a database outage is 503."""
     try:
         yield
@@ -49,8 +52,10 @@ def org_rules(
         raise HTTPException(404, detail=str(error)) from None
     except WrongEmail as error:
         raise HTTPException(403, detail=str(error)) from None
-    except ConfirmationMismatch as error:
+    except (ConfirmationMismatch, InvalidAssignee) as error:
         raise HTTPException(422, detail=str(error)) from None
+    except StaleVersion as error:
+        raise HTTPException(412, detail=str(error), headers={"ETag": etag(error.current)}) from None
     except OrgRuleError as error:
         raise HTTPException(409, detail=str(error)) from None
     except SQLAlchemyError:

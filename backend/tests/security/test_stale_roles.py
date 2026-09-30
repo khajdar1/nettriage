@@ -12,7 +12,7 @@ from browser import signed_in_as
 from conftest import Database, FakeClock
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from tenantdata import add_invitation, add_member, add_org, add_user
+from tenantdata import add_finding, add_invitation, add_member, add_org, add_upload, add_user
 
 from nettriage.entrypoints.api import access
 from nettriage.entrypoints.api.services import Services
@@ -22,7 +22,7 @@ NAME = "Stale Roles Inc"
 
 def snapshot(database: Database, org: UUID) -> tuple[Any, ...]:
     """Everything a change could touch: the name, the members and their roles, the pending
-    invitations and the uploads."""
+    invitations, the uploads, and the findings with their history."""
     with database.admin.begin() as connection:
         name = connection.execute(
             text("SELECT name FROM organizations WHERE id = :org"), {"org": org}
@@ -40,7 +40,24 @@ def snapshot(database: Database, org: UUID) -> tuple[Any, ...]:
         uploads = connection.execute(
             text("SELECT id FROM uploads WHERE org_id = :org ORDER BY id"), {"org": org}
         ).all()
-    return name, tuple(members), tuple(invitations), tuple(uploads)
+        findings = connection.execute(
+            text(
+                "SELECT id, status, assignee_id, version FROM findings WHERE org_id = :org "
+                "ORDER BY id"
+            ),
+            {"org": org},
+        ).all()
+        events = connection.execute(
+            text("SELECT id FROM finding_events WHERE org_id = :org ORDER BY id"), {"org": org}
+        ).all()
+    return (
+        name,
+        tuple(members),
+        tuple(invitations),
+        tuple(uploads),
+        tuple(findings),
+        tuple(events),
+    )
 
 
 @pytest.mark.parametrize(
@@ -53,6 +70,8 @@ def snapshot(database: Database, org: UUID) -> tuple[Any, ...]:
         ("invite", "admin", None, 404),
         ("revoke", "admin", None, 404),
         ("upload", "analyst", "viewer", 403),
+        ("triage", "analyst", "viewer", 403),
+        ("comment", "analyst", "viewer", 403),
     ],
 )
 def test_a_change_uses_the_role_the_caller_has_now(
@@ -78,6 +97,7 @@ def test_a_change_uses_the_role_the_caller_has_now(
         if now is not None:
             add_member(connection, org, actor, now)
         invitation = add_invitation(connection, org, owner, f"{uuid4().hex}@example.com")
+        finding = add_finding(connection, org, add_upload(connection, org, owner, "analyzed"))
     monkeypatch.setattr(access, "role_of", lambda engine, org_id, user_id: then)
     headers = signed_in_as(database_client, services.sessions, actor, clock())
     requests: dict[str, tuple[str, str, dict[str, Any] | None]] = {
@@ -96,8 +116,16 @@ def test_a_change_uses_the_role_the_caller_has_now(
             f"/api/v1/orgs/{org}/uploads",
             {"filename": "flows.log", "size_bytes": 1, "sha256": "0" * 64},
         ),
+        "triage": (
+            "PATCH",
+            f"/api/v1/orgs/{org}/findings/{finding}",
+            {"status": "false_positive", "assignee_id": str(analyst)},
+        ),
+        "comment": ("POST", f"/api/v1/orgs/{org}/findings/{finding}/comments", {"text": "Mine"}),
     }
     method, path, body = requests[change]
+    if change == "triage":
+        headers = {**headers, "If-Match": '"1"'}
     before = snapshot(database, org)
 
     response = database_client.request(method, path, json=body, headers=headers)
