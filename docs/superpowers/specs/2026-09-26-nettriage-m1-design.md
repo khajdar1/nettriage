@@ -267,7 +267,7 @@ sequenceDiagram
 | `uploads` | `id`, `org_id`, `uploaded_by`, `original_filename`, `s3_key`, `size_bytes` CHECK > 0, `sha256`, `format`, `status` CHECK in (pending_upload, processing, analyzed, failed, expired), `failure_reason`, `rows_parsed`, `rows_rejected`, `rejected_samples` jsonb, `findings_truncated`, `flow_time_range` tstzrange, `processed_at`; UNIQUE `(org_id, id)` |
 | `detectors` | `id` text PK, `name`, `description`, `version`, `candidate_techniques` text[]. Synced from code at deploy time, right after the migrations, together with the ATT&CK techniques (Plan 4b) |
 | `attack_techniques` | `id` text PK (for example `T1046`), `stix_id`, `name`, `tactics` text[], `description`, `url`, `attack_version`, `is_subtechnique`, `parent_id`, `deprecated`. Loaded from ATT&CK STIX v19.2: `tools/attack_subset.py` extracts the techniques the detectors can name, and their parents, into the backend package (Plan 4b). MITRE's copyright notice and license are kept |
-| `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → users, `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
+| `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → a member of the finding's org (a composite foreign key to `memberships`; Plan 4c), `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
 | `finding_evidence` | `id`, `org_id`, `finding_id`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `packets` bigint, `bytes` bigint, `start_ts`, `end_ts`, `action`, `line_no`; FK `(org_id, finding_id)` |
 | `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings |
 | `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings |
@@ -305,7 +305,7 @@ A dedicated test runs a query with no org filter and must receive zero rows from
 | Role | Used by | Rights |
 |---|---|---|
 | `nettriage_owner` | Migrations (CI only) | Owns the schema; DDL |
-| `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations` |
+| `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations`. On findings it may UPDATE only `status`, `assignee_id` and `version`, and `finding_events` is insert-only (Plan 4c) |
 | `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`. No `audit_log` until the worker records an event worth auditing (Plan 4b) |
 | `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`; INSERT/UPDATE `ai_analyses`; INSERT `finding_techniques`, `finding_events`, `audit_log` |
 | `app_ops` | `ops` Lambda | `SELECT 1` health checks; retention through `SECURITY DEFINER` functions only (purge `audit_log` rows older than 180 days, expire invitations, expire stale pending uploads) |
@@ -426,6 +426,8 @@ With these limits an upload uses about 0.25 MB, so roughly 2,000 uploads fit in 
 
 Every member may leave an organization, except its last Owner.
 
+A finding's assignee can always triage it (the owner's decisions, Plan 4c): only an Owner, Admin or Analyst can be assigned, and when a member leaves, is removed or becomes a Viewer, their findings in that organization are unassigned in the same transaction, each with an `assigned` event in its history.
+
 **Rules:**
 - **Deny by default.** Every route declares a permission or is explicitly marked public. A test enumerates the routes and fails on any undeclared one (OWASP API5).
 - **Object-level checks.** Every object is reached through `/orgs/{org_id}/…`, with a membership check plus RLS. An ID that belongs to another organization returns **404** (OWASP API1).
@@ -518,8 +520,8 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Payloads:** JSON with UUIDv7 IDs.
 - **Errors:** RFC 9457 Problem Details (`type`, `title`, `status`, `detail`, `instance`, `trace_id`), never stack traces.
 - **Pagination:** cursor-based (`cursor`, `limit` ≤ 100). Lists that §5.7's quotas keep small (members, invitations) return every item; the audit log pages with a cursor.
-- **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428.
-- **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads` and `POST /orgs` and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409. A request is its method, path and body, so a key can't be reused across routes or orgs (Plan 4a).
+- **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428. The ETag is the finding's version in quotes (`"3"`); `*`, a weak ETag or a list names no version and also gets 428. A 412 carries the current `ETag` (Plan 4c).
+- **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads`, `POST /orgs` and `POST …/comments` (Plan 4c) and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409. A request is its method, path and body, so a key can't be reused across routes or orgs (Plan 4a).
 - **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests.
 - **No body on DELETE:** CloudFront's origin signing to the Lambda function URL rejects a DELETE that carries a body (found on dev in Plan 3c), so a DELETE takes its inputs from the path and the query. A test fails on any DELETE route that declares a body.
 - **Docs:** interactive API docs are enabled in `dev` only. Each build exports the OpenAPI JSON to the repository.
@@ -547,8 +549,8 @@ A failed condition returns the item as it was, which tells whether the request i
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
 | `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. Newest first, a page at a time |
 | `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, latest AI analysis (Plan 5), events; the `ETag` is the finding's version |
-| `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Status, assignee; `If-Match` |
-| `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | |
+| `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Body: `status`, `assignee_id` (`null` unassigns), or both; `If-Match`. Any status can change to any other, and the assignee must be an Owner, Admin or Analyst of the org (422 otherwise; the owner's decisions, Plan 4c). Each change is an event in the finding's history and an audit event |
+| `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | Body: `text`, 1 to 2,000 characters, line breaks allowed. A comment joins the history without changing the finding's version; the audit event never holds its text |
 | `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits |
 | `PUT /api/v1/orgs/{org}/findings/{id}/ai-analyses/{aid}/feedback` | `ai:feedback` | `up` or `down` |
 | `GET /api/v1/orgs/{org}/audit-log` | `audit:read` | |

@@ -443,6 +443,63 @@ come in Plan 6; until then you read them from the API.
     ```
     `204`.
 
+### B8. Try triage
+A finding's status and assignee change only with `If-Match`: the `ETag` of the version you read.
+If someone changed the finding since, the API refuses with `412` instead of overwriting their
+change.
+1. Do B7 steps 1 to 6 (sign in, define `api`, upload the port scan and list its finding). Don't
+   delete the org yet.
+2. Keep the finding's address, and define `triage(body, etag)`, which sends a change with an
+   optional `If-Match`:
+   ```js
+   const f = "/orgs/" + org.id + "/findings/" + list.findings[0].id;
+   async function triage(body, etag) {
+     const text = JSON.stringify(body);
+     const headers = { "X-CSRF-Token": me.csrf_token, "Content-Type": "application/json", "x-amz-content-sha256": hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))) };
+     if (etag) headers["If-Match"] = etag;
+     const response = await fetch("/api/v1" + f, { method: "PATCH", headers, body: text });
+     console.log(response.status, response.headers.get("etag"), await response.json());
+   }
+   ```
+3. Change the status without `If-Match`:
+   ```js
+   await triage({ status: "investigating" });
+   ```
+   `428`, "Send If-Match with the ETag of the finding you read".
+4. Change it with the ETag you read (`"1"`, a finding's first version):
+   ```js
+   await triage({ status: "investigating" }, '"1"');
+   ```
+   `200`, the new ETag `"2"`, and the finding with `status: "investigating"`.
+5. Send the same old ETag again, as a second person who read version 1 would:
+   ```js
+   await triage({ status: "false_positive" }, '"1"');
+   ```
+   `412`, the current ETag `"2"`, and "This finding changed since you read it. Reload it and try
+   again." The status stays `investigating`.
+6. Assign the finding to yourself:
+   ```js
+   await triage({ assignee_id: me.user.id }, '"2"');
+   ```
+   `200`, ETag `"3"`, with your ID as `assignee_id`.
+7. Comment on it:
+   ```js
+   await api("POST", f + "/comments", { text: "Our weekly scanner. Safe to close." });
+   ```
+   `201`, with `type: "commented"` and your text.
+8. Read its history:
+   ```js
+   (await api("GET", f)).events.map((event) => event.type);
+   ```
+   `["created", "status_changed", "assigned", "commented"]`.
+9. Read the audit log:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/audit-log");
+   ```
+   `200`, with `finding.commented`, `finding.assigned` and `finding.status_changed` newest
+   first. `finding.commented` doesn't hold the comment's text.
+10. Delete the test org as in B7 step 10.
+
 ## Part C: when things go wrong
 
 ### Pause uploads in an emergency
@@ -510,6 +567,8 @@ passes, then run B2 again.
 | The browser lands on `/?sign_in=limited` | Too many sign-ins from your network in a short time. Wait a minute, then start again |
 | The browser lands on `/?sign_in=disabled` | This account is disabled in the database. Tell Claude if that's unexpected |
 | `Too Many Requests` with `"status": 429` | Too many sign-in attempts or requests from your IP or account, or more than 5 uploads started at once in one org (20 a day). Wait the number of seconds in the `Retry-After` header (a minute at most for sign-in), then retry |
+| `412` "This finding changed since you read it" | Someone changed the finding after you read it. Read it again (its `ETag` header is the new version), then repeat the change with that ETag |
+| `428` "Send If-Match with the ETag of the finding you read" | A status or assignee change needs the finding's `ETag` in an `If-Match` header, as in B8 |
 | `503` "Uploads are paused for now" | The uploads kill switch is off. Resume it as in "Pause uploads in an emergency" if that's not intended |
 | Cognito's verification email never arrives | Check spam. Cognito's built-in sender allows about 50 emails a day per account; wait until tomorrow if many sign-ups ran today |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |
