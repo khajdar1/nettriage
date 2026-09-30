@@ -205,8 +205,10 @@ command:
 1. refuses anything but a clean `main` that matches GitHub and whose CI and CodeQL passed;
 2. runs the preflight;
 3. downloads that commit's CI-built artifacts;
-4. migrates the database and prints `Database migrated.` The first time, it also gives the
-   app's database role a login and adds `New logins: app_api.`;
+4. migrates the database and prints `Database migrated.`, then
+   `Reference data synced: 3 detectors, 12 ATT&CK techniques.` When a function's database role
+   is new, it also gives it a login and adds `New logins: <role>.` to the first line (Plan 4b
+   adds `app_analyze`);
 5. shows the Terraform plan, and you type `yes`;
 6. publishes the site;
 7. runs the smoke tests.
@@ -326,9 +328,10 @@ developer console while signed in.
 If the console shows `401`, your session ended: sign in again and repeat from step 4.
 
 ### B6. Try an upload
-Files go from the browser straight to S3, with a presigned PUT the API hands out. Analysis comes
-in Plan 4b; for now an upload stays `pending_upload`. This also checks that S3 refuses any file
-other than the one the API signed for (spec §13.2).
+Files go from the browser straight to S3, with a presigned PUT the API hands out. This checks
+that S3 refuses any file other than the one the API signed for (spec §13.2). The file here isn't
+a real flow log, so the worker marks the upload `failed` a few seconds after step 6; B7 uploads
+one that is.
 1. Do B5 steps 1 to 4 (sign in, open the console, define `api`).
 2. Create an org to upload into:
    ```js
@@ -368,7 +371,9 @@ other than the one the API signed for (spec §13.2).
    ```js
    await api("GET", "/orgs/" + org.id + "/uploads");
    ```
-   `200`, with your upload, still `pending_upload`.
+   `200`, with your upload. It shows `pending_upload` for a few seconds, then
+   `status: "failed"` with `failure_reason: "the file contains no flow records"`: the file only has
+   a header line.
 8. Delete the test org when you're done (its file is deleted from S3 after 30 days):
    ```js
    await api("DELETE", "/orgs/" + org.id + "?confirm_name=" + encodeURIComponent("Upload Test"));
@@ -376,6 +381,67 @@ other than the one the API signed for (spec §13.2).
 
 If step 5 gives `200`, S3 accepted a file it shouldn't have: stop and tell Claude (spec §13.2's
 fallback is a presigned POST).
+
+### B7. Try an analysis
+An upload is analyzed by the `analyze` worker as soon as S3 has it: the bucket notifies a queue,
+and the worker parses the file, runs the detectors and stores their findings. The findings pages
+come in Plan 6; until then you read them from the API.
+1. Do B5 steps 1 to 4 (sign in, open the console, define `api`).
+2. Create an org:
+   ```js
+   const org = await api("POST", "/orgs", { name: "Analysis Test" });
+   ```
+3. Make a small flow log: an outside address (`203.0.113.9`, reserved for examples) probing 150
+   ports on one internal host within a minute, an hour ago, all rejected. Then its SHA-256:
+   ```js
+   const start = Math.floor(Date.now() / 1000) - 3600;
+   const lines = [];
+   for (let port = 1; port <= 150; port++) lines.push(`2 123456789012 eni-1 203.0.113.9 10.0.0.5 40000 ${port} 6 1 40 ${start + (port % 60)} ${start + (port % 60)} REJECT OK`);
+   const file = new TextEncoder().encode(lines.join("\n") + "\n");
+   const hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+   const sha256 = hex(await crypto.subtle.digest("SHA-256", file));
+   ```
+4. Upload it:
+   ```js
+   const created = await api("POST", "/orgs/" + org.id + "/uploads", { filename: "scan.log", size_bytes: file.length, sha256 });
+   (await fetch(created.upload_url, { method: "PUT", headers: created.upload_headers, body: file })).status;
+   ```
+   `201`, then `200`.
+5. Wait 20 seconds (the worker's first run starts cold), then read the upload:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/uploads/" + created.upload.id);
+   ```
+   `200`, with `status: "analyzed"`, `rows_parsed: 150`, `rows_rejected: 0`, and `flow_start`
+   and `flow_end` an hour ago. If it still says `pending_upload` or `processing`, wait a minute
+   and read it again; if it hasn't changed, see "An upload isn't analyzed" in Part C.
+6. List the org's findings:
+   ```js
+   const list = await api("GET", "/orgs/" + org.id + "/findings");
+   ```
+   `200`, with one finding: `detector_id: "port_scan"`, `severity: "medium"`, `status: "open"`
+   and the title `Port scan of 10.0.0.5 from 203.0.113.9: 150 TCP ports in 5 minutes`.
+7. Read it:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/findings/" + list.findings[0].id);
+   ```
+   `200`, with 50 `evidence` flows (the first 10, the last 10 and 30 between them),
+   `techniques` T1595 "Active Scanning" and T1595.001 "Scanning IP Blocks", and one `created`
+   event.
+8. Read a technique:
+   ```js
+   await api("GET", "/attack-techniques/T1595");
+   ```
+   `200`, with `tactics: ["reconnaissance"]`, `attack_version: "19.2"` and MITRE's `notice`.
+9. In Grafana, open **Explore → Tempo** and run
+   `{ resource.service.name = "nettriage-analyze" && resource.deployment.environment.name = "dev" }`.
+   Within a few minutes there is an `analyze.upload` trace, with `analyze.parse` and
+   `analyze.detect` inside it and a link to the upload request's trace.
+10. Delete the test org, which deletes its uploads and findings (the file itself is deleted from
+    S3 after 30 days):
+    ```js
+    await api("DELETE", "/orgs/" + org.id + "?confirm_name=" + encodeURIComponent("Analysis Test"));
+    ```
+    `204`.
 
 ## Part C: when things go wrong
 
@@ -388,6 +454,21 @@ Uploads have a kill switch in SSM (spec §9.7). Flipping it needs your AWS sessi
 
 Within a minute, new uploads get `503` ("Uploads are paused for now"); files already uploaded are
 kept. A deploy never switches uploads back on.
+
+### An upload isn't analyzed
+The worker gets each upload from the `nettriage-dev-analyze` queue. If it fails on one, SQS gives
+it the upload again 30 minutes later, and after the third failure moves the message to
+`nettriage-dev-analyze-dlq`, where it waits 14 days. The upload stays `processing` meanwhile.
+1. In the AWS console, with the Region set to Europe (Stockholm), open **CloudWatch → Log groups
+   → /aws/lambda/nettriage-dev-analyze**, and open the log stream from around the upload's time.
+   Send Claude the errors you find (the logs never hold the file's lines).
+2. After the fix is deployed, send the upload back through the worker: open **Simple Queue
+   Service → nettriage-dev-analyze-dlq**, choose **Start DLQ redrive**, keep **Redrive to source
+   queue(s)**, and choose **DLQ redrive**. The worker picks the upload up where it left off; no
+   finding is stored twice.
+
+An upload that stays `pending_upload` even though its PUT returned `200` never reached the worker:
+send Claude the upload's `id`.
 
 ### Roll back
 On GitHub, open the merged PR and choose **Revert**, which opens a revert PR. Merge it after CI
@@ -405,7 +486,8 @@ passes, then run B2 again.
 | `STOP: That isn't a Postgres connection string …`, `STOP: The database must be a Neon project in AWS Europe Central 1 (Frankfurt) …` or `STOP: Use the direct connection string …` | Copy the string again as in A7 step 3, then rerun `just store-database-url dev` |
 | `STOP: Can't read /nettriage/dev/db/owner-url from SSM. …` | Run A7 |
 | `STOP: Database migrations failed; nothing was deployed. …` | Send the output to Claude. Nothing in AWS changed |
-| `STOP: Couldn't give the database role app_api a login …` | Check the stored string (A7), then send the output to Claude |
+| `STOP: Couldn't give the database role app_api a login …` (or `app_analyze`) | Check the stored string (A7), then send the output to Claude |
+| `STOP: Syncing reference data failed; nothing in AWS changed. …` | The migrations ran, but the detectors and ATT&CK techniques weren't loaded. Send the output to Claude |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
 | `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |
@@ -427,6 +509,7 @@ passes, then run B2 again.
 | Cognito's verification email never arrives | Check spam. Cognito's built-in sender allows about 50 emails a day per account; wait until tomorrow if many sign-ups ran today |
 | `Error acquiring the state lock` | Another plan or deploy is running, or one was interrupted. Wait a minute and retry; if it persists, send the lock ID to Claude |
 | `` STOP: `terraform apply` failed with exit code 1. `` | Terraform's own error is printed above this line (`apply` shares the terminal), so scroll up and read it. If it's `Error acquiring the state lock`, see that row; otherwise send the output to Claude. Terraform may have made some changes before failing; the next plan or deploy shows what's left |
+| Terraform's `Error: … Unable to validate the following destination configurations` (the uploads bucket's notification) | S3 checked the analyze queue's new policy before it took effect. Run `just deploy-dev` again; Terraform creates what's left |
 | `` STOP: `terraform init` failed with exit code 1: Error: … `` (or any other `` `<tool> <command>` failed … ``) | Read the `Error:` text. `Error acquiring the state lock` is covered by its own row; for anything else, send the output to Claude |
 | Terraform's own `Failed to persist state to backend` (an `errored.tfstate` file appears in `infra/envs/dev/` or `infra/bootstrap/`) | Don't commit, share or open `errored.tfstate` in a chat: it holds secrets from the state. Tell Claude the message, not the file; Claude helps you run `terraform state push errored.tfstate` from that directory, then delete it. (`git check-ignore -v infra/envs/dev/errored.tfstate` confirms it's git-ignored, matched by the repo's `*.tfstate` pattern.) |
 | `` STOP: `<tool>` isn't installed or isn't on PATH. `` | Install it (A1 lists the tools) |

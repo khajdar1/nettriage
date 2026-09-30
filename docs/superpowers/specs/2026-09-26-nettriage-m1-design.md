@@ -265,8 +265,8 @@ sequenceDiagram
 | `memberships` | PK `(org_id, user_id)`; `role` CHECK in (owner, admin, analyst, viewer); `invited_by` |
 | `invitations` | `id`, `org_id`, `email`, `role`, `token_hash` UNIQUE, `expires_at`, `created_by`, `accepted_at`, `accepted_by`, `revoked_at`; partial UNIQUE `(org_id, lower(email))` where still pending |
 | `uploads` | `id`, `org_id`, `uploaded_by`, `original_filename`, `s3_key`, `size_bytes` CHECK > 0, `sha256`, `format`, `status` CHECK in (pending_upload, processing, analyzed, failed, expired), `failure_reason`, `rows_parsed`, `rows_rejected`, `rejected_samples` jsonb, `findings_truncated`, `flow_time_range` tstzrange, `processed_at`; UNIQUE `(org_id, id)` |
-| `detectors` | `id` text PK, `name`, `description`, `version`, `candidate_techniques` text[]. Synced from code at deploy time |
-| `attack_techniques` | `id` text PK (for example `T1046`), `stix_id`, `name`, `tactics` text[], `description`, `url`, `attack_version`, `is_subtechnique`, `parent_id`, `deprecated`. Loaded from ATT&CK STIX v19.2, with MITRE's copyright notice kept |
+| `detectors` | `id` text PK, `name`, `description`, `version`, `candidate_techniques` text[]. Synced from code at deploy time, right after the migrations, together with the ATT&CK techniques (Plan 4b) |
+| `attack_techniques` | `id` text PK (for example `T1046`), `stix_id`, `name`, `tactics` text[], `description`, `url`, `attack_version`, `is_subtechnique`, `parent_id`, `deprecated`. Loaded from ATT&CK STIX v19.2: `tools/attack_subset.py` extracts the techniques the detectors can name, and their parents, into the backend package (Plan 4b). MITRE's copyright notice is kept |
 | `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → users, `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
 | `finding_evidence` | `id`, `org_id`, `finding_id`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `packets` bigint, `bytes` bigint, `start_ts`, `end_ts`, `action`, `line_no`; FK `(org_id, finding_id)` |
 | `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings |
@@ -306,7 +306,7 @@ A dedicated test runs a query with no org filter and must receive zero rows from
 |---|---|---|
 | `nettriage_owner` | Migrations (CI only) | Owns the schema; DDL |
 | `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations` |
-| `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`; UPDATE of `uploads` status columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`, `audit_log` |
+| `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`. No `audit_log` until the worker records an event worth auditing (Plan 4b) |
 | `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`; INSERT/UPDATE `ai_analyses`; INSERT `finding_techniques`, `finding_events`, `audit_log` |
 | `app_ops` | `ops` Lambda | `SELECT 1` health checks; retention through `SECURITY DEFINER` functions only (purge `audit_log` rows older than 180 days, expire invitations, expire stale pending uploads) |
 | `app_backup` | Nightly backup | Read-only with `BYPASSRLS` (needed for a complete dump); used only by the backup workflow |
@@ -545,15 +545,15 @@ A failed condition returns the item as it was, which tells whether the request i
 | `POST /api/v1/orgs/{org}/uploads` | `uploads:create` | Body: `filename`, `size_bytes` (at most 25 MB), `sha256` (hex). Returns a presigned PUT that expires in 5 minutes. It signs `Content-Length`, `x-amz-checksum-sha256` and `x-amz-meta-traceparent`, so S3 accepts only the declared file; the response lists the headers to send. Counts against `uploads.org`; 503 while uploads are paused |
 | `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
-| `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload |
-| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, latest AI analysis, events; ETag |
+| `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. Newest first, a page at a time |
+| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, latest AI analysis (Plan 5), events; the `ETag` is the finding's version |
 | `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Status, assignee; `If-Match` |
 | `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | |
 | `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits |
 | `PUT /api/v1/orgs/{org}/findings/{id}/ai-analyses/{aid}/feedback` | `ai:feedback` | `up` or `down` |
 | `GET /api/v1/orgs/{org}/audit-log` | `audit:read` | |
 | `GET /api/v1/orgs/{org}/usage` | `usage:read` | AI tokens and cost by day |
-| `GET /api/v1/attack-techniques/{id}` | session | Reference data |
+| `GET /api/v1/attack-techniques/{id}` | session | Reference data, with MITRE's notice; 404 for an unknown or malformed ID |
 
 ## 8. Detection and AI pipeline
 
@@ -663,12 +663,12 @@ A failed condition returns the item as it was, which tells whether the request i
 | Not a flow log, or malformed | The upload is marked `failed` with a readable reason; nothing else is stored |
 | A size, row, line or decompression limit is hit | Processing stops early; `failed: limit_exceeded` |
 | Worker crash or timeout | SQS retries 3 times, then the message goes to the DLQ and an alarm fires; reprocessing is idempotent |
-| Neon asleep or briefly unavailable | Retry with backoff; SQS redelivers |
+| Neon asleep or briefly unavailable | Two retries, after 1 and 3 seconds; then SQS delivers the message again after its visibility timeout (Plan 4b) |
 | Bedrock throttled or down | Backoff and retries, then `failed`, shown as "AI unavailable" with a retry button |
 | AI budget exhausted | `skipped_budget`, shown as "AI paused until tomorrow"; detection is unaffected |
 | Invalid AI output | One repair attempt, then `invalid_output`; counted in metrics |
 | Duplicate event delivery | Ignored through state checks and unique keys |
-| An S3 object that doesn't match an upload in `pending_upload` | Ignored and logged (only known uploads are processed) |
+| An S3 object that doesn't match an upload in `pending_upload` (or `processing`, when SQS delivers a message again after a crash) | Ignored and logged (only known uploads are processed) |
 
 ## 9. Observability and operations
 
@@ -680,7 +680,7 @@ A failed condition returns the item as it was, which tells whether the request i
   - The collector's decouple processor forwards to Grafana Cloud after the response, so export adds no user-facing latency.
   - Fallback: `force_flush` at the end of each invocation (see 13.2).
 - **Auto-instrumentation:** FastAPI, psycopg and botocore.
-- **Manual spans:** `analyze.parse`, `analyze.detect` and `triage.generate`.
+- **Manual spans:** `analyze.upload` (the worker's span for one file, linked to the upload request's trace; Plan 4b), `analyze.parse`, `analyze.detect` and `triage.generate`.
   - `triage.generate` carries GenAI attributes: `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` and `gen_ai.response.finish_reasons`.
   - `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` is set, and library versions are pinned.
 - **Propagation across async hops:** W3C `traceparent` travels in S3 object metadata (`x-amz-meta-traceparent`, a signed header in the presigned PUT) and in SQS message attributes. Worker spans link to the originating trace.
