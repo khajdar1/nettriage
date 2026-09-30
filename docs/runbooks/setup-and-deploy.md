@@ -431,7 +431,7 @@ come in Plan 6; until then you read them from the API.
    ```js
    await api("GET", "/attack-techniques/T1595");
    ```
-   `200`, with `tactics: ["reconnaissance"]`, `attack_version: "19.2"` and MITRE's `notice`.
+   `200`, with `tactics: ["reconnaissance"]`, `attack_version: "19.2"`, and MITRE's `notice` and `license`.
 9. In Grafana, open **Explore → Tempo** and run
    `{ resource.service.name = "nettriage-analyze" && resource.deployment.environment.name = "dev" }`.
    Within a few minutes there is an `analyze.upload` trace, with `analyze.parse` and
@@ -457,15 +457,20 @@ kept. A deploy never switches uploads back on.
 
 ### An upload isn't analyzed
 The worker gets each upload from the `nettriage-dev-analyze` queue. If it fails on one, SQS gives
-it the upload again 30 minutes later, and after the third failure moves the message to
-`nettriage-dev-analyze-dlq`, where it waits 14 days. The upload stays `processing` meanwhile.
+it the upload again 30 minutes later. After the third failure, the upload shows `failed` with
+`NetTriage couldn't analyze this file after three tries. Upload it again later.`, and the message
+moves to `nettriage-dev-analyze-dlq`, where it waits 14 days. If the worker crashed or timed out
+instead, the upload stays `processing` (Plan 7's daily job will mark those failed).
 1. In the AWS console, with the Region set to Europe (Stockholm), open **CloudWatch → Log groups
    → /aws/lambda/nettriage-dev-analyze**, and open the log stream from around the upload's time.
-   Send Claude the errors you find (the logs never hold the file's lines).
-2. After the fix is deployed, send the upload back through the worker: open **Simple Queue
-   Service → nettriage-dev-analyze-dlq**, choose **Start DLQ redrive**, keep **Redrive to source
-   queue(s)**, and choose **DLQ redrive**. The worker picks the upload up where it left off; no
-   finding is stored twice.
+   Look for `analyze_failed` lines and send Claude their `error_code` (the logs never hold the
+   file's lines).
+2. After the fix is deployed:
+   - an upload that shows `failed`: upload the file again;
+   - an upload still `processing`: send it back through the worker. Open **Simple Queue Service →
+     nettriage-dev-analyze-dlq**, choose **Start DLQ redrive**, keep **Redrive to source
+     queue(s)**, and choose **DLQ redrive**. The worker picks the upload up where it left off; no
+     finding is stored twice.
 
 An upload that stays `pending_upload` even though its PUT returned `200` never reached the worker:
 send Claude the upload's `id`.

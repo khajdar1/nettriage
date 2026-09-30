@@ -266,7 +266,7 @@ sequenceDiagram
 | `invitations` | `id`, `org_id`, `email`, `role`, `token_hash` UNIQUE, `expires_at`, `created_by`, `accepted_at`, `accepted_by`, `revoked_at`; partial UNIQUE `(org_id, lower(email))` where still pending |
 | `uploads` | `id`, `org_id`, `uploaded_by`, `original_filename`, `s3_key`, `size_bytes` CHECK > 0, `sha256`, `format`, `status` CHECK in (pending_upload, processing, analyzed, failed, expired), `failure_reason`, `rows_parsed`, `rows_rejected`, `rejected_samples` jsonb, `findings_truncated`, `flow_time_range` tstzrange, `processed_at`; UNIQUE `(org_id, id)` |
 | `detectors` | `id` text PK, `name`, `description`, `version`, `candidate_techniques` text[]. Synced from code at deploy time, right after the migrations, together with the ATT&CK techniques (Plan 4b) |
-| `attack_techniques` | `id` text PK (for example `T1046`), `stix_id`, `name`, `tactics` text[], `description`, `url`, `attack_version`, `is_subtechnique`, `parent_id`, `deprecated`. Loaded from ATT&CK STIX v19.2: `tools/attack_subset.py` extracts the techniques the detectors can name, and their parents, into the backend package (Plan 4b). MITRE's copyright notice is kept |
+| `attack_techniques` | `id` text PK (for example `T1046`), `stix_id`, `name`, `tactics` text[], `description`, `url`, `attack_version`, `is_subtechnique`, `parent_id`, `deprecated`. Loaded from ATT&CK STIX v19.2: `tools/attack_subset.py` extracts the techniques the detectors can name, and their parents, into the backend package (Plan 4b). MITRE's copyright notice and license are kept |
 | `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → users, `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
 | `finding_evidence` | `id`, `org_id`, `finding_id`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `packets` bigint, `bytes` bigint, `start_ts`, `end_ts`, `action`, `line_no`; FK `(org_id, finding_id)` |
 | `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings |
@@ -360,7 +360,7 @@ The uploads bucket's `<suffix>` is the first 8 hex characters of the account ID'
 | Sessions, sign-in state, rate-limit keys | TTL as in 5.5 |
 
 **Default quotas (configurable):**
-- **Uploads:** at most 25 MB per file (enforced by S3 through the signed `content-length`), 250 MB decompressed, 2,000,000 rows, 4 KB per line, 20 uploads per org per day.
+- **Uploads:** at most 25 MB per file (enforced by S3 through the signed `content-length`), 250 MB decompressed, 1,000,000 rows, 4 KB per line, 20 uploads per org per day.
 - **Organizations:** at most 10 members per org, 3 orgs per user, 20 pending invitations per org.
 - **Findings:** at most 50 per upload (highest severity first; the rest are counted in `findings_truncated`) and at most 50 evidence rows per finding.
 - **Automatic AI triage:** up to 20 findings per upload, highest severity first. Other findings can be explained on request.
@@ -569,7 +569,7 @@ A failed condition returns the item as it was, which tells whether the request i
   - `-` means null.
   - IPs must parse, ports must be 0–65535, protocol 0–255, counts must not be negative, `start ≤ end`, and `action` must be ACCEPT or REJECT.
   - `NODATA` and `SKIPDATA` records are skipped and counted.
-- **Limits while streaming:** 250 MB decompressed, 2,000,000 rows, 4 KB per line. Size is also bounded before upload by the signed `content-length`.
+- **Limits while streaming:** 250 MB decompressed, 1,000,000 rows, 4 KB per line. Size is also bounded before upload by the signed `content-length`. The parsed flows stay in memory for the detectors, and 2,000,000 rows needed about 2.1 GB, more than the worker's 2,048 MB; 1,000,000 rows need about 1 GB (the owner's decision, Plan 4b). A test checks the row limit against the worker's memory.
 - **Rejection:**
   - If more than 5% of lines are invalid, the upload fails with `not_a_flow_log`.
   - Up to 20 rejected samples are stored (line number, reason, first 120 characters).
@@ -662,7 +662,7 @@ A failed condition returns the item as it was, which tells whether the request i
 |---|---|
 | Not a flow log, or malformed | The upload is marked `failed` with a readable reason; nothing else is stored |
 | A size, row, line or decompression limit is hit | Processing stops early; `failed: limit_exceeded` |
-| Worker crash or timeout | SQS retries 3 times, then the message goes to the DLQ and an alarm fires; reprocessing is idempotent |
+| Worker crash or timeout | SQS retries 3 times, then the message goes to the DLQ and an alarm fires; reprocessing is idempotent. An error on the third delivery also marks the upload `failed` ("NetTriage couldn't analyze this file after three tries. Upload it again later."); an upload a crash or timeout left `processing` is failed by the daily `ops` job (the owner's decision, Plan 4b) |
 | Neon asleep or briefly unavailable | Two retries, after 1 and 3 seconds; then SQS delivers the message again after its visibility timeout (Plan 4b) |
 | Bedrock throttled or down | Backoff and retries, then `failed`, shown as "AI unavailable" with a retry button |
 | AI budget exhausted | `skipped_budget`, shown as "AI paused until tomorrow"; detection is unaffected |
@@ -705,7 +705,7 @@ Metric names follow OTel conventions where they exist:
 ### 9.3 Logs
 
 - **Format:** JSON with `ts`, `level`, `event`, `message`, `trace_id`, `span_id`, `request_id`, `stage`, `service`, `org_id`, `user_id`, `route`, `status`, `duration_ms`, `error_code`.
-- **Never logged:** secrets, tokens, cookies, emails, session IDs, invitation tokens, raw upload lines, prompts or model outputs. A key-based redaction filter enforces this, and tests check it.
+- **Never logged:** secrets, tokens, cookies, emails, session IDs, invitation tokens, raw upload lines, prompts or model outputs. A key-based redaction filter enforces this, and tests check it. An error's message can quote data (a database error quotes the values it was given), so the worker logs, raises and traces unexpected errors by type only, and the database engine hides query parameters (Plan 4b).
 - **Platform logs:** Lambda platform logs go to CloudWatch in JSON format with level filtering and are kept for 7 days.
 
 ### 9.4 Audit events
@@ -746,7 +746,7 @@ CI adds a deploy annotation for every deploy.
 ### 9.7 Operations
 
 - **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM (`/nettriage/<stage>/kill/<name>`, `true` or anything else) and are re-read every 60 seconds. A switch that can't be read keeps its last value, and counts as off until it has been read once (Plan 4a). Terraform only creates them, so a deploy never turns a paused switch back on.
-- **Maintenance:** the `ops` Lambda runs daily. It expires `pending_upload` rows older than 1 hour and invitations past their date, and purges audit rows older than 180 days.
+- **Maintenance:** the `ops` Lambda runs daily. It expires `pending_upload` rows older than 1 hour and invitations past their date, fails uploads left `processing` for more than 2 hours (a crash or timeout on the last delivery; Plan 4b), and purges audit rows older than 180 days.
 - **Backups:**
   - A nightly `pg_dump -Fc` to S3, kept for 7 days. Plan 7 decides the runner: the `ops` Lambda, or an owner-run command if packaging `pg_dump` for Lambda proves impractical (Revision 2, D7).
   - Neon's 6-hour point-in-time restore on top of that.
@@ -954,7 +954,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 - **C4 diagrams:** context and container level, in Mermaid.
 - **Owner runbook:** `docs/runbooks/setup-and-deploy.md`, the step-by-step account setup, bootstrap, plan, deploy, rollback and troubleshooting guide.
 - **Other docs:** runbooks, the SLO doc, the data-handling doc (what is stored, for how long, how to delete it) and the cost doc (free-tier usage and guardrails).
-- **Attribution:** the MITRE ATT&CK copyright notice is included where the data is used.
+- **Attribution:** the MITRE ATT&CK copyright notice is included where the data is used, with MITRE's license, which ATT&CK's terms of use require in every copy (Plan 4b).
 
 ## 12. Milestone 1 definition of done
 
