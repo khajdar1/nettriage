@@ -1,11 +1,13 @@
 import hashlib
 import re
+import time
 
 import pytest
 
 from nettriage.application.organizations import (
     MAX_SLUG,
     invitation_url,
+    looks_like_email,
     new_invitation_token,
     normalize_email,
     slugify,
@@ -61,7 +63,27 @@ def test_invitation_tokens_are_random_hashed_and_travel_in_the_fragment() -> Non
         ("spaces in@example.com", None),
         ("nodot@example", None),
         ("x" * 310 + "@example.com", None),
+        ("a@b.c.", "a@b.c."),
+        ("a@.b.", None),
+        ("a@b.", None),
+        ("a@.b", None),
+        ("@example.com", None),
+        ("a@b@c.com", None),
+        ("tab\t@example.com", None),
+        ("a@exa\u2003mple.com", None),
+        ("a!#$%@example.com", "a!#$%@example.com"),
     ],
 )
 def test_emails_are_trimmed_and_checked_for_shape(value: str, email: str | None) -> None:
     assert normalize_email(value) == email
+
+
+def test_checking_an_email_takes_linear_time_on_hostile_input() -> None:
+    """CodeQL py/polynomial-redos: `[^@\\s]+\\.[^@\\s]+` backtracks quadratically over a long run
+    of dots (20,000 took seconds). The length cap kept it small, but the check itself must be
+    linear."""
+    hostile = "a@" + "." * 20_000 + "@"
+
+    started = time.perf_counter()
+    assert looks_like_email(hostile) is False
+    assert time.perf_counter() - started < 0.1
