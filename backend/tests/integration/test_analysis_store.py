@@ -18,6 +18,7 @@ from nettriage.adapters.analysis_store import (
     fail_upload,
     store_analysis,
 )
+from nettriage.adapters.findings import FindingFilters, list_findings
 from nettriage.adapters.postgres import create_database_engine
 from nettriage.application.analysis import UploadKey, analyze_flow_log
 from nettriage.application.uploads import s3_key
@@ -178,3 +179,25 @@ def test_a_failed_analysis_keeps_its_reason(database: Database) -> None:
         NOW,
     )
     assert counts(database, key.upload_id) == (0, 0, 0, 0)
+
+
+def test_an_uploads_findings_list_most_severe_first(database: Database) -> None:
+    """The findings list is newest first, and an upload's findings are all equally new: they
+    must list in the analysis's order, most severe first."""
+    tenant = add_tenant(database.admin)
+    with database.admin.begin() as connection:
+        upload = add_upload(connection, tenant.org_id, tenant.owner_id)
+    key = UploadKey(org_id=tenant.org_id, upload_id=upload, key=s3_key(tenant.org_id, upload))
+    claimed = claim_upload(database.app_analyze, key)
+    assert claimed is not None
+    both = port_scan() + port_scan(source="10.0.0.9")
+    store_analysis(database.app_analyze, claimed, analyze_flow_log(io.BytesIO(both)), NOW)
+
+    listed = list_findings(
+        database.app_api, tenant.org_id, tenant.owner_id, FindingFilters(upload_id=upload), limit=10
+    )
+
+    assert [(f.severity, f.src_ip) for f in listed] == [
+        ("high", "10.0.0.9"),
+        ("medium", "203.0.113.9"),
+    ]

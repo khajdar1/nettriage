@@ -57,7 +57,10 @@ def store_analysis(
     with tenant_transaction(engine, org_id=upload.org_id) as connection:
         if not _still_processing(connection, upload):
             return False
-        for finding in analysis.findings:
+        # Lists show the newest first (created_at, then the time-ordered id, descending), and an
+        # upload's findings share one created_at: inserting the least important first lists them
+        # most severe first.
+        for finding in reversed(analysis.findings):
             _insert_finding(connection, upload, finding)
         connection.execute(
             text(
