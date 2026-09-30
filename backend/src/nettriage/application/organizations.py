@@ -16,7 +16,6 @@ MAX_PENDING_INVITATIONS = 20
 INVITATION_LIFETIME = timedelta(days=7)
 MAX_SLUG = 60
 MAX_EMAIL = 320
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 def slugify(name: str) -> str:
@@ -50,9 +49,22 @@ def invitation_url(app_origin: str, token: str) -> str:
 def normalize_email(value: str) -> str | None:
     """The address as typed, trimmed; None if it can't be an email address."""
     email = value.strip()
-    if len(email) > MAX_EMAIL or not _EMAIL.fullmatch(email):
+    if len(email) > MAX_EMAIL or not looks_like_email(email):
         return None
     return email
+
+
+def looks_like_email(value: str) -> bool:
+    """One `@` with something before it, no whitespace, and a dot in the domain with something
+    on each side. Checked in one pass rather than with a regular expression: the equivalent
+    pattern backtracks quadratically on a long run of dots (CodeQL py/polynomial-redos)."""
+    local, _, domain = value.partition("@")
+    return (
+        bool(local)
+        and "@" not in domain
+        and "." in domain[1:-1]
+        and not any(character.isspace() for character in value)
+    )
 
 
 class OrgRuleError(Exception):
