@@ -70,4 +70,13 @@ just deploy-dev                 # on main: deploy CI's artifacts, then smoke tes
 
 ## License
 
-Apache-2.0. MITRE ATT&CK® data used in later milestones is © The MITRE Corporation.
+Apache-2.0, except the ATT&CK data in
+`backend/src/nettriage/reference/attack_techniques.json`: 12 techniques from MITRE ATT&CK® 19.2,
+which the API returns with MITRE's notice and license.
+
+Copyright 2015-2026, The MITRE Corporation. MITRE ATT&CK and ATT&CK are registered trademarks of
+The MITRE Corporation. The MITRE Corporation (MITRE) hereby grants you a non-exclusive,
+royalty-free license to use ATT&CK® for research, development, and commercial purposes. Any copy
+you make for such purposes is authorized provided that you reproduce MITRE's copyright designation
+and this license in any such copy. © 2026 The MITRE Corporation. This work is reproduced and
+distributed with the permission of The MITRE Corporation.

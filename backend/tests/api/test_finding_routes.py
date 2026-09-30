@@ -163,7 +163,7 @@ def test_a_finding_is_not_found_through_another_org_or_by_a_stranger(
     assert by_stranger.status_code == 404
 
 
-def test_a_technique_is_read_with_mitres_notice(
+def test_a_technique_is_read_with_mitres_notice_and_license(
     signed_in: TestClient,
 ) -> None:
     response = signed_in.get("/api/v1/attack-techniques/T1110.001")
@@ -179,6 +179,7 @@ def test_a_technique_is_read_with_mitres_notice(
     assert technique["is_subtechnique"] is True
     assert technique["attack_version"] == "19.2"
     assert technique["notice"] == attack_reference().notice
+    assert technique["license"] == attack_reference().license
     assert "MITRE ATT&CK" in technique["notice"]
 
 

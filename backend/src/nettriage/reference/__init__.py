@@ -1,5 +1,6 @@
 """Reference data that ships with the code (spec §5.2): the ATT&CK techniques the detectors can
-name, taken from MITRE's ATT&CK STIX bundle by tools/attack_subset.py, with MITRE's notice."""
+name, taken from MITRE's ATT&CK STIX bundle by tools/attack_subset.py, with MITRE's notice and
+license."""
 
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ class AttackTechnique:
 class AttackReference:
     version: str
     notice: str
+    license: str
     techniques: tuple[AttackTechnique, ...]
 
 
@@ -35,6 +37,7 @@ def attack_reference() -> AttackReference:
     return AttackReference(
         version=raw["attack_version"],
         notice=raw["notice"],
+        license=raw["license"],
         techniques=tuple(
             AttackTechnique(
                 id=item["id"],

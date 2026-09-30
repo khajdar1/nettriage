@@ -27,6 +27,15 @@ OUT = (
     / "backend" / "src" / "nettriage" / "reference" / "attack_techniques.json"
 )
 CITATION = re.compile(r"\(Citation: [^)]*\)")
+# ATT&CK's terms of use (https://attack.mitre.org/resources/legal-and-branding/terms-of-use/):
+# a copy is licensed only if it carries MITRE's copyright designation and this license.
+LICENSE = (
+    "The MITRE Corporation (MITRE) hereby grants you a non-exclusive, royalty-free license to "
+    "use ATT&CK® for research, development, and commercial purposes. Any copy you make for "
+    "such purposes is authorized provided that you reproduce MITRE's copyright designation and "
+    "this license in any such copy. © 2026 The MITRE Corporation. This work is reproduced "
+    "and distributed with the permission of The MITRE Corporation."
+)
 
 
 class SubsetError(Exception):
@@ -70,6 +79,7 @@ def extract(bundle: dict[str, Any], wanted: set[str], version: str = ATTACK_VERS
         "attack_version": version,
         "source": SOURCE,
         "notice": notices[0],
+        "license": LICENSE,
         "techniques": [found[technique] for technique in sorted(found)],
     }
 

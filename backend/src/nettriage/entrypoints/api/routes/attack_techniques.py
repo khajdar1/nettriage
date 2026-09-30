@@ -23,7 +23,8 @@ TECHNIQUE_ID = re.compile(r"T\d{4}(\.\d{3})?")
 
 @router.get("/{technique_id}")
 def technique(request: Request, technique_id: str, session: CurrentSession) -> TechniqueOut:
-    """One ATT&CK technique (`T1046`, `T1110.001`) from the version NetTriage ships."""
+    """One ATT&CK technique (`T1046`, `T1110.001`) from the version NetTriage ships, with
+    MITRE's notice and license."""
     if not TECHNIQUE_ID.fullmatch(technique_id):
         raise HTTPException(404, detail="No such ATT&CK technique.")
     try:
@@ -33,4 +34,5 @@ def technique(request: Request, technique_id: str, session: CurrentSession) -> T
         raise unavailable("The ATT&CK reference") from None
     if found is None:
         raise HTTPException(404, detail="No such ATT&CK technique.")
-    return TechniqueOut.of(found, attack_reference().notice)
+    reference = attack_reference()
+    return TechniqueOut.of(found, reference.notice, reference.license)

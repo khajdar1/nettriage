@@ -118,11 +118,12 @@ class TechniqueOut(BaseModel):
     parent_id: str | None
     deprecated: bool
     attack_version: str
-    # MITRE's terms of use: its notice travels with the data (spec §11.9).
+    # ATT&CK's terms of use: MITRE's notice and license travel with every copy (spec §11.9).
     notice: str
+    license: str
 
     @classmethod
-    def of(cls, technique: Technique, notice: str) -> TechniqueOut:
+    def of(cls, technique: Technique, notice: str, license: str) -> TechniqueOut:
         return cls(
             id=technique.id,
             name=technique.name,
@@ -134,4 +135,5 @@ class TechniqueOut(BaseModel):
             deprecated=technique.deprecated,
             attack_version=technique.attack_version,
             notice=notice,
+            license=license,
         )

@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from tools.attack_subset import SubsetError, extract, wanted_ids
+from tools.attack_subset import LICENSE, SubsetError, extract, wanted_ids
 
 NOTICE = "Copyright 2015-2026, The MITRE Corporation."
 
@@ -53,6 +53,7 @@ def test_a_technique_keeps_its_names_tactics_and_link_without_citations() -> Non
     )
 
     assert (subset["attack_version"], subset["notice"]) == ("19.2", NOTICE)
+    assert subset["license"] == LICENSE
     first, sub = subset["techniques"]
     assert (first["id"], first["name"], first["tactics"]) == (
         "T1595",
@@ -75,3 +76,11 @@ def test_a_missing_or_revoked_technique_is_refused() -> None:
 
     with pytest.raises(SubsetError, match="no current technique T1046"):
         extract(bundle(technique("T1595", "Active Scanning"), revoked), {"T1595", "T1046"})
+
+
+def test_every_copy_carries_mitres_license() -> None:
+    """ATT&CK's terms of use license a copy only if it reproduces MITRE's copyright designation
+    and the license itself."""
+    assert "non-exclusive, royalty-free license to use ATT&CK" in LICENSE
+    assert "reproduce MITRE's copyright designation and this license" in LICENSE
+    assert "reproduced and distributed with the permission of The MITRE Corporation" in LICENSE
