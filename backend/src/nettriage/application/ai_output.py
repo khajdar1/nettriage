@@ -20,11 +20,13 @@ Item200 = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 Severity = Literal["low", "medium", "high", "critical"]
 
 # Runs of characters an IP address (or IPv4:port) is made of. One character class, so matching
-# is linear.
+# is linear. A run can start with a label that ends in a hex letter ("Source:" joins as "ce:").
 _ADDRESS_LIKE = re.compile(r"[0-9A-Fa-f:.]+")
-# Ports are checked only when written as "port N" (or "<ip>:N"), so counts such as "100 ports"
-# aren't read as ports.
-_PORT = re.compile(r"\bport\s+([0-9]{1,5})\b", re.IGNORECASE)
+# "[<ipv6>]:N". The bracketed part can't contain "[", so matching stays linear.
+_BRACKETED = re.compile(r"\[([0-9A-Fa-f:.]+)\]:([0-9]{1,5})\b")
+# Ports are checked only when written as "port N", "port: N" (or "<ip>:N"), so counts such as
+# "100 ports" aren't read as ports.
+_PORT = re.compile(r"\bport(?:\s*:)?\s*([0-9]{1,5})\b", re.IGNORECASE)
 
 
 class _Strict(BaseModel):
@@ -123,15 +125,24 @@ def mentioned(text: str) -> tuple[set[str], set[int]]:
     """The IP addresses and ports a text mentions."""
     ips: set[str] = set()
     ports = {int(port) for port in _PORT.findall(text)}
-    for token in _ADDRESS_LIKE.findall(text):
-        token = token.strip(".:")
-        if token.count(".") == 3 and token.count(":") == 1:
-            address, _, port = token.partition(":")
-            if _is_ip(address) and port.isdigit():
-                ips.add(_normalized(address))
-                ports.add(int(port))
-        elif (token.count(".") == 3 or token.count(":") >= 2) and _is_ip(token):
-            ips.add(_normalized(token))
+    for address, port in _BRACKETED.findall(text):
+        if _is_ip(address):
+            ips.add(_normalized(address))
+            ports.add(int(port))
+    for run in _ADDRESS_LIKE.findall(text):
+        run = run.rstrip(".")
+        if run.count(":") >= 2 and _is_ip(run):
+            ips.add(_normalized(run))
+            continue
+        # Otherwise any piece between colons can be an IPv4 address, and an all-digit piece
+        # right after one is its port.
+        pieces = run.split(":")
+        for index, piece in enumerate(pieces):
+            if piece.count(".") == 3 and _is_ip(piece):
+                ips.add(_normalized(piece))
+                following = pieces[index + 1] if index + 1 < len(pieces) else ""
+                if following.isdigit() and len(following) <= 5:
+                    ports.add(int(following))
     return ips, ports
 
 

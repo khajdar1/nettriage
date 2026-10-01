@@ -216,6 +216,19 @@ def test_two_failed_checks_store_invalid_output_and_nothing_else(
     assert ai_parts(database, tenant) == ([], [])
 
 
+def test_a_provider_code_the_column_cant_hold_is_still_stored_as_failed(
+    database: Database, rig: Rig
+) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [ProviderError("ThrottlingException")]
+
+    explained = rig.explainer.explain(tenant.org_id, tenant.finding_id)
+
+    assert explained.outcome == "failed"
+    stored = analysis(database, tenant)
+    assert (stored["status"], stored["error_code"]) == ("failed", "provider_error")
+
+
 def test_a_provider_failure_is_stored_and_its_reservation_released(
     database: Database, rig: Rig
 ) -> None:

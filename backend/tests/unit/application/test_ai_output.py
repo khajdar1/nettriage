@@ -63,6 +63,8 @@ def test_only_candidate_techniques_may_be_named() -> None:
         ("Check what listens on port 3389.", "mentions port 3389"),
         ("Look at 10.0.0.5:3389 first.", "mentions port 3389"),
         ("Look at 10.0.0.9:22 first.", "mentions 10.0.0.9"),
+        ("Search the logs for src:198.51.100.7.", "mentions 198.51.100.7"),
+        ("Search the logs for port:3389.", "mentions port 3389"),
     ],
 )
 def test_an_ip_or_port_that_isnt_in_the_data_is_refused(text: str, problem: str) -> None:
@@ -71,6 +73,29 @@ def test_an_ip_or_port_that_isnt_in_the_data_is_refused(text: str, problem: str)
     assert len(found) == 1
     assert found[0].startswith("recommended_next_steps")
     assert problem in found[0]
+
+
+@pytest.mark.parametrize(
+    ("text", "ips", "ports"),
+    [
+        ("src:198.51.100.7", {"198.51.100.7"}, set()),
+        ("Source:198.51.100.7", {"198.51.100.7"}, set()),
+        ("Device:198.51.100.7", {"198.51.100.7"}, set()),
+        ("ID:198.51.100.7", {"198.51.100.7"}, set()),
+        ("cafe:198.51.100.7", {"198.51.100.7"}, set()),
+        ("Interface:198.51.100.7:3389", {"198.51.100.7"}, {3389}),
+        ("::ffff:198.51.100.7", {"::ffff:198.51.100.7"}, set()),
+        ("2001:db8:1::", {"2001:db8:1::"}, set()),
+        ("::1", {"::1"}, set()),
+        ("port:3389", set(), {3389}),
+        ("Port: 3389", set(), {3389}),
+        ("[2001:db8::1]:22", {"2001:db8::1"}, {22}),
+    ],
+)
+def test_addresses_and_ports_are_found_after_a_label_and_in_short_forms(
+    text: str, ips: set[str], ports: set[int]
+) -> None:
+    assert mentioned(f"Search for {text}.") == (ips, ports)
 
 
 @pytest.mark.parametrize(

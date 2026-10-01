@@ -625,7 +625,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Validation:**
   - Schema validation (Pydantic).
   - Techniques must be a subset of the candidates.
-  - Every IP address mentioned in the text must appear in the finding's entities or evidence. Ports are checked only when written as `port N` or `<ip>:N`, so counts such as "100 ports" aren't misread as ports.
+  - Every IP address mentioned in the text must appear in the finding's entities or evidence. Ports are checked only when written as `port N` (or `port: N`) or `<ip>:N` (`[<ipv6>]:N` for IPv6), so counts such as "100 ports" aren't misread as ports.
   - On failure, one repair attempt that includes the validation errors (the same user JSON plus `validation_errors`); after that, `invalid_output` with `error_code` `checks_failed`. Each attempt reserves and settles its own budget, and the analysis stores the tokens, cost and latency of both (Plan 5a).
 - **Caching:** `input_hash = sha256(canonical JSON of the user content)`, with a unique key on (finding, model, prompt version, input hash).
 - **Call settings:**

@@ -5,6 +5,7 @@ the checks, the budget and the cost stay the same."""
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from decimal import ROUND_UP, Decimal
 from typing import Any, Protocol
@@ -14,6 +15,8 @@ MAX_TOKENS = 700
 TEMPERATURE = 0.1
 _MILLION = Decimal(1_000_000)
 _MICRO_USD = Decimal("0.000001")
+# What `ai_analyses.error_code` can hold (its CHECK, migration 0008).
+_CODE = re.compile(r"[a-z][a-z_]{0,49}")
 
 
 @dataclass(frozen=True)
@@ -36,11 +39,12 @@ class Generation:
 
 class ProviderError(Exception):
     """The provider couldn't answer (throttled, down, timed out), after its own retries. `code` is
-    safe to store and log; the message is never stored."""
+    safe to store and log: one the `error_code` column can't hold (such as `ThrottlingException`)
+    becomes `provider_error`. The message is the code too, never the provider's text."""
 
     def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
+        self.code = code if _CODE.fullmatch(code) else "provider_error"
+        super().__init__(self.code)
 
 
 class LlmProvider(Protocol):

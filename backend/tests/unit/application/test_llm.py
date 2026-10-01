@@ -28,6 +28,18 @@ def test_the_input_estimate_is_one_token_per_three_characters_rounded_up() -> No
     assert estimate_input_tokens("") == 0
 
 
+@pytest.mark.parametrize("raw", ["ThrottlingException", "http_503", "", "x" * 51, "down\n"])
+def test_a_code_the_error_code_column_cant_hold_becomes_provider_error(raw: str) -> None:
+    failed = ProviderError(raw)
+
+    assert (failed.code, str(failed)) == ("provider_error", "provider_error")
+
+
+def test_a_storable_code_is_kept() -> None:
+    assert ProviderError("x" * 50).code == "x" * 50
+    assert ProviderError("provider_timeout").code == "provider_timeout"
+
+
 def test_the_fake_model_answers_from_its_script_and_records_each_call() -> None:
     fake = FakeProvider(script=[{"summary": "first"}, ProviderError("provider_unavailable")])
 
