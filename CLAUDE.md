@@ -15,8 +15,8 @@ with moto; the rate limiter's concurrency test needs DynamoDB Local, so it runs 
 is skipped locally.
 Deploys are owner actions (`docs/runbooks/setup-and-deploy.md`). Claude may run `just preflight`
 and `just plan-dev` when the owner asks, but never runs `aws login`, `just bootstrap`,
-`just store-grafana-token`, `just store-database-url`, `just pause-uploads`, `just resume-uploads`
-or `just deploy-*`.
+`just store-grafana-token`, `just store-database-url`, `just pause-uploads`, `just resume-uploads`,
+`just pause-ai`, `just resume-ai` or `just deploy-*`.
 
 ## Working with the owner
 - Ask instead of assuming: when a requirement or decision is ambiguous, ask a clear question.

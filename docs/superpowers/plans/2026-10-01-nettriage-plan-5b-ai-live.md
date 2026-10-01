@@ -139,7 +139,7 @@ Plan 5c adds the API endpoints (re-run, feedback, usage) and the evals that choo
   2. Open **Playgrounds → Chat / Text** and select **OpenAI → gpt-oss-20b**.
   3. Send a short prompt and expect a reply.
   If you get an error, send its exact text to Claude.
-- **If the playground says `Too many tokens per day`,** the account's daily Bedrock token quota is still at AWS's starting value for new accounts, at or near 0 (seen on 2026-10-02). Request an increase, or open an Account and billing case, as in the runbook's Part C, "Bedrock refuses every call". Building, reviewing and merging this plan don't wait for it; only B9's live explanation does.
+- **If the playground says `Too many tokens per day`,** AWS's starting limits for new accounts still refuse every call (seen on 2026-10-02). Service Quotas can't fix it: the account-wide daily quota was 150,000,000, and gpt-oss-20b had no quota of its own listed. Open an Account and billing case asking AWS to verify the account and lift the initial Bedrock limits, as in the runbook's Part C, "Bedrock refuses every call". Building, reviewing and merging this plan don't wait for it; only B9's live explanation does.
 - **Nothing else is needed:** no Anthropic form, no Marketplace subscription, no model-access page.
 - **After the merge:** runbook B2 (the deploy), then A8 (the bootstrap again, for the $5 cutoff), then B9 (try an explanation).
 
