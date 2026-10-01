@@ -83,3 +83,8 @@ class AiMetrics:
         self.cache_hits = meter.create_counter(
             "nettriage.ai.cache.hits", description="Explanations served from a stored analysis"
         )
+        self.queue_message_age = meter.create_histogram(
+            "nettriage.queue.message.age",
+            unit="s",
+            description="How long a message waited in its queue, by queue",
+        )
