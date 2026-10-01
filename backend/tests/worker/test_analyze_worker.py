@@ -7,6 +7,7 @@ import io
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from typing import Any
 from urllib.parse import quote_plus
 from uuid import UUID
 
@@ -26,6 +27,7 @@ from tenantdata import add_member, add_org, add_user
 
 from nettriage.adapters.analysis_store import ClaimedUpload, claim_upload
 from nettriage.adapters.postgres import create_database_engine
+from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_objects import UploadObjects
 from nettriage.application.analysis import UploadKey
 from nettriage.application.uploads import s3_key
@@ -42,6 +44,8 @@ TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 class Rig:
     worker: Worker
     s3: object
+    sqs: Any
+    queue_url: str
     spans: InMemorySpanExporter
     metrics: InMemoryMetricReader
 
@@ -57,15 +61,18 @@ def rig(database: Database, clock: FakeClock) -> Iterator[Rig]:
         tracer_provider = TracerProvider()
         tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
         reader = InMemoryMetricReader()
+        sqs = boto3.client("sqs", region_name="eu-north-1")
+        queue_url = sqs.create_queue(QueueName="nettriage-test-triage")["QueueUrl"]
         worker = Worker(
             database=database.app_analyze,
             objects=UploadObjects(s3, BUCKET),
+            triage=TriageQueue(sqs, queue_url),
             clock=clock,
             metrics=AnalyzeMetrics(MeterProvider(metric_readers=[reader])),
             tracer=tracer_provider.get_tracer("test"),
             sleep=lambda seconds: None,
         )
-        yield Rig(worker=worker, s3=s3, spans=spans, metrics=reader)
+        yield Rig(worker=worker, s3=s3, sqs=sqs, queue_url=queue_url, spans=spans, metrics=reader)
 
 
 def uploaded(
@@ -336,3 +343,77 @@ def test_an_earlier_delivery_leaves_the_upload_for_sqs_to_try_again(
         rig.worker.handle_message(message(key, receive_count=2))
 
     assert upload_of(database, key) == ("processing", None, 0)
+
+
+def queued(rig: Rig) -> list[dict[str, Any]]:
+    """The triage messages waiting in the queue, taken off it."""
+    messages: list[dict[str, Any]] = []
+    while batch := rig.sqs.receive_message(
+        QueueUrl=rig.queue_url, MaxNumberOfMessages=10, MessageAttributeNames=["All"]
+    ).get("Messages"):
+        messages += batch
+        for found in batch:
+            rig.sqs.delete_message(QueueUrl=rig.queue_url, ReceiptHandle=found["ReceiptHandle"])
+    return messages
+
+
+def finding_ids(database: Database, key: str) -> list[str]:
+    with database.admin.begin() as connection:
+        found: list[UUID] = list(
+            connection.execute(
+                text(
+                    "SELECT f.id FROM findings f JOIN uploads u ON u.id = f.upload_id "
+                    "WHERE u.s3_key = :key"
+                ),
+                {"key": key},
+            ).scalars()
+        )
+    return [str(finding) for finding in found]
+
+
+def test_an_analyzed_uploads_findings_are_queued_for_ai_with_the_workers_trace(
+    database: Database, rig: Rig
+) -> None:
+    key = uploaded(database, rig, port_scan(), traceparent=TRACEPARENT)
+
+    rig.worker.handle_message(message(key))
+
+    [sent] = queued(rig)
+    assert json.loads(sent["Body"])["finding_id"] == finding_ids(database, key)[0]
+    upload_span = next(s for s in rig.spans.get_finished_spans() if s.name == "analyze.upload")
+    traceparent = sent["MessageAttributes"]["traceparent"]["StringValue"]
+    assert traceparent.split("-")[1] == format(upload_span.context.trace_id, "032x")
+
+
+def test_a_second_delivery_queues_the_findings_again(database: Database, rig: Rig) -> None:
+    key = uploaded(database, rig, port_scan())
+    rig.worker.handle_message(message(key))
+
+    again = rig.worker.process(key)
+
+    assert again == "ignored"
+    bodies = [json.loads(sent["Body"])["finding_id"] for sent in queued(rig)]
+    assert bodies == finding_ids(database, key) * 2
+
+
+def test_a_failed_send_fails_the_message_and_the_next_delivery_queues(
+    database: Database, rig: Rig
+) -> None:
+    key = uploaded(database, rig, port_scan())
+    unreachable = TriageQueue(rig.sqs, rig.queue_url.replace("triage", "missing"))
+    broken = replace(rig.worker, triage=unreachable)
+
+    with pytest.raises(AnalysisFailed):
+        broken.handle_message(message(key))
+    rig.worker.handle_message(message(key, receive_count=2))
+
+    assert upload_of(database, key) == ("analyzed", None, 1)
+    assert len(queued(rig)) == 1
+
+
+def test_a_file_that_fails_queues_nothing(database: Database, rig: Rig) -> None:
+    key = uploaded(database, rig, b"this is not a flow log\n")
+
+    rig.worker.handle_message(message(key))
+
+    assert queued(rig) == []

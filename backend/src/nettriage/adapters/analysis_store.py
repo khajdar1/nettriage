@@ -21,6 +21,9 @@ from nettriage.adapters.postgres import tenant_transaction
 from nettriage.application.analysis import Analysis, UploadKey
 from nettriage.domain.detection.model import Finding
 
+# Automatic AI triage: up to 20 findings per upload, highest severity first (spec §5.7).
+AUTO_TRIAGE_LIMIT = 20
+
 
 @dataclass(frozen=True)
 class ClaimedUpload:
@@ -84,6 +87,29 @@ def store_analysis(
             },
         )
     return True
+
+
+def findings_to_explain(
+    engine: Engine, key: UploadKey, limit: int = AUTO_TRIAGE_LIMIT
+) -> list[UUID]:
+    """An analyzed upload's findings for automatic AI triage: the most severe first, in the
+    analysis's order within a severity (it inserted them last first). Empty for an upload that
+    isn't analyzed."""
+    with tenant_transaction(engine, org_id=key.org_id) as connection:
+        found: list[UUID] = list(
+            connection.execute(
+                text(
+                    "SELECT f.id FROM findings f JOIN uploads u "
+                    "ON u.org_id = f.org_id AND u.id = f.upload_id "
+                    "WHERE u.org_id = :org AND u.id = :id AND u.s3_key = :key "
+                    "AND u.status = 'analyzed' ORDER BY CASE f.severity "
+                    "WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, "
+                    "f.id DESC LIMIT :limit"
+                ),
+                {"org": key.org_id, "id": key.upload_id, "key": key.key, "limit": limit},
+            ).scalars()
+        )
+    return found
 
 
 def give_up_upload(engine: Engine, key: UploadKey, reason: str, now: datetime) -> bool:

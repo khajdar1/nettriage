@@ -5,6 +5,10 @@ retries; anything else unexpected raises, so SQS retries the message (3 times, t
 dead-letter queue); storing again changes nothing. On the last delivery, an upload the worker
 can't finish is failed, so it doesn't wait forever.
 
+An analyzed upload's most severe findings (up to 20) go to the triage queue for an AI
+explanation (spec §4.2). A delivery that finds the upload already analyzed queues them again,
+in case a crash or a failed send lost them: the explanations are cached, so it costs nothing.
+
 Logs and traces never contain a line of the file (spec §9.3): failures are recorded by their
 code or type, never by an error's message, which can quote the file."""
 
@@ -27,15 +31,17 @@ from nettriage.adapters.analysis_store import (
     ClaimedUpload,
     claim_upload,
     fail_upload,
+    findings_to_explain,
     give_up_upload,
     store_analysis,
 )
+from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_objects import UploadObjects
-from nettriage.application.analysis import analyze_parsed, parse_upload_key
+from nettriage.application.analysis import UploadKey, analyze_parsed, parse_upload_key
 from nettriage.application.clock import Clock
 from nettriage.domain.parsing.vpc_flow_logs import FlowLogError, ParseLimits, parse_flow_log
 from nettriage.platform.metrics import AnalyzeMetrics
-from nettriage.platform.trace_context import links_from
+from nettriage.platform.trace_context import current_traceparent, links_from
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +66,7 @@ class AnalysisFailed(Exception):
 class Worker:
     database: Engine
     objects: UploadObjects
+    triage: TriageQueue
     clock: Clock
     metrics: AnalyzeMetrics
     tracer: Tracer
@@ -109,12 +116,16 @@ class Worker:
         claimed = claim_upload(self.database, upload_key)
         if claimed is None:
             logger.info("upload_object_ignored", extra={"reason": "not_pending"})
+            self._queue_for_ai(upload_key)
             return "ignored"
         upload = self.objects.open(key)
         started = time.monotonic()
         try:
             with self._span("analyze.upload", links=links_from(upload.traceparent)):
-                return self._analyze(claimed, upload.size, upload.body)
+                outcome = self._analyze(claimed, upload.size, upload.body)
+                if outcome in ("analyzed", "duplicate"):
+                    self._queue_for_ai(upload_key)
+                return outcome
         finally:
             upload.body.close()
             self.metrics.processing_duration.record(time.monotonic() - started)
@@ -143,6 +154,14 @@ class Worker:
             extra={"findings": len(analysis.findings), "rows_parsed": analysis.rows_parsed},
         )
         return "analyzed"
+
+    def _queue_for_ai(self, key: UploadKey) -> None:
+        """Queue an analyzed upload's most severe findings for an AI explanation, with this span
+        as the trace the triage worker continues. Nothing for an upload that isn't analyzed."""
+        findings = findings_to_explain(self.database, key)
+        if findings:
+            self.triage.send(key.org_id, findings, current_traceparent())
+            logger.info("findings_queued_for_ai", extra={"findings": len(findings)})
 
     def _fail(self, claimed: ClaimedUpload, code: str, reason: str) -> Outcome:
         fail_upload(self.database, claimed, reason, self.clock())

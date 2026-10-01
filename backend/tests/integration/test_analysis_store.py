@@ -13,9 +13,11 @@ from sqlalchemy import text
 from tenantdata import add_tenant, add_upload
 
 from nettriage.adapters.analysis_store import (
+    AUTO_TRIAGE_LIMIT,
     ClaimedUpload,
     claim_upload,
     fail_upload,
+    findings_to_explain,
     store_analysis,
 )
 from nettriage.adapters.findings import FindingFilters, list_findings
@@ -201,3 +203,48 @@ def test_an_uploads_findings_list_most_severe_first(database: Database) -> None:
         ("high", "10.0.0.9"),
         ("medium", "203.0.113.9"),
     ]
+
+
+def analyzed_with_two_findings(database: Database) -> UploadKey:
+    key = pending(database)
+    claimed = claim_upload(database.app_analyze, key)
+    assert claimed is not None
+    both = port_scan() + port_scan(source="10.0.0.9")
+    store_analysis(database.app_analyze, claimed, analyze_flow_log(io.BytesIO(both)), NOW)
+    return key
+
+
+def severities(database: Database, ids: list[UUID]) -> list[str]:
+    with database.admin.begin() as connection:
+        found: dict[UUID, str] = dict(
+            connection.execute(
+                text("SELECT id, severity FROM findings WHERE id = ANY(:ids)"), {"ids": ids}
+            ).all()
+        )
+    return [found[finding] for finding in ids]
+
+
+def test_an_uploads_findings_are_explained_most_severe_first(database: Database) -> None:
+    key = analyzed_with_two_findings(database)
+
+    explain = findings_to_explain(database.app_analyze, key)
+
+    assert severities(database, explain) == ["high", "medium"]
+
+
+def test_at_most_twenty_findings_of_an_upload_are_explained(database: Database) -> None:
+    key = analyzed_with_two_findings(database)
+
+    assert AUTO_TRIAGE_LIMIT == 20
+    assert severities(database, findings_to_explain(database.app_analyze, key, limit=1)) == ["high"]
+
+
+def test_an_upload_that_wasnt_analyzed_has_nothing_to_explain(database: Database) -> None:
+    waiting = pending(database)
+    failed = pending(database)
+    claimed = claim_upload(database.app_analyze, failed)
+    assert claimed is not None
+    fail_upload(database.app_analyze, claimed, "Not a flow log.", NOW)
+
+    assert findings_to_explain(database.app_analyze, waiting) == []
+    assert findings_to_explain(database.app_analyze, failed) == []

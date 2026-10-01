@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     ai_enabled_parameter: str = ""
     bedrock_region: str = "eu-north-1"
     bedrock_model_id: str = ""
+    # Where the analyze worker queues findings for an AI explanation (spec §4.2).
+    triage_queue_url: str = ""
 
     @property
     def running_in_lambda(self) -> bool:
