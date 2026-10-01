@@ -20,6 +20,7 @@ TABLES = {
     "finding_evidence",
     "finding_techniques",
     "finding_events",
+    "ai_analyses",
 }
 
 

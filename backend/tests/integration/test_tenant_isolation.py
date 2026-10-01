@@ -22,6 +22,7 @@ TENANT_TABLES = (
     "finding_evidence",
     "finding_techniques",
     "finding_events",
+    "ai_analyses",
 )
 INSERT_AUDIT_EVENT = text(
     "INSERT INTO audit_log (id, org_id, actor_type, action, outcome) "
@@ -61,6 +62,7 @@ def test_a_query_without_an_org_filter_sees_only_its_own_org(database: Database)
                 "finding_evidence",
                 "finding_techniques",
                 "finding_events",
+                "ai_analyses",
             )
         }
 
@@ -261,6 +263,8 @@ def test_audit_events_cannot_be_written_for_another_org(database: Database) -> N
         "UPDATE findings SET severity = 'low'",
         "DELETE FROM findings",
         "UPDATE detectors SET version = 99",
+        "UPDATE ai_analyses SET status = 'failed', output = NULL",
+        "DELETE FROM ai_analyses",
         "INSERT INTO attack_techniques (id, stix_id, name, tactics, description, url, "
         "attack_version, is_subtechnique) VALUES ('T9999', 'x', 'x', '{}', 'x', "
         "'https://attack.mitre.org/techniques/T9999', '19.2', false)",
