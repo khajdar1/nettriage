@@ -1,5 +1,5 @@
-"""Seed users, organizations, memberships, invitations, uploads and findings for integration
-tests. Seeding uses the superuser engine, which row-level security doesn't apply to."""
+"""Seed users, organizations, memberships, invitations, uploads, findings and AI analyses for
+integration tests. Seeding uses the superuser engine, which row-level security doesn't apply to."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ class Tenant:
     invitation_id: UUID
     upload_id: UUID
     finding_id: UUID
+    analysis_id: UUID
 
 
 def add_user(connection: Connection, email: str | None = None) -> UUID:
@@ -144,8 +145,32 @@ def add_finding(
     return finding_id
 
 
+def add_analysis(
+    connection: Connection, org_id: UUID, finding_id: UUID, status: str = "succeeded"
+) -> UUID:
+    """An analysis of the finding by the fake model, with a minimal output when it succeeded."""
+    analysis_id = uuid7()
+    connection.execute(
+        text(
+            "INSERT INTO ai_analyses (id, org_id, finding_id, status, provider, model_id, "
+            "prompt_version, output_schema_version, input_hash, output) VALUES (:id, :org, "
+            ":finding, :status, 'fake', 'fake-triage', 'v1', 'v1', :hash, CAST(:output AS jsonb))"
+        ),
+        {
+            "id": analysis_id,
+            "org": org_id,
+            "finding": finding_id,
+            "status": status,
+            "hash": analysis_id.hex * 2,
+            "output": '{"summary": "A scan."}' if status == "succeeded" else None,
+        },
+    )
+    return analysis_id
+
+
 def add_tenant(admin: Engine) -> Tenant:
-    """An org with an owner, a pending invitation, and an analyzed upload with a finding."""
+    """An org with an owner, a pending invitation, and an analyzed upload with a finding that
+    has a succeeded AI analysis."""
     with admin.begin() as connection:
         owner = add_user(connection)
         org = add_org(connection, owner)
@@ -153,6 +178,12 @@ def add_tenant(admin: Engine) -> Tenant:
         invitation = add_invitation(connection, org, owner, f"invitee-{org.hex}@example.com")
         upload = add_upload(connection, org, owner, "analyzed")
         finding = add_finding(connection, org, upload)
+        analysis = add_analysis(connection, org, finding)
     return Tenant(
-        org_id=org, owner_id=owner, invitation_id=invitation, upload_id=upload, finding_id=finding
+        org_id=org,
+        owner_id=owner,
+        invitation_id=invitation,
+        upload_id=upload,
+        finding_id=finding,
+        analysis_id=analysis,
     )
