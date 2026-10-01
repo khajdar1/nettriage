@@ -53,3 +53,22 @@ def scan_subject(**changes: Any) -> TriageSubject:
         ),
     )
     return replace(subject, **changes)
+
+
+def good_output(**changes: Any) -> dict[str, Any]:
+    """An answer to `scan_subject()` that passes every check."""
+    output: dict[str, Any] = {
+        "summary": "203.0.113.9 probed port 22, port 80 and port 443 on 10.0.0.5; all rejected.",
+        "why_it_matters": "Scans often come before an attempt on whatever answers.",
+        "likely_benign_explanations": ["A vulnerability scanner the organization runs."],
+        "recommended_next_steps": ["Check whether 203.0.113.9 belongs to a known scanner."],
+        "attack_techniques": [{"id": "T1595", "rationale": "Many ports probed from outside."}],
+        "severity_assessment": {
+            "agrees_with_detector": True,
+            "suggested_severity": "medium",
+            "reason": "Every probe was rejected.",
+        },
+        "confidence": "high",
+        "insufficient_evidence": False,
+    }
+    return output | changes
