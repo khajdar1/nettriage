@@ -33,6 +33,7 @@ Regional resources run in eu-north-1 (Stockholm); CloudFront serves the app worl
 - **Organizations with roles** (owner, admin, analyst, viewer) and one-time invitation links; a test calls every endpoint as each role, a non-member and an anonymous caller.
 - **Direct-to-S3 uploads**: the API hands out a presigned PUT that signs the file's size and SHA-256, so S3 accepts only the declared file and the API never handles it.
 - **Event-driven analysis**: each upload queues a worker Lambda that streams and parses the file within size, row and decompression limits, runs three detectors, and stores each finding exactly once with its evidence and MITRE ATT&CK techniques, even when a message arrives twice.
+- **Triage with optimistic concurrency**: a finding's status and assignee change only with `If-Match` naming the version the caller read, so two analysts can't silently overwrite each other (412 instead); every change and comment is in the finding's history and the audit log.
 - **Tenant isolation in the database**: row-level security on every tenant table and on users, and a least-privilege database role for each function.
 - **Distributed rate limiting** with GCRA on DynamoDB, exact under concurrency ([ADR 0006](docs/adr/0006-gcra-rate-limiter.md)).
 - **Supply chain**: SHA-pinned actions, CodeQL, dependency review, Dependabot, Checkov and tflint.

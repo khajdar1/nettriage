@@ -16,6 +16,9 @@ from nettriage.application.organizations import NotFound
 type FindingStatus = Literal["open", "investigating", "resolved", "false_positive"]
 type FindingSeverity = Literal["low", "medium", "high", "critical"]
 
+# A finding's detail lists at most this many of its latest events.
+MAX_EVENTS = 100
+
 _SUMMARY = (
     "f.id, f.upload_id, f.detector_id, f.detector_version, f.severity, f.status, f.title, "
     "host(f.src_ip) AS src_ip, host(f.dst_ip) AS dst_ip, f.dst_port, f.protocol, "
@@ -84,6 +87,7 @@ class FindingDetail:
     evidence: list[Evidence]
     techniques: list[FindingTechnique]
     events: list[FindingEvent]
+    events_total: int
 
 
 @dataclass(frozen=True)
@@ -133,22 +137,28 @@ def list_findings(
 
 def get_finding(engine: Engine, org_id: UUID, user_id: UUID, finding_id: UUID) -> FindingDetail:
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
-        row = connection.execute(
-            text(
-                f"SELECT {_SUMMARY}, f.metrics FROM findings f "  # noqa: S608
-                "WHERE f.org_id = :org AND f.id = :id"
-            ),
-            {"org": org_id, "id": finding_id},
-        ).one_or_none()
-        if row is None:
-            raise NotFound("No such finding.")
-        return FindingDetail(
-            finding=_summary(row),
-            metrics=row.metrics,
-            evidence=_evidence(connection, finding_id),
-            techniques=_techniques(connection, finding_id),
-            events=_events(connection, finding_id),
-        )
+        return read_finding(connection, org_id, finding_id)
+
+
+def read_finding(connection: Connection, org_id: UUID, finding_id: UUID) -> FindingDetail:
+    """One finding in full, inside the caller's transaction (triage returns what it wrote)."""
+    row = connection.execute(
+        text(
+            f"SELECT {_SUMMARY}, f.metrics FROM findings f "  # noqa: S608
+            "WHERE f.org_id = :org AND f.id = :id"
+        ),
+        {"org": org_id, "id": finding_id},
+    ).one_or_none()
+    if row is None:
+        raise NotFound("No such finding.")
+    return FindingDetail(
+        finding=_summary(row),
+        metrics=row.metrics,
+        evidence=_evidence(connection, finding_id),
+        techniques=_techniques(connection, finding_id),
+        events=_events(connection, finding_id),
+        events_total=_event_count(connection, finding_id),
+    )
 
 
 def _evidence(connection: Connection, finding_id: UUID) -> list[Evidence]:
@@ -196,12 +206,15 @@ def _techniques(connection: Connection, finding_id: UUID) -> list[FindingTechniq
 
 
 def _events(connection: Connection, finding_id: UUID) -> list[FindingEvent]:
+    """The latest `MAX_EVENTS`, oldest first: history only grows, and the detail must stay
+    inside the API's 6 MB response limit (the owner's decision, Plan 4c)."""
     rows = connection.execute(
         text(
-            "SELECT id, type, actor_id, payload, created_at FROM finding_events "
-            "WHERE finding_id = :id ORDER BY created_at, id"
+            "SELECT * FROM (SELECT id, type, actor_id, payload, created_at FROM finding_events "
+            "WHERE finding_id = :id ORDER BY created_at DESC, id DESC LIMIT :limit) latest "
+            "ORDER BY created_at, id"
         ),
-        {"id": finding_id},
+        {"id": finding_id, "limit": MAX_EVENTS},
     ).all()
     return [
         FindingEvent(
@@ -213,6 +226,13 @@ def _events(connection: Connection, finding_id: UUID) -> list[FindingEvent]:
         )
         for row in rows
     ]
+
+
+def _event_count(connection: Connection, finding_id: UUID) -> int:
+    count: int = connection.execute(
+        text("SELECT count(*) FROM finding_events WHERE finding_id = :id"), {"id": finding_id}
+    ).scalar_one()
+    return count
 
 
 def _summary(row: Row[Any]) -> FindingSummary:

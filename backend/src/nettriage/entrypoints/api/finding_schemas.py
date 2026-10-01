@@ -96,6 +96,8 @@ class FindingOut(FindingSummaryOut):
     evidence: list[EvidenceOut]
     techniques: list[FindingTechniqueOut]
     events: list[FindingEventOut]
+    # How many events the finding has; `events` holds the latest 100 of them.
+    events_total: int
 
     @classmethod
     def of_detail(cls, detail: FindingDetail) -> FindingOut:
@@ -105,6 +107,7 @@ class FindingOut(FindingSummaryOut):
             evidence=[EvidenceOut.of(evidence) for evidence in detail.evidence],
             techniques=[FindingTechniqueOut.of(technique) for technique in detail.techniques],
             events=[FindingEventOut.of(event) for event in detail.events],
+            events_total=detail.events_total,
         )
 
 

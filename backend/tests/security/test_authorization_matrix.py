@@ -47,7 +47,19 @@ ENDPOINTS: dict[str, tuple[str, str, dict[str, Any] | None]] = {
     "list findings": ("GET", "/api/v1/orgs/{org}/findings", None),
     "read finding": ("GET", "/api/v1/orgs/{org}/findings/{finding}", None),
     "read technique": ("GET", "/api/v1/attack-techniques/{technique}", None),
+    "triage finding": (
+        "PATCH",
+        "/api/v1/orgs/{org}/findings/{finding}",
+        {"status": "investigating"},
+    ),
+    "comment on finding": (
+        "POST",
+        "/api/v1/orgs/{org}/findings/{finding}/comments",
+        {"text": "Looks like our scanner."},
+    ),
 }
+# Headers an endpoint needs besides the session's: a triage change names the version it read.
+EXTRA_HEADERS: dict[str, dict[str, str]] = {"triage finding": {"If-Match": '"1"'}}
 
 # Expected status per caller: owner, admin, analyst, viewer, non-member, anonymous. The target
 # member is another viewer; the pending invitation to accept is for the non-member's address.
@@ -71,6 +83,8 @@ MATRIX: dict[str, tuple[int, int, int, int, int, int]] = {
     "list findings": (200, 200, 200, 200, 404, 401),
     "read finding": (200, 200, 200, 200, 404, 401),
     "read technique": (200, 200, 200, 200, 200, 401),
+    "triage finding": (200, 200, 200, 403, 404, 401),
+    "comment on finding": (201, 201, 201, 403, 404, 401),
 }
 
 
@@ -140,6 +154,7 @@ def test_every_endpoint_for_every_kind_of_caller(
     headers = {}
     if caller != "anonymous":
         headers = signed_in_as(database_client, services.sessions, world.people[caller], clock())
+    headers |= EXTRA_HEADERS.get(endpoint, {})
 
     response = database_client.request(
         method,
