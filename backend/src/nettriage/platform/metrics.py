@@ -56,3 +56,30 @@ class AnalyzeMetrics:
             unit="s",
             description="How long a message waited in its queue, by queue",
         )
+
+
+class AiMetrics:
+    """The model calls' metrics (spec §9.2): OpenTelemetry's GenAI client metrics, and NetTriage's
+    cost, outcome and cache counters. Attributes name the provider and model, never an org."""
+
+    def __init__(self, meter_provider: MeterProvider | None = None) -> None:
+        meter = (meter_provider or get_meter_provider()).get_meter("nettriage")
+        self.token_usage = meter.create_histogram(
+            "gen_ai.client.token.usage",
+            unit="{token}",
+            description="Tokens per model call, by type: input or output",
+        )
+        self.operation_duration = meter.create_histogram(
+            "gen_ai.client.operation.duration", unit="s", description="Time per model call"
+        )
+        self.cost_usd = meter.create_counter(
+            "nettriage.ai.cost.usd", unit="USD", description="What model calls cost"
+        )
+        self.outcomes = meter.create_counter(
+            "nettriage.ai.outcome",
+            description="Explanations by outcome: succeeded, cached, failed, skipped_budget, "
+            "invalid_output",
+        )
+        self.cache_hits = meter.create_counter(
+            "nettriage.ai.cache.hits", description="Explanations served from a stored analysis"
+        )
