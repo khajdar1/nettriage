@@ -14,3 +14,7 @@ output "uploads_origin" {
 output "uploads_enabled_parameter" {
   value = aws_ssm_parameter.uploads_enabled.name
 }
+
+output "ai_enabled_parameter" {
+  value = aws_ssm_parameter.ai_enabled.name
+}

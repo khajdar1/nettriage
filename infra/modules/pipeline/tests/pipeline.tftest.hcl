@@ -46,6 +46,21 @@ override_resource {
   }
 }
 
+override_resource {
+  target = aws_sqs_queue.triage
+  values = {
+    arn = "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage"
+    id  = "https://sqs.eu-north-1.amazonaws.com/123456789012/nettriage-dev-triage"
+  }
+}
+
+override_resource {
+  target = aws_sqs_queue.triage_dlq
+  values = {
+    arn = "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage-dlq"
+  }
+}
+
 variables {
   stage                    = "dev"
   app_origin               = "https://d111111abcdef8.cloudfront.net"
@@ -55,6 +70,10 @@ variables {
   grafana_otlp_endpoint    = "https://otlp-gateway.example.grafana.net/otlp"
   grafana_otlp_auth        = "dGVzdDp0ZXN0"
   database_url_parameter   = "/nettriage/dev/db/app-analyze-url"
+
+  triage_database_url_parameter = "/nettriage/dev/db/app-triage-url"
+  runtime_table_name            = "nettriage-dev-runtime"
+  runtime_table_arn             = "arn:aws:dynamodb:eu-north-1:123456789012:table/nettriage-dev-runtime"
 }
 
 run "the_bucket_name_does_not_expose_the_account_id" {
@@ -253,5 +272,104 @@ run "the_worker_may_read_uploads_its_queue_and_its_database_url_only" {
   assert {
     condition     = jsondecode(aws_iam_role_policy.analyze_parameters.policy).Statement[0].Resource == "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/db/app-analyze-url"
     error_message = "The worker may only read its own database URL (spec §6.8)."
+  }
+}
+
+run "each_found_finding_can_reach_the_triage_queue" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.analyze_triage_queue.policy).Statement[0].Action == "sqs:SendMessage" && jsondecode(aws_iam_role_policy.analyze_triage_queue.policy).Statement[0].Resource == "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage"
+    error_message = "The analyze worker may only send to the triage queue (spec §4.2, §6.8)."
+  }
+  assert {
+    condition     = aws_lambda_function.analyze.environment[0].variables["NETTRIAGE_TRIAGE_QUEUE_URL"] == "https://sqs.eu-north-1.amazonaws.com/123456789012/nettriage-dev-triage"
+    error_message = "The analyze worker is told the triage queue's URL."
+  }
+}
+
+run "the_triage_worker_explains_one_finding_at_a_time_within_4_minutes" {
+  command = apply
+
+  assert {
+    condition     = aws_lambda_function.triage.function_name == "nettriage-dev-triage" && aws_lambda_function.triage.handler == "nettriage.entrypoints.triage.handler.handle"
+    error_message = "The triage worker is nettriage-<stage>-triage, with the triage entry point."
+  }
+  assert {
+    condition     = aws_lambda_function.triage.memory_size == 512 && aws_lambda_function.triage.timeout == 240
+    error_message = "The triage worker uses 512 MB and 240 s: an answer and its repair, each with 3 retries of 20 s (the owner's decision, Plan 5b)."
+  }
+  assert {
+    condition     = aws_lambda_event_source_mapping.triage.batch_size == 1 && one(aws_lambda_event_source_mapping.triage.scaling_config).maximum_concurrency == 2
+    error_message = "One finding per run, at most 2 runs at once (Plan 5b)."
+  }
+  assert {
+    condition     = aws_lambda_event_source_mapping.triage.function_response_types == toset(["ReportBatchItemFailures"])
+    error_message = "The worker hands failed messages back with a partial batch response (spec §3.5)."
+  }
+  assert {
+    condition     = aws_sqs_queue.triage.visibility_timeout_seconds == 6 * aws_lambda_function.triage.timeout
+    error_message = "The visibility timeout is 6 times the worker's timeout (spec §3.5)."
+  }
+  assert {
+    condition     = jsondecode(aws_sqs_queue.triage.redrive_policy).maxReceiveCount == 3 && jsondecode(aws_sqs_queue.triage.redrive_policy).deadLetterTargetArn == "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage-dlq"
+    error_message = "After 3 receives a message moves to the triage DLQ (spec §8.6)."
+  }
+  assert {
+    condition     = aws_sqs_queue.triage.sqs_managed_sse_enabled && aws_sqs_queue.triage_dlq.sqs_managed_sse_enabled && aws_sqs_queue.triage_dlq.message_retention_seconds == 1209600
+    error_message = "Both queues are encrypted, and dead letters are kept 14 days."
+  }
+}
+
+run "the_triage_worker_is_told_its_model_switch_and_budgets" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      aws_lambda_function.triage.environment[0].variables["NETTRIAGE_SERVICE_NAME"] == "nettriage-triage",
+      aws_lambda_function.triage.environment[0].variables["NETTRIAGE_DATABASE_URL_PARAMETER"] == "/nettriage/dev/db/app-triage-url",
+      aws_lambda_function.triage.environment[0].variables["NETTRIAGE_RUNTIME_TABLE"] == "nettriage-dev-runtime",
+      aws_lambda_function.triage.environment[0].variables["NETTRIAGE_AI_ENABLED_PARAMETER"] == "/nettriage/dev/kill/ai-enabled",
+      aws_lambda_function.triage.environment[0].variables["NETTRIAGE_BEDROCK_REGION"] == "eu-north-1",
+      aws_lambda_function.triage.environment[0].variables["NETTRIAGE_BEDROCK_MODEL_ID"] == "openai.gpt-oss-20b-1:0",
+    ])
+    error_message = "The worker connects as app_triage, budgets in the runtime table, reads the AI switch, and calls gpt-oss-20b in Stockholm (Plan 5b)."
+  }
+  assert {
+    condition     = aws_lambda_function.triage.environment[0].variables["OTEL_SEMCONV_STABILITY_OPT_IN"] == "gen_ai_latest_experimental" && aws_lambda_function.triage.environment[0].variables["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "false"
+    error_message = "GenAI telemetry follows the latest conventions and never captures prompts or answers (spec §9.1, §9.3)."
+  }
+  assert {
+    condition     = aws_ssm_parameter.ai_enabled.name == "/nettriage/dev/kill/ai-enabled" && aws_ssm_parameter.ai_enabled.value == "true"
+    error_message = "The AI kill switch starts on (spec §9.7)."
+  }
+  assert {
+    condition     = output.ai_enabled_parameter == "/nettriage/dev/kill/ai-enabled"
+    error_message = "The switch's name is an output, for the deploy's pause-ai and resume-ai."
+  }
+}
+
+run "the_triage_worker_may_call_only_its_model_and_touch_only_budgets" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.triage_bedrock.policy).Statement[0].Action == "bedrock:InvokeModel" && jsondecode(aws_iam_role_policy.triage_bedrock.policy).Statement[0].Resource == "arn:aws:bedrock:eu-north-1::foundation-model/openai.gpt-oss-20b-1:0"
+    error_message = "The worker may invoke its one model, on demand in its Region (spec Revision 2, R4)."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.triage_budgets.policy).Statement[0].Action == "dynamodb:UpdateItem" && jsondecode(aws_iam_role_policy.triage_budgets.policy).Statement[0].Resource == "arn:aws:dynamodb:eu-north-1:123456789012:table/nettriage-dev-runtime"
+    error_message = "The worker may only update items in the runtime table."
+  }
+  assert {
+    condition     = toset(jsondecode(aws_iam_role_policy.triage_budgets.policy).Statement[0].Condition["ForAllValues:StringLike"]["dynamodb:LeadingKeys"]) == toset(["BUDGET#*", "GBUDGET#*"])
+    error_message = "The worker may only touch budget items, never sessions or rate limits (spec §6.8)."
+  }
+  assert {
+    condition     = toset(jsondecode(aws_iam_role_policy.triage_parameters.policy).Statement[0].Resource) == toset(["arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/db/app-triage-url", "arn:aws:ssm:eu-north-1:123456789012:parameter/nettriage/dev/kill/ai-enabled"])
+    error_message = "The worker may read its database URL and the AI switch, nothing else (spec §6.8)."
+  }
+  assert {
+    condition     = toset(jsondecode(aws_iam_role_policy.triage_queue.policy).Statement[0].Action) == toset(["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ChangeMessageVisibility"]) && jsondecode(aws_iam_role_policy.triage_queue.policy).Statement[0].Resource == "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage"
+    error_message = "The worker may only consume the triage queue."
   }
 }

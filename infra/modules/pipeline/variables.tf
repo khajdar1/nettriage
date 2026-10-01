@@ -51,3 +51,34 @@ variable "database_url_parameter" {
   type        = string
   description = "SSM SecureString with app_analyze's pooled Neon URL, written by the deploy (tools/deploy)."
 }
+
+variable "triage_database_url_parameter" {
+  type        = string
+  description = "SSM SecureString with app_triage's pooled Neon URL, written by the deploy (tools/deploy)."
+}
+
+variable "runtime_table_name" {
+  type        = string
+  description = "The DynamoDB runtime table, where the AI budgets live (spec §5.5)."
+}
+
+variable "runtime_table_arn" {
+  type = string
+}
+
+variable "bedrock_region" {
+  type        = string
+  default     = "eu-north-1"
+  description = "Where the triage model runs on demand (spec Revision 2, R4)."
+
+  validation {
+    condition     = contains(["eu-north-1", "us-east-1", "us-west-2"], var.bedrock_region)
+    error_message = "The account can invoke Bedrock only in eu-north-1, us-east-1 or us-west-2 (spec Revision 2, R1)."
+  }
+}
+
+variable "bedrock_model_id" {
+  type        = string
+  default     = "openai.gpt-oss-20b-1:0"
+  description = "The triage model's on-demand ID; it needs a price in backend/src/nettriage/application/llm.py."
+}

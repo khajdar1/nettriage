@@ -14,3 +14,9 @@ variable "anomaly_monitor_arn" {
   default     = ""
   description = "ARN of the account's existing Cost Anomaly Detection services monitor. Empty = no subscription."
 }
+
+variable "triage_roles" {
+  type        = list(string)
+  default     = ["nettriage-dev-triage"]
+  description = "The triage workers' roles, which the $5 budget action denies Bedrock (spec §6.7). They must exist: deploy the stage first."
+}
