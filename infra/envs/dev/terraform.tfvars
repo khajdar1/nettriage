@@ -4,3 +4,8 @@
 lwa_layer_arn            = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
 otel_collector_layer_arn = "arn:aws:lambda:eu-north-1:184161586896:layer:opentelemetry-collector-arm64-0_22_0:1"
 grafana_otlp_endpoint    = "https://otlp-gateway-prod-eu-central-0.grafana.net/otlp"
+
+# The triage model (Plan 5b): gpt-oss-20b, on demand in Stockholm. `just preflight` checks
+# Bedrock offers it there; it needs a price in backend/src/nettriage/application/llm.py.
+bedrock_region   = "eu-north-1"
+bedrock_model_id = "openai.gpt-oss-20b-1:0"

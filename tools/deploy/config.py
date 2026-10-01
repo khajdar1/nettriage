@@ -19,8 +19,10 @@ PLUGIN_CACHE = Path.home() / ".terraform.d" / "plugin-cache"
 # (spec §13.2): the Neon Terraform provider isn't code-signed, and the owner's Windows host
 # blocks unsigned executables.
 NEON_HOST_SUFFIX = ".eu-central-1.aws.neon.tech"
-# Database roles that get a login from the deploy. Plans 5 and 7 add theirs.
-APP_DB_ROLES = ("app_api", "app_analyze")
+# Database roles that get a login from the deploy. Plan 7 adds the ops job's.
+APP_DB_ROLES = ("app_api", "app_analyze", "app_triage")
+# Where the account may invoke Bedrock (spec Revision 2, R1).
+BEDROCK_REGIONS = ("eu-north-1", "us-east-1", "us-west-2")
 MIGRATIONS_CONFIG = REPO / "backend" / "alembic.ini"
 
 
@@ -43,6 +45,11 @@ def stage_dir(stage: str) -> Path:
 def uploads_enabled_parameter(stage: str) -> str:
     """The uploads kill switch (spec §9.7), which Terraform creates as "true"."""
     return f"/nettriage/{stage}/kill/uploads-enabled"
+
+
+def ai_enabled_parameter(stage: str) -> str:
+    """The AI kill switch (spec §9.7), which Terraform creates as "true"."""
+    return f"/nettriage/{stage}/kill/ai-enabled"
 
 
 def db_owner_url_parameter(stage: str) -> str:

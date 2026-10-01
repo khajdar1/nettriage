@@ -22,3 +22,11 @@ variable "grafana_otlp_auth" {
   type      = string
   sensitive = true
 }
+
+variable "bedrock_region" {
+  type = string
+}
+
+variable "bedrock_model_id" {
+  type = string
+}

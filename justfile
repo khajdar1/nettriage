@@ -82,6 +82,13 @@ pause-uploads stage="dev":
 resume-uploads stage="dev":
     uv run --project backend python -m tools.deploy uploads on --stage {{stage}}
 
+# AWS: pause or resume AI explanations in an emergency (no deploy needed)
+pause-ai stage="dev":
+    uv run --project backend python -m tools.deploy ai off --stage {{stage}}
+
+resume-ai stage="dev":
+    uv run --project backend python -m tools.deploy ai on --stage {{stage}}
+
 # Plan the dev stage for the checked-out, pushed commit and post the changes to its PR
 plan-dev:
     uv run --project backend python -m tools.deploy plan --stage dev

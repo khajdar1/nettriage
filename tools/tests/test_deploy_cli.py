@@ -36,7 +36,8 @@ OUTPUTS = json.dumps(
 def stage_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / "terraform.tfvars").write_text(
         f'lwa_layer_arn = "{LWA}"\notel_collector_layer_arn = "{OTEL}"\n'
-        'grafana_otlp_endpoint = "https://otlp.example/otlp"\n',
+        'grafana_otlp_endpoint = "https://otlp.example/otlp"\n'
+        'bedrock_region = "eu-north-1"\nbedrock_model_id = "openai.gpt-oss-20b-1:0"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(config, "stage_dir", lambda stage: tmp_path)
@@ -51,6 +52,9 @@ def healthy_account(run: FakeRun) -> FakeRun:
     the app roles' logins are all stored."""
     return (
         run.on("aws", "lambda", "get-layer-version-by-arn", returns=json.dumps({"CompatibleArchitectures": ["arm64"]}))
+        .on("aws", "bedrock", "get-foundation-model", returns=json.dumps(
+            {"modelDetails": {"inferenceTypesSupported": ["ON_DEMAND"], "modelLifecycle": {"status": "ACTIVE"}}}
+        ))
         .on("aws", "ssm", "describe-parameters", returns=ssm_names())
         .on("aws", "ssm", "get-parameter", returns=ssm_values(STORED))
         .on("aws")
