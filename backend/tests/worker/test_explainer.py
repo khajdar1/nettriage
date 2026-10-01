@@ -15,8 +15,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 from sqlalchemy import text
-from tenantdata import Tenant, add_tenant
+from sqlalchemy.exc import OperationalError
+from tenantdata import Tenant, add_finding, add_tenant
 
+from nettriage.adapters import ai_store
 from nettriage.adapters.ai_budget import AiBudget
 from nettriage.adapters.ai_subjects import load_subject
 from nettriage.adapters.fake_llm import FakeProvider
@@ -24,7 +26,8 @@ from nettriage.application.ai_input import canonical_json, input_hash, user_cont
 from nettriage.application.ai_output import output_schema
 from nettriage.application.llm import ProviderError
 from nettriage.application.organizations import NotFound
-from nettriage.entrypoints.triage.explainer import Explainer
+from nettriage.entrypoints.triage import explainer as explainer_module
+from nettriage.entrypoints.triage.explainer import Explained, Explainer, ExplainLater
 from nettriage.platform.metrics import AiMetrics
 from nettriage.prompts import triage_prompt
 
@@ -337,3 +340,128 @@ def test_a_finding_of_another_org_is_not_found(database: Database, rig: Rig) -> 
     with pytest.raises(NotFound):
         rig.explainer.explain(mine.org_id, theirs.finding_id)
     assert rig.model.calls == []
+
+
+def test_switched_off_ai_makes_no_call_and_says_why(database: Database, rig: Rig) -> None:
+    tenant = add_tenant(database.admin)
+    off = replace(rig.explainer, enabled=lambda: False)
+
+    explained = off.explain(tenant.org_id, tenant.finding_id)
+
+    assert explained.outcome == "skipped_budget"
+    assert analysis(database, tenant)["error_code"] == "ai_disabled"
+    assert rig.model.calls == []
+    assert budget_item(rig, f"BUDGET#{tenant.org_id}#2026-09-28") == {}
+
+
+def test_a_cached_answer_is_served_while_ai_is_switched_off(database: Database, rig: Rig) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [answer()]
+    first = rig.explainer.explain(tenant.org_id, tenant.finding_id)
+    off = replace(rig.explainer, enabled=lambda: False)
+
+    assert off.explain(tenant.org_id, tenant.finding_id) == Explained("cached", first.analysis_id)
+
+
+def stored_count(database: Database, tenant: Tenant) -> int:
+    with database.admin.begin() as connection:
+        found: int = connection.execute(
+            text("SELECT count(*) FROM ai_analyses WHERE finding_id = :finding AND id <> :seeded"),
+            {"finding": tenant.finding_id, "seeded": tenant.analysis_id},
+        ).scalar_one()
+    return found
+
+
+def test_a_passing_provider_failure_is_tried_again_before_the_last_delivery(
+    database: Database, rig: Rig
+) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [ProviderError("provider_throttled")]
+
+    with pytest.raises(ExplainLater) as later:
+        rig.explainer.explain(tenant.org_id, tenant.finding_id, last_delivery=False)
+
+    assert later.value.code == "provider_throttled"
+    assert stored_count(database, tenant) == 0
+    assert budget_item(rig, f"BUDGET#{tenant.org_id}#2026-09-28")["tokens_reserved"] == 0
+
+
+def test_a_passing_failure_on_the_last_delivery_is_stored(database: Database, rig: Rig) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [ProviderError("provider_timeout")]
+
+    explained = rig.explainer.explain(tenant.org_id, tenant.finding_id, last_delivery=True)
+
+    assert (explained.outcome, analysis(database, tenant)["error_code"]) == (
+        "failed",
+        "provider_timeout",
+    )
+
+
+def test_a_lasting_provider_failure_is_stored_at_once(database: Database, rig: Rig) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [ProviderError("provider_denied")]
+
+    explained = rig.explainer.explain(tenant.org_id, tenant.finding_id, last_delivery=False)
+
+    assert (explained.outcome, analysis(database, tenant)["error_code"]) == (
+        "failed",
+        "provider_denied",
+    )
+
+
+def test_a_store_that_fails_briefly_is_retried_without_a_second_call(
+    database: Database, rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [answer()]
+    real_save = ai_store.save_analysis
+    failures = [OperationalError("INSERT", {}, Exception("server closed the connection"))]
+
+    def flaky_save(engine: Any, record: Any) -> Any:
+        if failures:
+            raise failures.pop()
+        return real_save(engine, record)
+
+    monkeypatch.setattr(explainer_module, "save_analysis", flaky_save)
+    pauses: list[float] = []
+    patient = replace(rig.explainer, sleep=pauses.append)
+
+    explained = patient.explain(tenant.org_id, tenant.finding_id)
+
+    assert explained.outcome == "succeeded"
+    assert (len(rig.model.calls), pauses) == (1, [1.0])
+
+
+def test_a_spent_budget_is_audited_once_a_day_per_org(
+    database: Database, rig: Rig, runtime_table: RuntimeTable, clock: FakeClock
+) -> None:
+    tenant = add_tenant(database.admin)
+    with database.admin.begin() as connection:
+        second = add_finding(connection, tenant.org_id, tenant.upload_id)
+    poor = replace(
+        rig.explainer,
+        budget=AiBudget(runtime_table.client, runtime_table.name, clock, org_daily_tokens=500),
+    )
+
+    poor.explain(tenant.org_id, tenant.finding_id)
+    poor.explain(tenant.org_id, second)
+
+    with database.admin.begin() as connection:
+        audited = connection.execute(
+            text(
+                "SELECT action, outcome, actor_type, target_type, target_id, details "
+                "FROM audit_log WHERE org_id = :org AND action = 'budget.exhausted'"
+            ),
+            {"org": tenant.org_id},
+        ).all()
+    assert [tuple(row) for row in audited] == [
+        (
+            "budget.exhausted",
+            "denied",
+            "system",
+            "finding",
+            str(tenant.finding_id),
+            {"scope": "org"},
+        )
+    ]

@@ -117,6 +117,33 @@ class AiBudget:
         self._add(reservation.org_key, {"tokens_reserved": str(-reservation.tokens)})
         self._add(reservation.global_key, {"usd_reserved": str(-reservation.usd)})
 
+    def first_refusal(self, org_id: UUID, scope: Literal["org", "global"]) -> bool:
+        """True the first time today that a budget refuses this org's calls, so the refusal is
+        audited once a day per org and budget (spec §9.4), not once per finding. A refusal that
+        can't be noted counts as noted: no audit flood when DynamoDB fails."""
+        now = self._clock()
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key={"pk": {"S": f"BUDGET#{org_id}#{now.date().isoformat()}"}},
+                UpdateExpression=(
+                    f"SET refused_{scope} = :yes, expires_at = if_not_exists(expires_at, :expires)"
+                ),
+                ConditionExpression=f"attribute_not_exists(refused_{scope})",
+                ExpressionAttributeValues={
+                    ":yes": {"BOOL": True},
+                    ":expires": {"N": str(epoch_seconds(now + KEEP_FOR))},
+                },
+            )
+        except ClientError as error:
+            if not is_condition_failure(error):
+                logger.warning("ai_budget_refusal_unnoted", extra={"error_code": "dynamodb_error"})
+            return False
+        except BotoCoreError:
+            logger.warning("ai_budget_refusal_unnoted", extra={"error_code": "dynamodb_error"})
+            return False
+        return True
+
     def _take(
         self,
         key: str,
