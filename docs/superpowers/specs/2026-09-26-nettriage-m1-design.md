@@ -270,7 +270,7 @@ sequenceDiagram
 | `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → a member of the finding's org (a composite foreign key to `memberships`; Plan 4c), `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
 | `finding_evidence` | `id`, `org_id`, `finding_id`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `packets` bigint, `bytes` bigint, `start_ts`, `end_ts`, `action`, `line_no`; FK `(org_id, finding_id)` |
 | `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings |
-| `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings |
+| `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings. Only a succeeded row has an `output`. A new attempt for the same key updates the row, and a succeeded row is never overwritten: it is the cache (Plan 5a) |
 | `finding_events` | `id`, `org_id`, `finding_id`, `actor_id` (NULL for system events), `type` CHECK in (created, status_changed, assigned, commented, ai_explained), `payload` jsonb. Comments are at most 2,000 characters |
 | `audit_log` | `id`, `org_id` (no foreign key, so records outlive the entities they describe), `actor_user_id`, `actor_type` CHECK in (user, system, anonymous), `action`, `target_type`, `target_id`, `outcome` CHECK in (success, denied, error), `ip` inet, `user_agent` (at most 256 characters), `request_id`, `trace_id`, `details` jsonb |
 
@@ -307,7 +307,7 @@ A dedicated test runs a query with no org filter and must receive zero rows from
 | `nettriage_owner` | Migrations (CI only) | Owns the schema; DDL |
 | `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations`. On findings it may UPDATE only `status`, `assignee_id` and `version`, and `finding_events` is insert-only (Plan 4c) |
 | `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`. No `audit_log` until the worker records an event worth auditing (Plan 4b) |
-| `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`; INSERT/UPDATE `ai_analyses`; INSERT `finding_techniques`, `finding_events`, `audit_log` |
+| `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`, `detectors`, `ai_analyses`; INSERT/UPDATE `ai_analyses` (column grants: never `feedback`); INSERT `finding_techniques` and UPDATE of their `rationale`; INSERT `finding_events` without an actor. `audit_log` waits for an event the worker audits (Plan 5a) |
 | `app_ops` | `ops` Lambda | `SELECT 1` health checks; retention through `SECURITY DEFINER` functions only (purge `audit_log` rows older than 180 days, expire invitations, expire stale pending uploads) |
 | `app_backup` | Nightly backup | Read-only with `BYPASSRLS` (needed for a complete dump); used only by the backup workflow |
 
@@ -325,8 +325,8 @@ The partition key is `pk` (string), and the TTL attribute is `expires_at`.
 | A user's sessions | `USERSESS#<user_id>` | String set of session hashes, used for "sign out everywhere" | 12 h after the last login |
 | Sign-in state | `LOGIN#<state>` | `code_verifier`, `nonce`, `return_to` | 15 min |
 | Rate-limit key | `RL#<policy>#<subject>` | `tat` (GCRA theoretical arrival time, ms) | 2 × the policy window |
-| Org AI budget | `BUDGET#<org_id>#<yyyy-mm-dd>` | `tokens_reserved`, `tokens_used` | 2 days |
-| Global AI budget | `GBUDGET#<yyyy-mm-dd>` | `usd_reserved`, `usd_used` | 2 days |
+| Org AI budget | `BUDGET#<org_id>#<yyyy-mm-dd>` (UTC day) | `tokens_reserved` (open reservations plus settled usage, because a condition can't add two attributes), `tokens_used` (settled usage) | 2 days |
+| Global AI budget | `GBUDGET#<yyyy-mm-dd>` (UTC day) | `usd_reserved`, `usd_used`, counted the same way | 2 days |
 | Idempotency key | `IDEMP#<user_id>#<key>` | `request_hash`, `status`, `response` | 24 h |
 
 - **Capacity:** provisioned, within the Always Free 25 read and 25 write units per region. Each stage gets 10 RCU / 10 WCU, 20 of the 25 in all (the owner raised `dev` from 3 / 3 in Plan 3b: one looping client could use up 3 write units a second and break sign-in for everyone).
@@ -475,8 +475,8 @@ A failed condition returns the item as it was, which tells whether the request i
   - Each org has a daily budget of 100,000 tokens.
   - A global daily spend cap of $0.50 applies across all orgs.
   - The demo org uses precomputed analyses.
-- **Reservations:** before each call the worker atomically reserves the estimate (input estimate + `max_tokens`), conditional on `reserved + estimate ≤ limit`. After the call it settles to the actual usage, and on failure it releases the reservation.
-- **Fail closed:** if the budget state can't be read or written, no call is made, and the analysis is stored with status `skipped_budget`.
+- **Reservations:** before each call the worker atomically reserves the estimate (input estimate + `max_tokens`), conditional on `reserved + estimate ≤ limit`. After the call it settles to the actual usage, and on failure it releases the reservation. The input estimate is one token per three characters of the prompt and the data, which overestimates; the org's tokens are reserved first, and are given back if the global cap refuses (Plan 5a).
+- **Fail closed:** if the budget state can't be read or written, no call is made, and the analysis is stored with status `skipped_budget`. Its `error_code` says why: `budget_exhausted_org`, `budget_exhausted_global` or `budget_unavailable` (Plan 5a).
 - **Per-call limits:** `max_tokens` 700, with the input kept at or under about 2,000 tokens by the evidence cap.
 
 ### 6.7 Edge and account protections
@@ -604,7 +604,7 @@ A failed condition returns the item as it was, which tells whether the request i
   - `BedrockProvider`: the Converse API with structured output.
   - `OllamaProvider`: the OpenAI-compatible endpoint with a JSON-schema `format`.
   - `FakeProvider`: scripted outputs and failure injection, for tests.
-- **Prompt v1** (`backend/prompts/triage/v1.md`) instructs the model to:
+- **Prompt v1** (`backend/src/nettriage/prompts/triage/v1.md`, shipped in the package; Plan 5a) instructs the model to:
   - use only the provided data;
   - pick techniques only from `candidate_techniques`;
   - mention only IPs and ports present in the data;
@@ -619,14 +619,14 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Output schema v1:**
   - `summary` (≤ 600 chars), `why_it_matters` (≤ 600)
   - `likely_benign_explanations` (≤ 3 items, ≤ 200 chars each), `recommended_next_steps` (1–5 items, ≤ 200 chars each)
-  - `attack_techniques` (≤ 3 items of `{id, rationale}`; the ID must match `^T\d{4}(\.\d{3})?$`)
-  - `severity_assessment` (`{agrees_with_detector, suggested_severity, reason}`)
+  - `attack_techniques` (≤ 3 items of `{id, rationale}`; the ID must match `^T[0-9]{4}(\.[0-9]{3})?$`, and a rationale is ≤ 400 chars)
+  - `severity_assessment` (`{agrees_with_detector, suggested_severity, reason}`; the reason is ≤ 300 chars)
   - `confidence` (low / medium / high), `insufficient_evidence` (boolean)
 - **Validation:**
   - Schema validation (Pydantic).
   - Techniques must be a subset of the candidates.
   - Every IP address mentioned in the text must appear in the finding's entities or evidence. Ports are checked only when written as `port N` or `<ip>:N`, so counts such as "100 ports" aren't misread as ports.
-  - On failure, one repair attempt that includes the validation errors; after that, `invalid_output`.
+  - On failure, one repair attempt that includes the validation errors (the same user JSON plus `validation_errors`); after that, `invalid_output` with `error_code` `checks_failed`. Each attempt reserves and settles its own budget, and the analysis stores the tokens, cost and latency of both (Plan 5a).
 - **Caching:** `input_hash = sha256(canonical JSON of the user content)`, with a unique key on (finding, model, prompt version, input hash).
 - **Call settings:**
   - Temperature 0.1, `max_tokens` 700, timeout 20 seconds.
