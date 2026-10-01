@@ -4,6 +4,7 @@ Plan 4c adds triage."""
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 
 from nettriage.adapters.attack_techniques import Technique
 from nettriage.adapters.findings import (
+    AiAnalysis,
     Evidence,
     FindingDetail,
     FindingEvent,
@@ -91,6 +93,29 @@ class FindingEventOut(BaseModel):
         return cls(**vars(event))
 
 
+class AiAnalysisOut(BaseModel):
+    """AI-generated: the UI labels it so, with the model and prompt version (spec §8.4)."""
+
+    id: UUID
+    status: str
+    provider: str
+    model_id: str
+    prompt_version: str
+    output_schema_version: str
+    output: dict[str, Any] | None
+    error_code: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: Decimal | None
+    latency_ms: int | None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def of(cls, analysis: AiAnalysis) -> AiAnalysisOut:
+        return cls(**vars(analysis))
+
+
 class FindingOut(FindingSummaryOut):
     metrics: dict[str, Any]
     evidence: list[EvidenceOut]
@@ -98,6 +123,8 @@ class FindingOut(FindingSummaryOut):
     events: list[FindingEventOut]
     # How many events the finding has; `events` holds the latest 100 of them.
     events_total: int
+    # The latest AI analysis, or null when the finding hasn't been explained (Plan 5b).
+    ai_analysis: AiAnalysisOut | None
 
     @classmethod
     def of_detail(cls, detail: FindingDetail) -> FindingOut:
@@ -108,6 +135,9 @@ class FindingOut(FindingSummaryOut):
             techniques=[FindingTechniqueOut.of(technique) for technique in detail.techniques],
             events=[FindingEventOut.of(event) for event in detail.events],
             events_total=detail.events_total,
+            ai_analysis=None
+            if detail.ai_analysis is None
+            else AiAnalysisOut.of(detail.ai_analysis),
         )
 
 
