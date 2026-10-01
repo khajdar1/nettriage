@@ -753,7 +753,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-    { name = "types-boto3", extra = ["dynamodb", "s3", "ssm"] },
+    { name = "types-boto3", extra = ["bedrock-runtime", "dynamodb", "s3", "sqs", "ssm"] },
 ]
 
 [package.metadata]
@@ -780,12 +780,12 @@ dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "hypothesis", specifier = ">=6.168.3" },
-    { name = "moto", extras = ["dynamodb", "ssm"], specifier = ">=5.2.3" },
+    { name = "moto", extras = ["dynamodb", "sqs", "ssm"], specifier = ">=5.2.3" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.16.9" },
-    { name = "types-boto3", extras = ["dynamodb", "s3", "ssm"], specifier = ">=1.43.103" },
+    { name = "types-boto3", extras = ["bedrock-runtime", "dynamodb", "s3", "sqs", "ssm"], specifier = ">=1.43.103" },
 ]
 
 [[package]]
@@ -1381,14 +1381,29 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+bedrock-runtime = [
+    { name = "types-boto3-bedrock-runtime" },
+]
 dynamodb = [
     { name = "types-boto3-dynamodb" },
 ]
 s3 = [
     { name = "types-boto3-s3" },
 ]
+sqs = [
+    { name = "types-boto3-sqs" },
+]
 ssm = [
     { name = "types-boto3-ssm" },
+]
+
+[[package]]
+name = "types-boto3-bedrock-runtime"
+version = "1.43.62"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/82/e153b5d139b01be37e80cd74638fb9165dc427d0bbf4d05f5f88fe45ad65/types_boto3_bedrock_runtime-1.43.62.tar.gz", hash = "sha256:cb2627c2462d319548c0d83aa84fb7ae04362bb8c42a1057134a76b29a76daf7", size = 31519, upload-time = "2026-07-31T19:54:06.284Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/15/89b13796738f1cc9db27f8e564fa0420b1fde0f610be7d5b20d39d890c35/types_boto3_bedrock_runtime-1.43.62-py3-none-any.whl", hash = "sha256:7239a03d01eed4f6a99934f8228fb52d427443a487eff4eda312b29c9a4b0d26", size = 37841, upload-time = "2026-07-31T19:54:05.174Z" },
 ]
 
 [[package]]
@@ -1407,6 +1422,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f7/1a/285aa2a27436e437aea1c6d6f964b692df3d8c349bf6a35fd476d0b2f7bb/types_boto3_s3-1.43.93.tar.gz", hash = "sha256:6a7f979872b81f6bf22eb4dc39ea9909d635ec756275eca69e9caabdc94d5a6a", size = 79218, upload-time = "2026-09-11T19:44:38.149Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1f/16/db644e738b967336fb0ca335d708c7d659a965b8ae703e9c50fe209c59be/types_boto3_s3-1.43.93-py3-none-any.whl", hash = "sha256:da9249f05ea081bb3b3f3b8cc49099a988ff5c89da8a7393532397c6174e04d3", size = 86538, upload-time = "2026-09-11T19:44:36.68Z" },
+]
+
+[[package]]
+name = "types-boto3-sqs"
+version = "1.43.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/be/353e9d04a06a48227af527d7e1da5c580f562b87d8b400532e8fe4eac498/types_boto3_sqs-1.43.0.tar.gz", hash = "sha256:a699170d774fb5dfab8d7881e02f102e07706cbfc44874825d4d6ddee77edf61", size = 23183, upload-time = "2026-04-29T23:07:09.111Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/c6/6e7daea77680793a1410f134869008f8199ef3c3277c1d6144460cbfd536/types_boto3_sqs-1.43.0-py3-none-any.whl", hash = "sha256:c23e43a13822208d26a946c991ebf9b4ba7194dec5b5537fd4eb850a2a5c25a7", size = 33398, upload-time = "2026-04-29T23:07:06.97Z" },
 ]
 
 [[package]]
