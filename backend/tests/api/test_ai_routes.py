@@ -44,6 +44,9 @@ class Owner:
     def post(self, path: str) -> Any:
         return self.client.post(path, headers=self.headers)
 
+    def put(self, path: str, body: dict[str, Any]) -> Any:
+        return self.client.put(path, json=body, headers=self.headers)
+
 
 @pytest.fixture
 def signed_in(
@@ -206,3 +209,74 @@ def test_a_queue_that_refuses_is_a_503_and_nothing_is_audited(
     assert response.status_code == 503
     assert response.headers["content-type"] == "application/problem+json"
     assert audited(database, org[0]) == []
+
+
+def feedback_path(org: tuple[UUID, UUID, UUID], analysis_id: UUID) -> str:
+    return f"/api/v1/orgs/{org[0]}/findings/{org[2]}/ai-analyses/{analysis_id}/feedback"
+
+
+def test_an_explanation_is_rated_by_its_reader(
+    signed_in: Owner, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    explained = add_ai_analysis(database, org, status="succeeded", model_id="fake-triage")
+
+    response = signed_in.put(feedback_path(org, explained), {"feedback": "up"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["id"], body["feedback"], body["feedback_by"]) == (
+        str(explained),
+        "up",
+        str(org[1]),
+    )
+
+
+def test_a_rating_can_change_and_shows_on_the_finding(
+    signed_in: Owner, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    explained = add_ai_analysis(database, org, status="succeeded", model_id="fake-triage")
+    signed_in.put(feedback_path(org, explained), {"feedback": "up"})
+
+    signed_in.put(feedback_path(org, explained), {"feedback": "down"})
+
+    finding = signed_in.client.get(f"/api/v1/orgs/{org[0]}/findings/{org[2]}").json()
+    assert finding["ai_analysis"]["feedback"] == "down"
+
+
+def test_only_an_explanation_that_succeeded_can_be_rated(
+    signed_in: Owner, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    failed = add_ai_analysis(database, org, status="failed", model_id="fake-triage")
+
+    response = signed_in.put(feedback_path(org, failed), {"feedback": "down"})
+
+    assert response.status_code == 409
+
+
+def test_an_analysis_of_another_finding_is_not_found(
+    signed_in: Owner, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    with database.admin.begin() as connection:
+        other = add_finding(
+            connection, org[0], add_upload(connection, org[0], org[1], status="analyzed")
+        )
+    theirs = add_ai_analysis(
+        database, (org[0], org[1], other), status="succeeded", model_id="fake-triage"
+    )
+
+    response = signed_in.put(feedback_path(org, theirs), {"feedback": "up"})
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body", [{"feedback": "meh"}, {"feedback": None}, {"feedback": "up", "by": "someone"}, {}]
+)
+def test_a_rating_is_up_or_down_and_nothing_else(
+    signed_in: Owner, database: Database, org: tuple[UUID, UUID, UUID], body: dict[str, Any]
+) -> None:
+    explained = add_ai_analysis(database, org, status="succeeded", model_id="fake-triage")
+
+    response = signed_in.put(feedback_path(org, explained), body)
+
+    assert response.status_code == 422

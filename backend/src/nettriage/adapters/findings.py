@@ -98,6 +98,9 @@ class AiAnalysis:
     output_tokens: int | None
     cost_usd: Decimal | None
     latency_ms: int | None
+    # A reader's rating of a succeeded explanation (`up` or `down`), and who gave it.
+    feedback: str | None
+    feedback_by: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -187,7 +190,8 @@ def read_finding(connection: Connection, org_id: UUID, finding_id: UUID) -> Find
 
 _ANALYSIS = (
     "id, status, provider, model_id, prompt_version, output_schema_version, output, error_code, "
-    "input_tokens, output_tokens, cost_usd, latency_ms, created_at, updated_at"
+    "input_tokens, output_tokens, cost_usd, latency_ms, feedback, feedback_by, created_at, "
+    "updated_at"
 )
 
 

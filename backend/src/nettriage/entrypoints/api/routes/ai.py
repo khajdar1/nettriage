@@ -1,4 +1,4 @@
-"""AI explanations through the API (spec §7, §8.3): re-run a finding's explanation.
+"""AI explanations through the API (spec §7, §8.3): re-run a finding's explanation, and rate one.
 
 A re-run is queued for the triage worker, which explains the finding within the org's budget,
 unless the finding's latest analysis for the current model, prompt and input already succeeded:
@@ -15,12 +15,12 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
-from nettriage.adapters.ai_analyses import current_explanation
+from nettriage.adapters.ai_analyses import current_explanation, rate_analysis
 from nettriage.adapters.triage_queue import TriageQueueError
 from nettriage.application.rate_limits import POLICIES
 from nettriage.entrypoints.api.access import OrgContext, OrgMember, enforce, unavailable
 from nettriage.entrypoints.api.auditing import audit
-from nettriage.entrypoints.api.finding_schemas import AiAnalysisOut, RerunOut
+from nettriage.entrypoints.api.finding_schemas import AiAnalysisOut, FeedbackIn, RerunOut
 from nettriage.entrypoints.api.org_errors import org_rules
 from nettriage.entrypoints.api.services import get_services
 from nettriage.platform.trace_context import current_traceparent
@@ -72,3 +72,26 @@ def rerun(
     return JSONResponse(
         RerunOut(status="queued", ai_analysis=None).model_dump(mode="json"), status_code=202
     )
+
+
+@router.put("/{analysis_id}/feedback")
+def rate(
+    request: Request,
+    org_id: UUID,
+    finding_id: UUID,
+    analysis_id: UUID,
+    body: FeedbackIn,
+    org: Annotated[OrgContext, Depends(OrgMember("ai:feedback"))],
+) -> AiAnalysisOut:
+    """Rate one of the finding's explanations up or down; a new rating replaces the last. Only an
+    explanation that succeeded can be rated (409 otherwise)."""
+    with org_rules(request, "Rating this explanation", org=org, permission="ai:feedback"):
+        rated = rate_analysis(
+            get_services(request).database,
+            org.org_id,
+            org.user_id,
+            finding_id,
+            analysis_id,
+            body.feedback,
+        )
+    return AiAnalysisOut.of(rated)

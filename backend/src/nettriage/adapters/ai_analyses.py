@@ -1,17 +1,23 @@
 """The API's side of AI analyses (spec §7, §8.3), as `app_api` in the caller's org: whether a
-finding is already explained for the current model and prompt."""
+finding is already explained for the current model and prompt, and a reader's rating of an
+explanation."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from nettriage.adapters.ai_store import find_cached
 from nettriage.adapters.ai_subjects import load_subject
 from nettriage.adapters.findings import AiAnalysis, read_analysis
 from nettriage.adapters.postgres import tenant_transaction
 from nettriage.application.ai_input import PROMPT_VERSION, input_hash, user_content
+from nettriage.application.organizations import NotFound, OrgRuleError
+
+
+class NotExplained(OrgRuleError):
+    """Only an explanation that succeeded can be rated."""
 
 
 def current_explanation(
@@ -37,3 +43,32 @@ def current_explanation(
         return None
     with tenant_transaction(engine, org_id=org_id) as connection:
         return read_analysis(connection, cached.id)
+
+
+def rate_analysis(
+    engine: Engine,
+    org_id: UUID,
+    user_id: UUID,
+    finding_id: UUID,
+    analysis_id: UUID,
+    feedback: str,
+) -> AiAnalysis:
+    """Record the reader's rating of one of the finding's succeeded analyses; a new rating
+    replaces the previous one. Rating doesn't make the analysis newer."""
+    with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
+        rated = connection.execute(
+            text(
+                "UPDATE ai_analyses SET feedback = :feedback, feedback_by = :user "
+                "WHERE id = :id AND finding_id = :finding AND status = 'succeeded' RETURNING id"
+            ),
+            {"feedback": feedback, "user": user_id, "id": analysis_id, "finding": finding_id},
+        ).scalar_one_or_none()
+        if rated is None:
+            exists = connection.execute(
+                text("SELECT 1 FROM ai_analyses WHERE id = :id AND finding_id = :finding"),
+                {"id": analysis_id, "finding": finding_id},
+            ).scalar_one_or_none()
+            if exists is None:
+                raise NotFound("No such AI analysis.")
+            raise NotExplained("Only an AI explanation that succeeded can be rated.")
+        return read_analysis(connection, analysis_id)

@@ -21,6 +21,7 @@ from nettriage.adapters.findings import (
     FindingSummary,
     FindingTechnique,
 )
+from nettriage.entrypoints.api.schemas import Strict
 
 
 class FindingSummaryOut(BaseModel):
@@ -108,12 +109,20 @@ class AiAnalysisOut(BaseModel):
     output_tokens: int | None
     cost_usd: Decimal | None
     latency_ms: int | None
+    feedback: Literal["up", "down"] | None
+    feedback_by: UUID | None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def of(cls, analysis: AiAnalysis) -> AiAnalysisOut:
         return cls(**vars(analysis))
+
+
+class FeedbackIn(Strict):
+    """A reader's rating of an explanation: `up` or `down` (spec §7)."""
+
+    feedback: Literal["up", "down"]
 
 
 class RerunOut(BaseModel):
