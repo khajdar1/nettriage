@@ -10,7 +10,7 @@ from conftest import Database
 from sqlalchemy import text
 from tenantdata import Tenant, add_tenant
 
-from nettriage.adapters.ai_store import AnalysisRecord, find_cached, save_analysis
+from nettriage.adapters.ai_store import AnalysisRecord, find_cached, record_usage, save_analysis
 
 HASH = "c" * 64
 
@@ -31,6 +31,7 @@ def record(tenant: Tenant, **changes: Any) -> AnalysisRecord:
         cost_usd=Decimal("0.0021"),
         latency_ms=850,
         techniques=(("T1595", "Ports probed from outside."),),
+        calls=1,
     )
     return replace(base, **changes)
 
@@ -140,9 +141,10 @@ def test_a_succeeded_analysis_is_never_overwritten(database: Database) -> None:
     assert len(ai_history(database, tenant)[1]) == 1
 
 
-def test_a_later_analysis_updates_the_ais_rationale(database: Database) -> None:
+def test_a_later_success_replaces_the_ais_techniques(database: Database) -> None:
     tenant = add_tenant(database.admin)
-    save_analysis(database.app_triage, record(tenant))
+    first = (("T1595", "Ports probed from outside."), ("T1046", "Many ports on one host."))
+    save_analysis(database.app_triage, record(tenant, techniques=first))
 
     save_analysis(
         database.app_triage,
@@ -150,3 +152,99 @@ def test_a_later_analysis_updates_the_ais_rationale(database: Database) -> None:
     )
 
     assert ai_history(database, tenant)[0] == [("T1595", "A clearer reason.")]
+    assert detector_techniques(database, tenant) == ["T1595"]
+
+
+def test_a_later_success_without_techniques_clears_the_ais(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+    save_analysis(database.app_triage, record(tenant))
+
+    save_analysis(database.app_triage, record(tenant, prompt_version="v2", techniques=()))
+
+    assert ai_history(database, tenant)[0] == []
+    assert detector_techniques(database, tenant) == ["T1595"]
+
+
+def detector_techniques(database: Database, tenant: Tenant) -> list[str]:
+    with database.admin.begin() as connection:
+        found: list[str] = list(
+            connection.execute(
+                text(
+                    "SELECT technique_id FROM finding_techniques "
+                    "WHERE finding_id = :finding AND source = 'detector'"
+                ),
+                {"finding": tenant.finding_id},
+            ).scalars()
+        )
+    return found
+
+
+def usage(database: Database, tenant: Tenant) -> tuple[int, int, int, Decimal]:
+    """Today's usage for the org; `add_tenant` seeds one call of 1800 + 320 tokens."""
+    with database.admin.begin() as connection:
+        row = connection.execute(
+            text(
+                "SELECT calls, input_tokens, output_tokens, cost_usd FROM ai_usage "
+                "WHERE org_id = :org AND day = (now() AT TIME ZONE 'UTC')::date"
+            ),
+            {"org": tenant.org_id},
+        ).one()
+    return row.calls, row.input_tokens, row.output_tokens, row.cost_usd
+
+
+def test_every_call_an_attempt_made_is_counted_for_the_day(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+
+    save_analysis(database.app_triage, record(tenant, calls=2, input_tokens=1900))
+
+    assert usage(database, tenant) == (3, 3700, 620, Decimal("0.002322"))
+
+
+def test_calls_are_counted_even_when_another_success_was_stored_first(
+    database: Database,
+) -> None:
+    tenant = add_tenant(database.admin)
+    save_analysis(database.app_triage, record(tenant))
+
+    save_analysis(
+        database.app_triage,
+        record(tenant, status="failed", output=None, error_code="provider_unavailable"),
+    )
+
+    assert usage(database, tenant) == (3, 3600, 920, Decimal("0.004422"))
+
+
+def test_an_attempt_without_calls_counts_nothing(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+
+    save_analysis(
+        database.app_triage,
+        record(
+            tenant,
+            status="skipped_budget",
+            output=None,
+            error_code="budget_exhausted_org",
+            input_tokens=None,
+            output_tokens=None,
+            cost_usd=None,
+            latency_ms=None,
+            calls=0,
+        ),
+    )
+
+    assert usage(database, tenant) == (1, 1800, 320, Decimal("0.000222"))
+
+
+def test_calls_that_store_no_analysis_are_counted_on_their_own(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+
+    record_usage(
+        database.app_triage,
+        tenant.org_id,
+        calls=1,
+        input_tokens=900,
+        output_tokens=300,
+        cost_usd=Decimal("0.0021"),
+    )
+
+    assert usage(database, tenant) == (2, 2700, 620, Decimal("0.002322"))

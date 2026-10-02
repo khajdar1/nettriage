@@ -5,8 +5,13 @@ cache: the same input is never sent to the same model with the same prompt twice
 outcome may be tried again, and the new attempt updates the same row; a succeeded row is never
 overwritten.
 
-A succeeded analysis also adds the model's techniques to the finding (`source = 'ai'`) and an
-`ai_explained` event to its history, in the same transaction."""
+A succeeded analysis also replaces the finding's AI techniques (`source = 'ai'`) with its own,
+never touching the detector's, and adds an `ai_explained` event to its history, in the same
+transaction (the owner's decision, Plan 5c).
+
+Every model call is counted in `ai_usage`, per org and UTC day, whether or not its analysis is
+stored: an attempt counts its calls with the analysis, and calls that store nothing (a passing
+failure handed back to SQS after a paid call) are counted on their own."""
 
 from __future__ import annotations
 
@@ -41,6 +46,8 @@ class AnalysisRecord:
     error_code: str | None = None
     # (technique ID, rationale) pairs from a succeeded output.
     techniques: tuple[tuple[str, str], ...] = ()
+    # The model calls this attempt made, counted in `ai_usage` with their tokens and cost.
+    calls: int = 0
 
 
 @dataclass(frozen=True)
@@ -76,10 +83,54 @@ def find_cached(
     return None if row is None else CachedAnalysis(id=row.id, output=row.output)
 
 
+_COUNT_USAGE = text(
+    "INSERT INTO ai_usage (org_id, day, calls, input_tokens, output_tokens, cost_usd) "
+    "VALUES (:org, (now() AT TIME ZONE 'UTC')::date, :calls, :input_tokens, :output_tokens, "
+    ":cost) ON CONFLICT (org_id, day) DO UPDATE SET calls = ai_usage.calls + EXCLUDED.calls, "
+    "input_tokens = ai_usage.input_tokens + EXCLUDED.input_tokens, "
+    "output_tokens = ai_usage.output_tokens + EXCLUDED.output_tokens, "
+    "cost_usd = ai_usage.cost_usd + EXCLUDED.cost_usd"
+)
+
+
+def record_usage(
+    engine: Engine,
+    org_id: UUID,
+    *,
+    calls: int,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: Decimal,
+) -> None:
+    """Count model calls whose analysis isn't stored, in their own transaction."""
+    with tenant_transaction(engine, org_id=org_id) as connection:
+        connection.execute(
+            _COUNT_USAGE,
+            {
+                "org": org_id,
+                "calls": calls,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost_usd,
+            },
+        )
+
+
 def save_analysis(engine: Engine, record: AnalysisRecord) -> UUID:
     """Store an attempt and return its analysis's ID. A succeeded analysis already stored for the
-    same key wins: the attempt changes nothing."""
+    same key wins: the attempt changes nothing, but its calls are still counted."""
     with tenant_transaction(engine, org_id=record.org_id) as connection:
+        if record.calls:
+            connection.execute(
+                _COUNT_USAGE,
+                {
+                    "org": record.org_id,
+                    "calls": record.calls,
+                    "input_tokens": record.input_tokens or 0,
+                    "output_tokens": record.output_tokens or 0,
+                    "cost": record.cost_usd or Decimal(0),
+                },
+            )
         saved = connection.execute(
             text(
                 "INSERT INTO ai_analyses (id, org_id, finding_id, status, provider, model_id, "
@@ -128,7 +179,7 @@ def save_analysis(engine: Engine, record: AnalysisRecord) -> UUID:
             return existing
         analysis_id: UUID = saved
         if record.status == "succeeded":
-            _add_techniques(connection, record)
+            _replace_techniques(connection, record)
             connection.execute(
                 text(
                     "INSERT INTO finding_events (id, org_id, finding_id, type, payload) "
@@ -150,7 +201,14 @@ def save_analysis(engine: Engine, record: AnalysisRecord) -> UUID:
     return analysis_id
 
 
-def _add_techniques(connection: Connection, record: AnalysisRecord) -> None:
+def _replace_techniques(connection: Connection, record: AnalysisRecord) -> None:
+    connection.execute(
+        text(
+            "DELETE FROM finding_techniques WHERE org_id = :org AND finding_id = :finding "
+            "AND source = 'ai'"
+        ),
+        {"org": record.org_id, "finding": record.finding_id},
+    )
     if not record.techniques:
         return
     connection.execute(

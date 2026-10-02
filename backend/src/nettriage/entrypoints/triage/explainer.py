@@ -34,7 +34,13 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import OperationalError
 
 from nettriage.adapters.ai_budget import AiBudget, BudgetExhausted, BudgetUnavailable
-from nettriage.adapters.ai_store import AnalysisRecord, AnalysisStatus, find_cached, save_analysis
+from nettriage.adapters.ai_store import (
+    AnalysisRecord,
+    AnalysisStatus,
+    find_cached,
+    record_usage,
+    save_analysis,
+)
 from nettriage.adapters.ai_subjects import load_subject
 from nettriage.adapters.audit_log import record
 from nettriage.application.ai_input import (
@@ -162,6 +168,7 @@ class Explainer:
             except ProviderError as error:
                 if error.transient and not last_delivery:
                     logger.info("finding_explain_later", extra={"error_code": error.code})
+                    self._count_unstored(org_id, spent)
                     raise ExplainLater(error.code) from None
                 return self._store(subject, key, "failed", spent, error_code=error.code)
             checked = check_output(generation.output, subject)
@@ -249,6 +256,7 @@ class Explainer:
             techniques=()
             if output is None
             else tuple((claim.id, claim.rationale) for claim in output.attack_techniques),
+            calls=spent.calls,
         )
         analysis_id = self._retrying(lambda: save_analysis(self.database, stored))
         return self._done(status, analysis_id)
@@ -261,6 +269,25 @@ class Explainer:
                 logger.warning("database_unavailable", extra={"retry_in_s": delay})
                 self.sleep(delay)
         return step()
+
+    def _count_unstored(self, org_id: UUID, spent: _Spent) -> None:
+        """Paid calls whose analysis isn't stored (the repair was handed back to SQS) still
+        count in the org's usage. Best effort: the message is handed back either way."""
+        if not spent.calls:
+            return
+        try:
+            self._retrying(
+                lambda: record_usage(
+                    self.database,
+                    org_id,
+                    calls=spent.calls,
+                    input_tokens=spent.input_tokens,
+                    output_tokens=spent.output_tokens,
+                    cost_usd=spent.cost_usd,
+                )
+            )
+        except Exception as error:
+            logger.warning("usage_not_counted", extra={"error_code": type(error).__name__})
 
     def _audit_refusal(
         self, org_id: UUID, finding_id: UUID, scope: Literal["org", "global"]
