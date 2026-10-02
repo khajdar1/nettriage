@@ -128,3 +128,16 @@ def test_a_failed_migration_names_its_cause_without_the_interpreter_path() -> No
         "Database migrations failed; nothing was deployed. Alembic stopped with exit code 1: "
         'Error: ProgrammingError: relation "users" already exists'
     )
+
+
+def test_the_triage_worker_gets_its_own_login() -> None:
+    missing = "/nettriage/dev/db/app-triage-url"
+    run = FakeRun().on("aws", "ssm", "describe-parameters", returns=ssm_names(missing=[missing]))
+    run.on("aws", "ssm", "put-parameter")
+
+    created = database.ensure_role_logins(run, {}, "dev", OWNER_URL, set_password=lambda *a: None)
+
+    assert created == ["app_triage"]
+    [put] = run.called("aws", "ssm", "put-parameter")
+    assert put.args[put.args.index("--name") + 1] == missing
+    assert urlsplit(put.args[put.args.index("--value") + 1]).username == "app_triage"

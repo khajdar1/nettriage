@@ -136,7 +136,7 @@ flowchart LR
 | Hot state | DynamoDB table `runtime` | Provisioned capacity within Always Free; TTL |
 | Files | S3 `uploads` bucket | Private, TLS-only, SSE-S3, deleted after 30 days |
 | Identity | Cognito user pool, Essentials tier | Managed login; MFA required (TOTP) |
-| LLM | Amazon Bedrock (Region chosen per model in Plan 5: eu-north-1, us-east-1 or us-west-2) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
+| LLM | Amazon Bedrock: OpenAI gpt-oss-20b on demand in eu-north-1 (the owner's choice in Plan 5b, until Plan 5c's evals choose) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
 | Secrets and config | SSM Parameter Store (SecureString, AWS-managed key) | Database passwords, Cognito client secret, OTLP token, kill switches |
 | Telemetry | OpenTelemetry → Grafana Cloud (free tier) | Lambda platform logs stay in CloudWatch for 7 days |
 | Scheduling | EventBridge Scheduler | Probe, maintenance |
@@ -173,10 +173,11 @@ Each decision becomes an ADR in `docs/adr/`.
 |---|---|---|---|---|
 | `api` | 1024 MB | 29 s | Function URL | Account default |
 | `analyze` | 2048 MB | 300 s | SQS `analyze`, batch size 1 | Event source mapping maximum concurrency 2 |
-| `triage` | 512 MB | 60 s | SQS `triage`, batch size 5, partial batch responses | Event source mapping maximum concurrency 2 |
+| `triage` | 512 MB | 240 s | SQS `triage`, batch size 1, partial batch responses | Event source mapping maximum concurrency 2 |
 | `ops` | 256 MB | 60 s | EventBridge Scheduler | None needed |
 
 - The SQS visibility timeout is 6 × the function timeout.
+- The triage worker explains one finding per run, and 240 s fits its worst case: an answer and its repair, each a 20-second call with 3 retries (the owner's decision in Plan 5b; batch size 5 and 60 s couldn't fit one slow call).
 - Worker concurrency is capped through the event source mapping's maximum concurrency, not reserved concurrency, because new accounts can have a low Lambda concurrency quota (see 13.2).
 
 ## 4. Flows
@@ -231,7 +232,7 @@ sequenceDiagram
   AN->>QT: one message per auto-triaged finding (with traceparent)
   AN->>AN: mark upload analyzed
   QT->>T: messages
-  T->>T: reserve budget, check cache, call Bedrock, validate, store
+  T->>T: check cache and kill switch, reserve budget, call Bedrock, validate, store
   B->>A: GET upload status and findings (polling)
 ```
 
@@ -270,7 +271,7 @@ sequenceDiagram
 | `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → a member of the finding's org (a composite foreign key to `memberships`; Plan 4c), `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
 | `finding_evidence` | `id`, `org_id`, `finding_id`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `packets` bigint, `bytes` bigint, `start_ts`, `end_ts`, `action`, `line_no`; FK `(org_id, finding_id)` |
 | `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings |
-| `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings. Only a succeeded row has an `output`. A new attempt for the same key updates the row, and a succeeded row is never overwritten: it is the cache (Plan 5a) |
+| `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings. Only a succeeded row has an `output`. A new attempt for the same key updates the row, and a succeeded row is never overwritten: it is the cache (Plan 5a). `provider` is OpenTelemetry's `gen_ai.provider.name`, such as `aws.bedrock` (Plan 5b) |
 | `finding_events` | `id`, `org_id`, `finding_id`, `actor_id` (NULL for system events), `type` CHECK in (created, status_changed, assigned, commented, ai_explained), `payload` jsonb. Comments are at most 2,000 characters |
 | `audit_log` | `id`, `org_id` (no foreign key, so records outlive the entities they describe), `actor_user_id`, `actor_type` CHECK in (user, system, anonymous), `action`, `target_type`, `target_id`, `outcome` CHECK in (success, denied, error), `ip` inet, `user_agent` (at most 256 characters), `request_id`, `trace_id`, `details` jsonb |
 
@@ -306,8 +307,8 @@ A dedicated test runs a query with no org filter and must receive zero rows from
 |---|---|---|
 | `nettriage_owner` | Migrations (CI only) | Owns the schema; DDL |
 | `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations`. On findings it may UPDATE only `status`, `assignee_id` and `version`, and `finding_events` is insert-only (Plan 4c) |
-| `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`. No `audit_log` until the worker records an event worth auditing (Plan 4b) |
-| `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`, `detectors`, `ai_analyses`; INSERT/UPDATE `ai_analyses` (column grants: never `feedback`); INSERT `finding_techniques` and UPDATE of their `rationale`; INSERT `finding_events` without an actor. `audit_log` waits for an event the worker audits (Plan 5a) |
+| `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`; SELECT of a finding's `id`, `org_id`, `upload_id` and `severity`, to queue the most severe for AI triage (Plan 5b). No `audit_log` until the worker records an event worth auditing (Plan 4b) |
+| `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`, `detectors`, `ai_analyses`; INSERT/UPDATE `ai_analyses` (column grants: never `feedback`); INSERT `finding_techniques` and UPDATE of their `rationale`; INSERT `finding_events` without an actor; INSERT `audit_log`, for `budget.exhausted` (Plan 5b) |
 | `app_ops` | `ops` Lambda | `SELECT 1` health checks; retention through `SECURITY DEFINER` functions only (purge `audit_log` rows older than 180 days, expire invitations, expire stale pending uploads) |
 | `app_backup` | Nightly backup | Read-only with `BYPASSRLS` (needed for a complete dump); used only by the backup workflow |
 
@@ -325,7 +326,7 @@ The partition key is `pk` (string), and the TTL attribute is `expires_at`.
 | A user's sessions | `USERSESS#<user_id>` | String set of session hashes, used for "sign out everywhere" | 12 h after the last login |
 | Sign-in state | `LOGIN#<state>` | `code_verifier`, `nonce`, `return_to` | 15 min |
 | Rate-limit key | `RL#<policy>#<subject>` | `tat` (GCRA theoretical arrival time, ms) | 2 × the policy window |
-| Org AI budget | `BUDGET#<org_id>#<yyyy-mm-dd>` (UTC day) | `tokens_reserved` (open reservations plus settled usage, because a condition can't add two attributes), `tokens_used` (settled usage) | 2 days |
+| Org AI budget | `BUDGET#<org_id>#<yyyy-mm-dd>` (UTC day) | `tokens_reserved` (open reservations plus settled usage, because a condition can't add two attributes), `tokens_used` (settled usage), `refused_org` and `refused_global` (set by the day's first refusal, so `budget.exhausted` is audited once a day per org and budget; Plan 5b) | 2 days |
 | Global AI budget | `GBUDGET#<yyyy-mm-dd>` (UTC day) | `usd_reserved`, `usd_used`, counted the same way | 2 days |
 | Idempotency key | `IDEMP#<user_id>#<key>` | `request_hash`, `status`, `response` | 24 h |
 
@@ -490,7 +491,9 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Request limits:** JSON request bodies are at most 64 KB. Files never pass through the API.
 - **AWS Budgets:**
   - Alerts at $1 and $3, on both actual and forecast spend.
-  - At $5, a Budgets **action** attaches a deny policy for `bedrock:InvokeModel*` to the triage role.
+  - At $5, a Budgets **action** attaches a deny policy for `bedrock:InvokeModel*` to the triage role. It lives in the bootstrap next to the budget and finds the stages' triage roles by name; with none yet (a first bootstrap), it waits, so the owner re-runs the bootstrap after the stage's first deploy with a triage worker (Plan 5b).
+  - The budget counts usage before credits: with credits included, the Free plan's usage nets to $0 and no alert or action would fire (Plan 5b).
+  - Budgets refreshes up to three times a day, so the action lags spending by hours; the AI budgets in DynamoDB are the real-time limit (6.6).
   - Cost Anomaly Detection runs with lowered thresholds.
 - **Spend cap:** on the Free plan the account can't be charged (Revision 2, R5); the budget alerts above still report usage against the credits.
 - **No WAF on this account** (Revision 2, R3 and D8). The CloudFront flat-rate plan's WAF can't be attached here, so the edge session check and the app-level rate limits (6.5) are the protection.
@@ -550,7 +553,7 @@ A failed condition returns the item as it was, which tells whether the request i
 | `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
 | `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. Newest first, a page at a time |
-| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, latest AI analysis (Plan 5), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
+| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, the latest AI analysis as `ai_analysis` (null until there is one: status, provider, model, prompt and output schema versions, output, `error_code`, tokens, `cost_usd` and latency; Plan 5b), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
 | `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Body: `status`, `assignee_id` (`null` unassigns), or both; `If-Match`. Any status can change to any other, and the assignee must be an Owner, Admin or Analyst of the org (422 otherwise; the owner's decisions, Plan 4c). Each change is an event in the finding's history and an audit event |
 | `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | Body: `text`, 1 to 2,000 characters, line breaks allowed. A comment joins the history without changing the finding's version; the audit event never holds its text |
 | `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits |
@@ -630,9 +633,13 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Caching:** `input_hash = sha256(canonical JSON of the user content)`, with a unique key on (finding, model, prompt version, input hash).
 - **Call settings:**
   - Temperature 0.1, `max_tokens` 700, timeout 20 seconds.
-  - On throttling and 5xx errors, up to 3 retries with exponential backoff and full jitter.
+  - On throttling and 5xx errors, up to 3 retries with exponential backoff and full jitter (botocore's standard mode; Plan 5b).
+- **Bedrock** (Plan 5b): the Converse API with `outputConfig.textFormat` set to the output schema. Bedrock enforces only part of JSON Schema (no string lengths, patterns or array maximums), so it gets the schema without those keywords and the Pydantic checks stay the gate. gpt-oss's reasoning is set to `low`, because it counts toward `max_tokens`. Bedrock's errors are stored as codes: `provider_throttled`, `provider_timeout` and `provider_unavailable` pass, so SQS delivers the finding again until its last delivery; `provider_denied` (the $5 action, or a missing permission) and `provider_rejected` don't.
 - **Cost:** computed from a per-model price table in config and stored per analysis.
-- **Model candidates:** gpt-oss-20b, Ministral 3 8B and Claude Haiku 4.5 (quality baseline), all through Bedrock structured outputs. The exact Bedrock model IDs are taken from the Bedrock console/API at implementation time.
+- **Model candidates:** gpt-oss-20b, Ministral 3 8B and Claude Haiku 4.5 (quality baseline), all through Bedrock structured outputs. As checked in Plan 5b (2026-10-01):
+  - gpt-oss-20b (`openai.gpt-oss-20b-1:0`) runs on demand in eu-north-1, us-east-1 and us-west-2, at $0.07 / $0.30 per million input / output tokens in eu-north-1. It runs live from Plan 5b.
+  - Ministral 3 8B (`mistral.ministral-3-8b-instruct`) runs on demand on Converse only in us-east-1 and us-west-2 ($0.15 / $0.15).
+  - Claude Haiku 4.5 has no on-demand model ID for Converse in any Region, only cross-Region inference profiles, which the account can't use (Revision 2, R4): it can't be a candidate. Plan 5c picks the quality baseline.
 - **Selection:** the eval suite runs on every candidate, and the default is the cheapest model that meets all gates (8.5).
 
 ### 8.4 Prompt-injection posture and output handling
@@ -668,7 +675,8 @@ A failed condition returns the item as it was, which tells whether the request i
 | A size, row, line or decompression limit is hit | Processing stops early; `failed: limit_exceeded` |
 | Worker crash or timeout | SQS retries 3 times, then the message goes to the DLQ and an alarm fires; reprocessing is idempotent. An error on the third delivery also marks the upload `failed` ("NetTriage couldn't analyze this file after three tries. Upload it again later."); an upload a crash or timeout left `processing` is failed by the daily `ops` job (the owner's decision, Plan 4b) |
 | Neon asleep or briefly unavailable | Two retries, after 1 and 3 seconds; then SQS delivers the message again after its visibility timeout (Plan 4b) |
-| Bedrock throttled or down | Backoff and retries, then `failed`, shown as "AI unavailable" with a retry button |
+| Bedrock throttled or down | Backoff and retries; then SQS delivers the finding again, and the last delivery stores `failed`, shown as "AI unavailable" with a retry button (Plan 5b) |
+| AI switched off (`ai_enabled` kill switch) | No call: `skipped_budget` with `error_code` `ai_disabled`. A cached answer is still served (Plan 5b) |
 | AI budget exhausted | `skipped_budget`, shown as "AI paused until tomorrow"; detection is unaffected |
 | Invalid AI output | One repair attempt, then `invalid_output`; counted in metrics |
 | Duplicate event delivery | Ignored through state checks and unique keys |
@@ -684,7 +692,7 @@ A failed condition returns the item as it was, which tells whether the request i
   - The collector's decouple processor forwards to Grafana Cloud after the response, so export adds no user-facing latency.
   - Fallback: `force_flush` at the end of each invocation (see 13.2).
 - **Auto-instrumentation:** FastAPI, psycopg and botocore.
-- **Manual spans:** `analyze.upload` (the worker's span for one file, linked to the upload request's trace; Plan 4b), `analyze.parse`, `analyze.detect` and `triage.generate`.
+- **Manual spans:** `analyze.upload` (the worker's span for one file, linked to the upload request's trace; Plan 4b), `analyze.parse`, `analyze.detect`, `triage.explain` (the triage worker's span for one finding, linked to the `analyze.upload` that queued it; Plan 5b) and `triage.generate`.
   - `triage.generate` carries GenAI attributes: `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` and `gen_ai.response.finish_reasons`.
   - `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` is set, and library versions are pinned.
 - **Propagation across async hops:** W3C `traceparent` travels in S3 object metadata (`x-amz-meta-traceparent`, a signed header in the presigned PUT) and in SQS message attributes. Worker spans link to the originating trace.
@@ -749,7 +757,7 @@ CI adds a deploy annotation for every deploy.
 
 ### 9.7 Operations
 
-- **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM (`/nettriage/<stage>/kill/<name>`, `true` or anything else) and are re-read every 60 seconds. A switch that can't be read keeps its last value, and counts as off until it has been read once (Plan 4a). Terraform only creates them, so a deploy never turns a paused switch back on.
+- **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM (`/nettriage/<stage>/kill/ai-enabled` and `…/uploads-enabled`, `true` or anything else) and are re-read every 60 seconds. The owner flips them with `just pause-ai` / `just resume-ai` and `just pause-uploads` / `just resume-uploads`. A switch that can't be read keeps its last value, and counts as off until it has been read once (Plan 4a). Terraform only creates them, so a deploy never turns a paused switch back on.
 - **Maintenance:** the `ops` Lambda runs daily. It expires `pending_upload` rows older than 1 hour and invitations past their date, fails uploads left `processing` for more than 2 hours (a crash or timeout on the last delivery; Plan 4b), and purges audit rows older than 180 days.
 - **Backups:**
   - A nightly `pg_dump -Fc` to S3, kept for 7 days. Plan 7 decides the runner: the `ops` Lambda, or an owner-run command if packaging `pg_dump` for Lambda proves impractical (Revision 2, D7).
@@ -1009,7 +1017,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 |---|---|
 | The Lambda Web Adapter and OpenTelemetry collector layers, and the python3.14 runtime, in eu-north-1 (checked by `just preflight`) | `python3.13`; `force_flush` instead of the collector layer |
 | Terraform using the owner's `aws login` session through a `credential_process` helper profile (the default in `tools/deploy/`) | Export the session as environment variables for each command, keeping each run under the credentials' 15-minute lifetime |
-| Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Drop unavailable candidates; run Claude only in manual comparisons |
+| Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Checked in Plan 5b (8.3): gpt-oss-20b runs on demand in Stockholm; Ministral 3 8B only in the US Regions; Claude Haiku 4.5 is dropped (cross-Region profiles only). `just preflight` checks the live model before each deploy: it fails unless the model is offered on demand, and warns once Bedrock marks it legacy |
 | Neon Terraform provider reliability | Create the projects by hand and document it (taken in Plan 3a: the provider isn't code-signed and the owner's machine blocks unsigned executables; see ADR 0002) |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |
 | Current Lambda Function URL + OAC permission requirements (resource-policy actions, body-hash header) | Follow AWS's current docs; if needed, API Gateway HTTP API ($1 per million requests) |
@@ -1027,7 +1035,7 @@ The step-by-step version is `docs/runbooks/setup-and-deploy.md`.
 - [ ] Stay on the Free plan until Milestone 1 is done; don't upgrade and don't activate advanced features (both are irreversible and forfeit the credits). Decide before 2027-03-08 whether to upgrade or wind down.
 - [ ] Use no long-lived access keys; sign in to the CLI with `aws login`.
 - [ ] Create the budgets and alerts (6.7) with the bootstrap before deploying anything.
-- [ ] Bedrock: confirm access to the candidate models in their chosen Regions, and submit Anthropic's use-case form to test Claude.
+- [ ] Bedrock: confirm gpt-oss-20b answers in the Stockholm playground (Plan 5b). AWS enables models on first use, and no Anthropic form is needed, because Claude can't be used on this account (8.3).
 - [ ] Create a Grafana Cloud free stack and a Neon account (projects in aws-eu-central-1, per 13.2). Store the Grafana OTLP token in SSM.
 - [ ] Install Docker Desktop (from Plan 3), Node LTS + pnpm, uv, the AWS CLI (v2.32 or later), Terraform, `just` and `gh`.
 - [ ] Create the public GitHub repository (Apache-2.0) and the `protect-main` ruleset. No deployment environments are needed.

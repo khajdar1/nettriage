@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -81,6 +82,27 @@ class FindingEvent:
 
 
 @dataclass(frozen=True)
+class AiAnalysis:
+    """The finding's latest AI analysis (spec §7): what the model said, when it succeeded, or
+    why there's no explanation (`error_code`), and what it cost."""
+
+    id: UUID
+    status: str
+    provider: str
+    model_id: str
+    prompt_version: str
+    output_schema_version: str
+    output: dict[str, Any] | None
+    error_code: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: Decimal | None
+    latency_ms: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
 class FindingDetail:
     finding: FindingSummary
     metrics: dict[str, Any]
@@ -88,6 +110,7 @@ class FindingDetail:
     techniques: list[FindingTechnique]
     events: list[FindingEvent]
     events_total: int
+    ai_analysis: AiAnalysis | None
 
 
 @dataclass(frozen=True)
@@ -158,7 +181,21 @@ def read_finding(connection: Connection, org_id: UUID, finding_id: UUID) -> Find
         techniques=_techniques(connection, finding_id),
         events=_events(connection, finding_id),
         events_total=_event_count(connection, finding_id),
+        ai_analysis=_latest_analysis(connection, finding_id),
     )
+
+
+def _latest_analysis(connection: Connection, finding_id: UUID) -> AiAnalysis | None:
+    row = connection.execute(
+        text(
+            "SELECT id, status, provider, model_id, prompt_version, output_schema_version, "
+            "output, error_code, input_tokens, output_tokens, cost_usd, latency_ms, created_at, "
+            "updated_at FROM ai_analyses WHERE finding_id = :id "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1"
+        ),
+        {"id": finding_id},
+    ).one_or_none()
+    return None if row is None else AiAnalysis(**row._mapping)
 
 
 def _evidence(connection: Connection, finding_id: UUID) -> list[Evidence]:

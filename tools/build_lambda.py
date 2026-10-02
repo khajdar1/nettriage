@@ -24,6 +24,8 @@ REQUIRED = (
     "collector.yaml",
     "nettriage/entrypoints/api/main.py",
     "nettriage/entrypoints/analyze/handler.py",
+    "nettriage/entrypoints/triage/handler.py",
+    "nettriage/prompts/triage/v1.md",
 )
 ALLOWED_WHEEL_TAG = re.compile(
     r"^Tag: \S+-\S+-(any|(manylinux|musllinux)\S*_aarch64|linux_aarch64)$"

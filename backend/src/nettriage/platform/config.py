@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     # The uploads bucket, and the SSM parameter that switches uploads on and off (spec §9.7).
     uploads_bucket: str = ""
     uploads_enabled_parameter: str = ""
+    # The triage worker (Plan 5b): the AI kill switch's SSM parameter, and the model it calls,
+    # on demand in the model's own Region (spec §8.3, §9.7).
+    ai_enabled_parameter: str = ""
+    bedrock_region: str = "eu-north-1"
+    bedrock_model_id: str = ""
+    # Where the analyze worker queues findings for an AI explanation (spec §4.2).
+    triage_queue_url: str = ""
 
     @property
     def running_in_lambda(self) -> bool:

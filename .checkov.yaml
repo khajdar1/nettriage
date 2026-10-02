@@ -9,7 +9,7 @@ skip-check:
   - CKV_AWS_21     # S3 versioning: the web bucket is rebuilt from Git on every deploy; raw uploads are never changed and are deleted after 30 days (spec §5.7)
   - CKV_AWS_300    # S3 abort-multipart rule on the web bucket: the owner's deploy uploads small files only
   - CKV_AWS_115    # Lambda reserved concurrency: new accounts may have too low a quota (spec §13.2)
-  - CKV_AWS_116    # Lambda DLQ: the API is synchronous, and the analyze worker is fed by SQS, whose redrive policy is its DLQ (spec §8.6)
+  - CKV_AWS_116    # Lambda DLQ: the API is synchronous, and the analyze and triage workers are fed by SQS, whose redrive policies are their DLQs (spec §8.6)
   - CKV_AWS_117    # Lambda in a VPC: no VPC by design (ADR 0009)
   - CKV_AWS_173    # Lambda env var CMK encryption: AWS-managed encryption; CMKs cost money
   - CKV_AWS_272    # Lambda code signing: planned hardening (Milestone 5)

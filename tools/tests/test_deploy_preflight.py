@@ -8,6 +8,15 @@ from tools.deploy.runner import CommandError
 from tools.tests.deploy_fakes import FakeRun, ssm_names
 
 LWA = "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30"
+MODEL = json.dumps(
+    {
+        "modelDetails": {
+            "modelId": "openai.gpt-oss-20b-1:0",
+            "inferenceTypesSupported": ["ON_DEMAND"],
+            "modelLifecycle": {"status": "ACTIVE"},
+        }
+    }
+)
 
 
 def test_tfvars_are_read(tmp_path: Path) -> None:
@@ -113,19 +122,26 @@ def test_tfvars_values_with_inline_comments_are_read(tmp_path: Path) -> None:
 
 
 def test_stage_checks_names_and_order() -> None:
-    run = FakeRun().on(
-        "aws", "lambda", "get-layer-version-by-arn", returns='{"CompatibleArchitectures": ["arm64"]}'
-    ).on("aws", "ssm", "describe-parameters", returns=ssm_names()).on("aws")
+    run = (
+        FakeRun()
+        .on("aws", "lambda", "get-layer-version-by-arn", returns='{"CompatibleArchitectures": ["arm64"]}')
+        .on("aws", "bedrock", "get-foundation-model", returns=MODEL)
+        .on("aws", "ssm", "describe-parameters", returns=ssm_names())
+        .on("aws")
+    )
     tfvars = {
         "lwa_layer_arn": "arn:aws:lambda:eu-north-1:753240598075:layer:LambdaAdapterLayerArm64:30",
         "otel_collector_layer_arn": "arn:aws:lambda:eu-north-1:753240598075:layer:OtelLayerArm64:1",
         "grafana_otlp_endpoint": "https://otlp-gateway.grafana.net/otlp",
+        "bedrock_region": "eu-north-1",
+        "bedrock_model_id": "openai.gpt-oss-20b-1:0",
     }
     checks = preflight.stage_checks(run, {}, "dev", "123456789012", tfvars)
     assert [check.name for check in checks] == [
         "Terraform state bucket", "Grafana token in SSM", "Database connection in SSM",
         "Grafana OTLP endpoint in terraform.tfvars",
         "Lambda Web Adapter layer", "OpenTelemetry collector layer",
+        "Triage model on Bedrock",
     ]
     assert all(check.ok for check in checks)
 
@@ -147,3 +163,72 @@ def test_a_missing_database_connection_says_how_to_store_it() -> None:
 
     assert not checks["Database connection in SSM"].ok
     assert checks["Database connection in SSM"].detail == "missing; run: just store-database-url dev"
+
+
+def test_the_triage_model_runs_on_demand_in_its_region() -> None:
+    run = FakeRun().on("aws", "bedrock", "get-foundation-model", returns=MODEL)
+
+    check = preflight.model_check(run, {}, "eu-north-1", "openai.gpt-oss-20b-1:0")
+
+    assert check.ok
+    [call] = run.called("aws", "bedrock", "get-foundation-model")
+    assert call.args[call.args.index("--model-identifier") + 1] == "openai.gpt-oss-20b-1:0"
+    assert call.args[call.args.index("--region") + 1] == "eu-north-1"
+
+
+def test_an_answer_that_isnt_json_fails() -> None:
+    run = FakeRun().on("aws", "bedrock", "get-foundation-model", returns="")
+
+    assert not preflight.model_check(run, {}, "eu-north-1", "openai.gpt-oss-20b-1:0").ok
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"inferenceTypesSupported": ["PROVISIONED"], "modelLifecycle": {"status": "ACTIVE"}},
+        {"inferenceTypesSupported": ["INFERENCE_PROFILE"], "modelLifecycle": {"status": "ACTIVE"}},
+        {"inferenceTypesSupported": ["ON_DEMAND"], "modelLifecycle": {"status": "RETIRED"}},
+    ],
+)
+def test_a_model_that_isnt_on_demand_and_active_fails(details: dict[str, object]) -> None:
+    run = FakeRun().on(
+        "aws", "bedrock", "get-foundation-model", returns=json.dumps({"modelDetails": details})
+    )
+
+    assert not preflight.model_check(run, {}, "eu-north-1", "openai.gpt-oss-20b-1:0").ok
+
+
+def test_a_legacy_model_still_passes_with_a_warning() -> None:
+    """Bedrock keeps a legacy model invokable for at least six months: an unrelated deploy must
+    not wait for the switch to another model."""
+    details = {"inferenceTypesSupported": ["ON_DEMAND"], "modelLifecycle": {"status": "LEGACY"}}
+    run = FakeRun().on(
+        "aws", "bedrock", "get-foundation-model", returns=json.dumps({"modelDetails": details})
+    )
+
+    check = preflight.model_check(run, {}, "eu-north-1", "openai.gpt-oss-20b-1:0")
+
+    assert check.ok
+    assert "LEGACY" in check.detail
+    assert "plan a switch" in check.detail
+
+
+def test_a_model_bedrock_doesnt_offer_there_fails_with_a_hint() -> None:
+    run = FakeRun().on(
+        "aws", "bedrock", "get-foundation-model", returns=CommandError("ResourceNotFoundException")
+    )
+
+    check = preflight.model_check(run, {}, "eu-north-1", "mistral.ministral-3-8b-instruct")
+
+    assert not check.ok
+    assert "terraform.tfvars" in check.detail
+
+
+@pytest.mark.parametrize(("region", "model"), [("eu-west-1", "x"), ("eu-north-1", "")])
+def test_a_region_the_account_cant_call_or_no_model_fails_without_calling_aws(
+    region: str, model: str
+) -> None:
+    run = FakeRun()
+
+    assert not preflight.model_check(run, {}, region, model).ok
+    assert run.called("aws") == []

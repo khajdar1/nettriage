@@ -5,6 +5,7 @@ locals {
   oidc_secret_parameter          = "/nettriage/dev/api/oidc-client-secret"
   database_url_parameter         = "/nettriage/dev/db/app-api-url"
   analyze_database_url_parameter = "/nettriage/dev/db/app-analyze-url"
+  triage_database_url_parameter  = "/nettriage/dev/db/app-triage-url"
 }
 
 module "data" {
@@ -22,6 +23,12 @@ module "pipeline" {
   grafana_otlp_endpoint    = var.grafana_otlp_endpoint
   grafana_otlp_auth        = var.grafana_otlp_auth
   database_url_parameter   = local.analyze_database_url_parameter
+
+  triage_database_url_parameter = local.triage_database_url_parameter
+  bedrock_region                = var.bedrock_region
+  bedrock_model_id              = var.bedrock_model_id
+  runtime_table_name            = module.data.table_name
+  runtime_table_arn             = module.data.table_arn
 }
 
 module "app" {

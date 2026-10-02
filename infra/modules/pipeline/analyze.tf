@@ -111,6 +111,7 @@ resource "aws_lambda_function" "analyze" {
       NETTRIAGE_SERVICE_NAME             = "nettriage-analyze"
       NETTRIAGE_DATABASE_URL_PARAMETER   = var.database_url_parameter
       NETTRIAGE_UPLOADS_BUCKET           = aws_s3_bucket.uploads.bucket
+      NETTRIAGE_TRIAGE_QUEUE_URL         = aws_sqs_queue.triage.id
     }
   }
 
@@ -120,6 +121,7 @@ resource "aws_lambda_function" "analyze" {
     aws_iam_role_policy.analyze_uploads,
     aws_iam_role_policy.analyze_queue,
     aws_iam_role_policy.analyze_parameters,
+    aws_iam_role_policy.analyze_triage_queue,
   ]
 }
 

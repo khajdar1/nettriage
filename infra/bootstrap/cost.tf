@@ -5,6 +5,12 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
+  # Count usage before credits: on the Free plan the credits would net it to $0, and no alert
+  # or action would ever fire (spec §6.7, Plan 5b).
+  cost_types {
+    include_credit = false
+  }
+
   notification {
     comparison_operator        = "GREATER_THAN"
     threshold                  = 1

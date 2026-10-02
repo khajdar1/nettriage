@@ -126,3 +126,28 @@ def test_a_budget_that_can_not_be_read_fails_closed(
 
     with pytest.raises(BudgetUnavailable):
         budget.reserve(uuid4(), 1_000, Decimal("0.001"))
+
+
+def test_a_refusal_is_noted_once_a_day_per_org_and_scope(
+    budget: AiBudget, clock: FakeClock
+) -> None:
+    org, other = uuid4(), uuid4()
+
+    firsts = [
+        budget.first_refusal(org, "org"),
+        budget.first_refusal(org, "org"),
+        budget.first_refusal(org, "global"),
+        budget.first_refusal(other, "org"),
+    ]
+    clock.advance(timedelta(days=1))
+
+    assert firsts == [True, False, True, True]
+    assert budget.first_refusal(org, "org") is True
+
+
+def test_a_refusal_that_can_not_be_noted_counts_as_noted(
+    runtime_table: RuntimeTable, clock: FakeClock
+) -> None:
+    blind = AiBudget(runtime_table.client, "no-such-table", clock)
+
+    assert blind.first_refusal(uuid4(), "org") is False

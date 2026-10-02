@@ -1,5 +1,6 @@
 """Building the analyze worker in Lambda, once per cold start (spec §6.8): its database URL
-comes from SSM, and its telemetry goes to the providers the handler set up (spec §9.1)."""
+comes from SSM, findings to explain go to the triage queue, and its telemetry goes to the
+providers the handler set up (spec §9.1)."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from opentelemetry.sdk.trace import TracerProvider
 
 from nettriage.adapters.parameters import AWS_CONFIG, read_parameters
 from nettriage.adapters.postgres import create_database_engine
+from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_objects import UploadObjects
 from nettriage.application.clock import system_clock
 from nettriage.entrypoints.analyze.worker import Worker
@@ -35,6 +37,7 @@ def build_worker(
     return Worker(
         database=create_database_engine(values[settings.database_url_parameter], pool_size=1),
         objects=UploadObjects(session.client("s3", config=AWS_CONFIG), settings.uploads_bucket),
+        triage=TriageQueue(session.client("sqs", config=AWS_CONFIG), settings.triage_queue_url),
         clock=system_clock,
         metrics=AnalyzeMetrics(meter_provider),
         tracer=tracer_provider.get_tracer("nettriage.analyze"),

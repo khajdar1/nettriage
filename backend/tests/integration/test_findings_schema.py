@@ -126,10 +126,27 @@ def test_the_worker_can_move_an_upload_on_in_its_org(database: Database) -> None
     assert moved == 1
 
 
+def test_the_worker_can_rank_the_findings_of_its_org(database: Database) -> None:
+    mine, theirs = add_tenant(database.admin), add_tenant(database.admin)
+
+    with tenant_transaction(database.app_analyze, org_id=mine.org_id) as connection:
+        seen = connection.execute(
+            text("SELECT id, org_id, upload_id, severity FROM findings")
+        ).all()
+
+    assert [(row.id, row.org_id, row.upload_id) for row in seen] == [
+        (mine.finding_id, mine.org_id, mine.upload_id)
+    ]
+    assert theirs.finding_id not in {row.id for row in seen}
+
+
 @pytest.mark.parametrize(
     "statement",
     [
         "SELECT * FROM findings",
+        "SELECT title FROM findings",
+        "SELECT metrics FROM findings",
+        "SELECT * FROM finding_evidence",
         "SELECT * FROM memberships",
         "SELECT * FROM users",
         "SELECT * FROM invitations",

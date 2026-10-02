@@ -8,7 +8,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.deploy.config import REGION, db_owner_url_parameter, otlp_auth_parameter, state_bucket
+from tools.deploy.config import (
+    BEDROCK_REGIONS,
+    REGION,
+    db_owner_url_parameter,
+    otlp_auth_parameter,
+    state_bucket,
+)
 from tools.deploy.runner import CommandError, Runner
 
 TFVAR = re.compile(r'^\s*(\w+)\s*=\s*"([^"]*)"\s*(?:(?:#|//).*)?$', re.MULTILINE)
@@ -70,6 +76,30 @@ def layer_check(run: Runner, env: Mapping[str, str], name: str, arn: str) -> Che
     return Check(name, "arm64" in architectures, f"architectures: {', '.join(architectures)}")
 
 
+def model_check(run: Runner, env: Mapping[str, str], region: str, model_id: str) -> Check:
+    """The triage model must run on demand in its Region: the account can't use cross-Region
+    inference profiles (spec Revision 2, R4)."""
+    name = "Triage model on Bedrock"
+    if region not in BEDROCK_REGIONS or not model_id:
+        return Check(name, False, f"set bedrock_region (one of {', '.join(BEDROCK_REGIONS)}) and bedrock_model_id in terraform.tfvars")
+    try:
+        details = json.loads(
+            run(["aws", "bedrock", "get-foundation-model", "--model-identifier", model_id, "--region", region], env=env).stdout
+        ).get("modelDetails", {})
+    except CommandError as exc:
+        return Check(name, False, f"{model_id} isn't offered in {region}; fix bedrock_model_id or bedrock_region in terraform.tfvars ({exc})")
+    except ValueError:
+        return Check(name, False, "Bedrock's answer wasn't JSON; run the preflight again")
+    on_demand = "ON_DEMAND" in details.get("inferenceTypesSupported", [])
+    status = details.get("modelLifecycle", {}).get("status")
+    # A legacy model stays invokable for at least six months: warn, but let deploys through.
+    if not on_demand or status not in ("ACTIVE", "LEGACY"):
+        return Check(name, False, f"{model_id} in {region} isn't active and on demand; pick another model")
+    if status == "LEGACY":
+        return Check(name, True, f"{model_id} in {region} (LEGACY: Bedrock will retire it; plan a switch)")
+    return Check(name, True, f"{model_id} in {region}")
+
+
 def parameter_check(run: Runner, env: Mapping[str, str], stage: str) -> Check:
     return ssm_parameter_check(
         run, env, "Grafana token in SSM", otlp_auth_parameter(stage),
@@ -114,6 +144,7 @@ def stage_checks(
         endpoint_check(tfvars),
         layer_check(run, env, "Lambda Web Adapter layer", tfvars.get("lwa_layer_arn", "")),
         layer_check(run, env, "OpenTelemetry collector layer", tfvars.get("otel_collector_layer_arn", "")),
+        model_check(run, env, tfvars.get("bedrock_region", ""), tfvars.get("bedrock_model_id", "")),
     ]
 
 

@@ -17,6 +17,8 @@ _MILLION = Decimal(1_000_000)
 _MICRO_USD = Decimal("0.000001")
 # What `ai_analyses.error_code` can hold (its CHECK, migration 0008).
 _CODE = re.compile(r"[a-z][a-z_]{0,49}")
+# Failures that can pass: the worker lets SQS deliver the finding again before storing `failed`.
+TRANSIENT_CODES = frozenset({"provider_throttled", "provider_timeout", "provider_unavailable"})
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,11 @@ class ProviderError(Exception):
         self.code = code if _CODE.fullmatch(code) else "provider_error"
         super().__init__(self.code)
 
+    @property
+    def transient(self) -> bool:
+        """Throttled, timed out or unavailable: worth trying again later."""
+        return self.code in TRANSIENT_CODES
+
 
 class LlmProvider(Protocol):
     name: str
@@ -69,9 +76,11 @@ class Price:
     output_per_million: Decimal
 
 
-# Per-model prices (spec §8.3). Plan 5b adds the Bedrock models it can call.
+# Per-model prices (spec §8.3): on-demand, in the Region the model is called in.
 PRICES: dict[str, Price] = {
     "fake-triage": Price(Decimal("1.00"), Decimal("4.00")),
+    # OpenAI gpt-oss-20b on Bedrock in eu-north-1 (AWS's price list, 2026-10-01).
+    "openai.gpt-oss-20b-1:0": Price(Decimal("0.07"), Decimal("0.30")),
 }
 
 

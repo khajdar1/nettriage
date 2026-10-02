@@ -61,18 +61,45 @@ The first output line is `AWS account …, region eu-north-1`, then the account 
 (`PASS  Lambda in eu-north-1`, `PASS  IAM`, …). If any line says `FAIL`, the command stops with
 `STOP: Preflight failed; nothing was created.`; send the output to Claude. Terraform then shows
 the plan: the state bucket
-`nettriage-tfstate-<account>` with its settings, the `nettriage-monthly` budget and, optionally,
-the anomaly subscription. Type `yes`. If the command stops partway, it keeps the partial state in
+`nettriage-tfstate-<account>` with its settings, the `nettriage-monthly` budget, the
+`nettriage-deny-bedrock` policy and, optionally, the anomaly subscription. Type `yes`. The $5
+Bedrock cutoff itself waits for A8, because it needs a stage's triage worker. If the command stops partway, it keeps the partial state in
 `infra/bootstrap/terraform.tfstate.recovered`; keep that file (see Part C). It ends with
 `Bootstrap state is now in s3://nettriage-tfstate-<account>/bootstrap/terraform.tfstate`.
 Confirm the AWS Budgets email if one arrives.
+
+### A8. Turn on the $5 Bedrock cutoff (once, after Plan 5b's deploy)
+Plan 5b adds two things to the bootstrap (spec §6.7):
+- the monthly budget counts usage before credits. With credits counted, the Free plan's usage nets
+  to $0, so no alert would ever fire;
+- at $5 of usage in a month, a Budgets action denies Bedrock to the stages' triage workers. The
+  bootstrap finds their roles by name (`nettriage-<stage>-triage`) and creates the action only
+  when one exists, so run this after B2 has deployed Plan 5b.
+
+1. `aws login --profile nettriage` (skip this if you're signed in).
+2. On `main`, run the bootstrap again with the same email, and the anomaly monitor ARN if you used
+   one in A4:
+   ```bash
+   just bootstrap you@example.com
+   ```
+3. Terraform shows the plan. Expect `Plan: 4 to add, 1 to change, 0 to destroy`: the
+   `nettriage-deny-bedrock` policy, the `nettriage-budget-action` role and its policy, the budget
+   action, and the budget's new credit setting. (On an account first bootstrapped after Plan 5b,
+   the policy and the credit setting exist already: `3 to add, 0 to change`.)
+   - If the plan says `1 to destroy` (the anomaly subscription), type `no`, then run step 2 again
+     with your anomaly monitor ARN (A4 shows how to find it).
+   - Otherwise type `yes`.
+4. In the AWS console, open **Billing and Cost Management → Budgets → nettriage-monthly**. The
+   **Actions** tab lists one action at $5.00 that applies the IAM policy `nettriage-deny-bedrock`,
+   with the status **Standby** (waiting for its threshold). Any other status means Budgets didn't
+   accept it: send Claude what it says.
 
 ### A5. Run the preflight
 ```bash
 just preflight
 ```
 Every line must say `PASS`, including the Terraform state bucket, the Grafana token in SSM, the
-database connection in SSM (after A7), the Grafana endpoint and both Lambda layers. If a layer line fails with "not found", its version
+database connection in SSM (after A7), the Grafana endpoint, both Lambda layers and the triage model on Bedrock. If a layer line fails with "not found", its version
 moved on. Ask Claude to update the ARN in `terraform.tfvars` from the layer's release notes.
 
 ### A7. Create the Neon database (once)
@@ -208,7 +235,7 @@ command:
 4. migrates the database and prints `Database migrated.`, then
    `Reference data synced: 3 detectors, 12 ATT&CK techniques.` When a function's database role
    is new, it also gives it a login and adds `New logins: <role>.` to the first line (Plan 4b
-   adds `app_analyze`);
+   added `app_analyze`, Plan 5b adds `app_triage`);
 5. shows the Terraform plan, and you type `yes`;
 6. publishes the site;
 7. runs the smoke tests.
@@ -500,6 +527,53 @@ change.
    first. `finding.commented` doesn't hold the comment's text.
 10. Delete the test org as in B7 step 10.
 
+### B9. Try an AI explanation
+Each analyzed upload's most severe findings (up to 20) go to the triage queue, and the `triage`
+worker explains them with gpt-oss-20b on Bedrock in Stockholm. The findings pages come in Plan 6;
+until then you read the explanation from the API.
+1. Do B7 steps 1 to 5: sign in, create the "Analysis Test" org, make and upload the port scan, and
+   wait until the upload says `analyzed`.
+2. Wait 30 seconds (the triage worker's first run starts cold), then read the finding:
+   ```js
+   const list = await api("GET", "/orgs/" + org.id + "/findings");
+   const finding = await api("GET", "/orgs/" + org.id + "/findings/" + list.findings[0].id);
+   finding.ai_analysis;
+   ```
+   Expect `status: "succeeded"`, `provider: "aws.bedrock"`, `model_id: "openai.gpt-oss-20b-1:0"`,
+   `prompt_version: "v1"`, the tokens and latency, and `cost_usd` below `"0.002"` (a fifth of a
+   cent).
+   - `null`: wait a minute and read it again. Still `null` after 5 minutes: see "An AI explanation
+     is missing" in Part C.
+   - `status` `"failed"` or `"skipped_budget"`: look up its `error_code` in the same section.
+3. Read what the model wrote:
+   ```js
+   finding.ai_analysis.output;
+   ```
+   It has a `summary`, `why_it_matters`, `likely_benign_explanations`, `recommended_next_steps`,
+   `attack_techniques`, a `severity_assessment`, a `confidence` and `insufficient_evidence`. It's
+   AI-generated: the checks only let it name `203.0.113.9`, `10.0.0.5` and the ports in the file.
+   Tell Claude how it reads, with its `output_tokens`: that helps Plan 5c's evals.
+4. Read the finding's history:
+   ```js
+   finding.events.map((event) => event.type);
+   ```
+   It ends with `ai_explained`. If the model named a technique, `finding.techniques` lists it with
+   `source: "ai"` and its rationale.
+5. In Grafana, open **Explore → Tempo** and run
+   `{ resource.service.name = "nettriage-triage" && resource.deployment.environment.name = "dev" }`.
+   There is a `triage.explain` trace with `triage.generate` inside it. `triage.generate` shows
+   `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` and
+   `gen_ai.response.finish_reasons`, and `triage.explain` links to the `analyze.upload` trace.
+6. Pause the AI and watch it skip:
+   1. `aws login --profile nettriage` (skip this if you're signed in), then `just pause-ai`.
+      Expected:
+      `AI explanations in dev are paused (/nettriage/dev/kill/ai-enabled = false). The triage worker picks this up within a minute.`
+   2. Wait a minute, repeat B7 steps 3 and 4 (a new upload in the same org), and wait 30 seconds.
+   3. Read the newest finding as in step 2: `ai_analysis` has `status: "skipped_budget"` and
+      `error_code: "ai_disabled"`.
+   4. `just resume-ai`. Expected: `AI explanations in dev are on (… = true). …`
+7. Delete the test org as in B7 step 10.
+
 ## Part C: when things go wrong
 
 ### Pause uploads in an emergency
@@ -511,6 +585,71 @@ Uploads have a kill switch in SSM (spec §9.7). Flipping it needs your AWS sessi
 
 Within a minute, new uploads get `503` ("Uploads are paused for now"); files already uploaded are
 kept. A deploy never switches uploads back on.
+
+### Pause AI explanations in an emergency
+AI explanations have a kill switch in SSM (spec §9.7). Flipping it needs your AWS session.
+1. `aws login --profile nettriage`
+2. Pause: `just pause-ai`. Expected:
+   `AI explanations in dev are paused (/nettriage/dev/kill/ai-enabled = false). The triage worker picks this up within a minute.`
+3. Resume later: `just resume-ai`. Expected: `AI explanations in dev are on (… = true). …`
+
+Within a minute, the triage worker stops calling Bedrock: new findings get `skipped_budget` with
+`error_code: "ai_disabled"`, and answers it already has are still shown. Uploads and analysis
+carry on. A deploy never switches the AI back on.
+
+### An AI explanation is missing
+When Bedrock is throttled, slow or down, the triage worker hands the finding back, and SQS
+delivers it again 24 minutes later, three times at most. The first call of a day can take
+minutes while Bedrock prepares the answer's schema, so a first try may time out. On the third
+delivery the worker stores the failure: the finding's `ai_analysis` has `status: "failed"` and
+an `error_code` (step 2), and the message is done.
+
+Anything else that goes wrong (the database stays down past its retries, or the worker crashes
+or times out) leaves `ai_analysis` at `null`. After three deliveries that message waits in
+`nettriage-dev-triage-dlq` for 14 days; once the cause is fixed, send it back with **Start DLQ
+redrive** on that queue, as for the analyze queue in "An upload isn't analyzed".
+1. In the AWS console, with the Region set to Europe (Stockholm), open **CloudWatch → Log groups
+   → /aws/lambda/nettriage-dev-triage**, and open the log stream from around the upload's time.
+   Look for `finding_explain_later` and `triage_failed` lines, and send Claude their
+   `error_code` (the logs never hold the finding's data, the prompt or the answer).
+2. A finding's `ai_analysis.error_code` says why it has no explanation:
+
+   | `error_code` | What it means |
+   |---|---|
+   | `ai_disabled` | The AI switch is off: `just resume-ai` |
+   | `budget_exhausted_org` | The org used its 100,000 tokens today; the budget resets at midnight UTC |
+   | `budget_exhausted_global` | All orgs together spent $0.50 today; the cap resets at midnight UTC |
+   | `budget_unavailable` | DynamoDB couldn't be read; send Claude the time |
+   | `provider_denied` | Bedrock refused the worker: the $5 budget action ran (next section), or the role lacks a permission. Send Claude the time |
+   | `provider_rejected` | Bedrock refused the request itself; send Claude the time |
+   | `provider_throttled`, `provider_timeout`, `provider_unavailable` | Bedrock failed three times in a row; Plan 5c adds a retry button. If every finding fails with `provider_throttled`, see "Bedrock refuses every call" below |
+   | `checks_failed` (with `status: "invalid_output"`) | The model's answer failed the checks twice, so nothing was added to the finding. Send Claude the finding's `id` |
+
+### Bedrock refuses every call: "Too many tokens per day"
+AWS starts new accounts with Bedrock limits that refuse every call. The playground then answers
+`ThrottlingException: Too many tokens per day, please wait before trying again.` on the first
+prompt, and every finding ends as `failed` with `provider_throttled`. Waiting doesn't help, and
+Service Quotas can't fix it: on 2026-10-02 the account-wide `Cross-Model Max Tokens Per Day` was
+150,000,000 in Stockholm, and gpt-oss-20b had no quota of its own listed. AWS Support has to
+lift the limits.
+1. Open the case form directly at
+   https://support.console.aws.amazon.com/support/home#/case/create?issueType=customer-service
+   (Account and billing; free on every support plan). Don't start from the Amazon Q chat: the
+   account's policies block its case summary (`support-console:GetIssueTextSummary`).
+2. Pick the closest category (for example, other account questions), and ask AWS to verify the
+   account and lift the initial Amazon Bedrock limits. Say which model and Region fail
+   (`openai.gpt-oss-20b-1:0`, on demand, eu-north-1), that the account-wide daily quota isn't
+   the limit, and the use: at most 2 calls at once of about 5,000 tokens each, with AI spend
+   capped at $0.50 a day.
+3. When AWS answers, send a short prompt in the Bedrock playground (Stockholm, gpt-oss-20b). A
+   reply means the limits are lifted; then run B9 again.
+
+### Bedrock was cut off at $5
+An email from AWS Budgets says the month's usage passed $5, and the `nettriage-deny-bedrock`
+policy is now attached to `nettriage-dev-triage`: new findings get `provider_denied`. Decide
+with Claude before undoing it, because something spent far more than the AI budgets allow. To
+undo it, open **IAM → Roles → nettriage-dev-triage → Permissions**, select
+`nettriage-deny-bedrock` and choose **Remove**.
 
 ### An upload isn't analyzed
 The worker gets each upload from the `nettriage-dev-analyze` queue. If it fails on one, SQS gives
@@ -548,9 +687,11 @@ passes, then run B2 again.
 | `STOP: That isn't a Postgres connection string …`, `STOP: The database must be a Neon project in AWS Europe Central 1 (Frankfurt) …` or `STOP: Use the direct connection string …` | Copy the string again as in A7 step 3, then rerun `just store-database-url dev` |
 | `STOP: Can't read /nettriage/dev/db/owner-url from SSM. …` | Run A7 |
 | `STOP: Database migrations failed; nothing was deployed. …` | Send the output to Claude. Nothing in AWS changed |
-| `STOP: Couldn't give the database role app_api a login …` (or `app_analyze`) | Check the stored string (A7), then send the output to Claude |
+| `STOP: Couldn't give the database role app_api a login …` (or `app_analyze`, `app_triage`) | Check the stored string (A7), then send the output to Claude |
 | `STOP: Syncing reference data failed; nothing in AWS changed. …` | The migrations ran, but the detectors and ATT&CK techniques weren't loaded. Send the output to Claude |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
+| `FAIL  Triage model on Bedrock` … `isn't offered in eu-north-1` or `isn't active and on demand` | Bedrock no longer offers the model there. Send the output to Claude, who picks another model with you |
+| `PASS  Triage model on Bedrock  … (LEGACY: Bedrock will retire it; plan a switch)` | The deploy goes on: Bedrock keeps a legacy model working for at least six months. Tell Claude, who plans the switch to another model with you |
 | `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |
 | `STOP: Deploys run from main …`, `… uncommitted changes …` or `… differs from GitHub's main …` | Follow the command in the message. `… uncommitted changes …` also applies to `just plan-dev` |

@@ -20,6 +20,8 @@ def make_package(
         "collector.yaml": b"receivers: {}\n",
         "nettriage/entrypoints/api/main.py": b"app = None\n",
         "nettriage/entrypoints/analyze/handler.py": b"def handle(event, context): pass\n",
+        "nettriage/entrypoints/triage/handler.py": b"def handle(event, context): pass\n",
+        "nettriage/prompts/triage/v1.md": b"You explain findings.\n",
         "fastapi-1.0.dist-info/WHEEL": f"Wheel-Version: 1.0\nTag: {wheel_tag}\n".encode(),
         **(extra or {}),
     }
@@ -150,3 +152,18 @@ def test_a_package_over_lambdas_unzipped_limit_is_rejected(tmp_path: Path) -> No
 
     with pytest.raises(PackageError, match="unzipped it is"):
         validate_zip(out, max_unzipped=10)
+
+
+@pytest.mark.parametrize(
+    "name", ["nettriage/entrypoints/triage/handler.py", "nettriage/prompts/triage/v1.md"]
+)
+def test_a_package_without_the_triage_worker_or_its_prompt_is_rejected(
+    tmp_path: Path, name: str
+) -> None:
+    package = make_package(tmp_path)
+    (package / name).unlink()
+    out = tmp_path / "backend.zip"
+    write_zip(package, out)
+
+    with pytest.raises(PackageError, match=f"missing {name}"):
+        validate_zip(out)

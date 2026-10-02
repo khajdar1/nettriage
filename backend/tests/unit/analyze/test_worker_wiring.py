@@ -1,5 +1,5 @@
-"""Building the analyze worker from SSM (spec §6.8): it gets the worker role's database URL and
-the uploads bucket, never a value in its environment."""
+"""Building the analyze worker from SSM (spec §6.8): it gets the worker role's database URL, the
+uploads bucket and the triage queue, never a value in its environment."""
 
 from collections.abc import Iterator
 
@@ -18,6 +18,7 @@ SETTINGS = Settings(
     service_name="nettriage-analyze",
     database_url_parameter="/nettriage/dev/db/app-analyze-url",
     uploads_bucket="nettriage-dev-uploads-12345678",
+    triage_queue_url="https://sqs.eu-north-1.amazonaws.com/123456789012/nettriage-dev-triage",
 )
 
 
@@ -39,6 +40,7 @@ def test_the_worker_is_built_from_its_own_database_url(session: boto3.session.Se
     assert worker.database.url.username == "app_analyze"
     assert worker.database.url.host == "ep-x-pooler.eu-central-1.aws.neon.tech"
     assert worker.database.pool.size() == 1  # type: ignore[attr-defined]
+    assert worker.triage.url.endswith("/nettriage-dev-triage")
     worker.flush()
 
 

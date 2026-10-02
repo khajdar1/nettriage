@@ -2,7 +2,7 @@
 filters, one finding with its evidence, techniques and history, and the techniques themselves
 with MITRE's notice."""
 
-from uuid import UUID
+from uuid import UUID, uuid7
 
 import pytest
 from browser import signed_in_as
@@ -204,3 +204,90 @@ def test_techniques_answer_503_while_the_database_is_down(
     assert response.json()["detail"] == (
         "The ATT&CK reference is unavailable right now; try again shortly."
     )
+
+
+def add_ai_analysis(
+    database: Database,
+    org_id: UUID,
+    finding_id: str,
+    *,
+    status: str,
+    at: str,
+    output: str | None = None,
+    error_code: str | None = None,
+) -> str:
+    """An analysis by gpt-oss-20b, last updated `at`."""
+    analysis_id = uuid7()
+    with database.admin.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO ai_analyses (id, org_id, finding_id, status, provider, model_id, "
+                "prompt_version, output_schema_version, input_hash, output, input_tokens, "
+                "output_tokens, cost_usd, latency_ms, error_code, created_at, updated_at) "
+                "VALUES (:id, :org, :finding, :status, 'aws.bedrock', 'openai.gpt-oss-20b-1:0', "
+                "'v1', 'v1', :hash, CAST(:output AS jsonb), 1800, 320, 0.000222, 1450, :error, "
+                ":at, :at)"
+            ),
+            {
+                "id": analysis_id,
+                "org": org_id,
+                "finding": finding_id,
+                "status": status,
+                "hash": analysis_id.hex * 2,
+                "output": output,
+                "error": error_code,
+                "at": at,
+            },
+        )
+    return str(analysis_id)
+
+
+def test_a_finding_without_an_ai_analysis_says_so(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    finding_id = add(database, org)
+
+    response = signed_in.get(f"/api/v1/orgs/{org[0]}/findings/{finding_id}")
+
+    assert response.json()["ai_analysis"] is None
+
+
+def test_a_finding_shows_its_latest_ai_analysis_with_what_it_said_and_cost(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    finding_id = add(database, org)
+    add_ai_analysis(
+        database,
+        org[0],
+        finding_id,
+        status="failed",
+        at="2026-09-28T09:00:00Z",
+        error_code="provider_throttled",
+    )
+    latest = add_ai_analysis(
+        database,
+        org[0],
+        finding_id,
+        status="succeeded",
+        at="2026-09-28T10:00:00Z",
+        output='{"summary": "A scan from outside."}',
+    )
+
+    response = signed_in.get(f"/api/v1/orgs/{org[0]}/findings/{finding_id}")
+
+    assert response.json()["ai_analysis"] == {
+        "id": latest,
+        "status": "succeeded",
+        "provider": "aws.bedrock",
+        "model_id": "openai.gpt-oss-20b-1:0",
+        "prompt_version": "v1",
+        "output_schema_version": "v1",
+        "output": {"summary": "A scan from outside."},
+        "error_code": None,
+        "input_tokens": 1800,
+        "output_tokens": 320,
+        "cost_usd": "0.000222",
+        "latency_ms": 1450,
+        "created_at": "2026-09-28T10:00:00Z",
+        "updated_at": "2026-09-28T10:00:00Z",
+    }
