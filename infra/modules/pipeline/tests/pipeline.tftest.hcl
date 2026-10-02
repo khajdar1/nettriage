@@ -347,6 +347,10 @@ run "the_triage_worker_is_told_its_model_switch_and_budgets" {
     condition     = output.ai_enabled_parameter == "/nettriage/dev/kill/ai-enabled"
     error_message = "The switch's name is an output, for the deploy's pause-ai and resume-ai."
   }
+  assert {
+    condition     = output.triage_queue_url == "https://sqs.eu-north-1.amazonaws.com/123456789012/nettriage-dev-triage" && output.triage_queue_arn == "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage"
+    error_message = "The triage queue is an output, so the API can queue re-runs (Plan 5c)."
+  }
 }
 
 run "the_triage_worker_may_call_only_its_model_and_touch_only_budgets" {

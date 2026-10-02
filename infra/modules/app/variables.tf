@@ -93,3 +93,17 @@ variable "uploads_enabled_parameter" {
   type        = string
   description = "Name of the SSM parameter that switches uploads on and off (spec §9.7)."
 }
+
+variable "triage_queue_url" {
+  type        = string
+  description = "The triage queue, where a re-run of a finding's AI explanation goes (Plan 5c)."
+}
+
+variable "triage_queue_arn" {
+  type = string
+}
+
+variable "bedrock_model_id" {
+  type        = string
+  description = "The triage worker's model: an answer by it, for the current prompt and input, is the current one."
+}

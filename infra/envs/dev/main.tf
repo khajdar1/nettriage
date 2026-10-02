@@ -48,6 +48,9 @@ module "app" {
   uploads_bucket            = module.pipeline.uploads_bucket
   uploads_bucket_arn        = module.pipeline.uploads_bucket_arn
   uploads_enabled_parameter = module.pipeline.uploads_enabled_parameter
+  triage_queue_url          = module.pipeline.triage_queue_url
+  triage_queue_arn          = module.pipeline.triage_queue_arn
+  bedrock_model_id          = var.bedrock_model_id
 }
 
 module "identity" {

@@ -97,6 +97,20 @@ resource "aws_iam_role_policy" "api_uploads" {
   })
 }
 
+# A re-run of a finding's AI explanation is a message to the triage worker (spec §7, Plan 5c).
+resource "aws_iam_role_policy" "api_triage_queue" {
+  name = "send-reruns-to-triage-queue"
+  role = aws_iam_role.api.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "sqs:SendMessage"
+      Resource = var.triage_queue_arn
+    }]
+  })
+}
+
 resource "aws_lambda_function" "api" {
   function_name    = local.name
   role             = aws_iam_role.api.arn
@@ -128,6 +142,8 @@ resource "aws_lambda_function" "api" {
       NETTRIAGE_DATABASE_URL_PARAMETER    = var.database_url_parameter
       NETTRIAGE_UPLOADS_BUCKET            = var.uploads_bucket
       NETTRIAGE_UPLOADS_ENABLED_PARAMETER = var.uploads_enabled_parameter
+      NETTRIAGE_TRIAGE_QUEUE_URL          = var.triage_queue_url
+      NETTRIAGE_BEDROCK_MODEL_ID          = var.bedrock_model_id
     }
   }
 
@@ -137,6 +153,7 @@ resource "aws_lambda_function" "api" {
     aws_iam_role_policy.api_runtime_table,
     aws_iam_role_policy.api_parameters,
     aws_iam_role_policy.api_uploads,
+    aws_iam_role_policy.api_triage_queue,
   ]
 }
 
