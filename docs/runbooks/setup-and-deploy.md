@@ -574,6 +574,37 @@ until then you read the explanation from the API.
    4. `just resume-ai`. Expected: `AI explanations in dev are on (… = true). …`
 7. Delete the test org as in B7 step 10.
 
+### B10. Try a re-run, a rating and the usage
+1. Do B7 steps 1 to 5 (sign in, create the "Analysis Test" org, upload the port scan, and wait
+   until it says `analyzed`), then read the finding as in B9 step 2:
+   ```js
+   const list = await api("GET", "/orgs/" + org.id + "/findings");
+   const f = "/orgs/" + org.id + "/findings/" + list.findings[0].id;
+   (await api("GET", f)).ai_analysis;
+   ```
+2. Ask for the explanation again:
+   ```js
+   await api("POST", f + "/ai-analyses");
+   ```
+   - If the analysis in step 1 had `status: "succeeded"`: `200` with `status: "explained"` and
+     the same answer. Nothing is spent.
+   - Otherwise (for example `failed` while AWS still limits Bedrock): `202` with
+     `status: "queued"`. Read the finding again after a minute: the triage worker has tried again.
+3. If it succeeded, rate it:
+   ```js
+   await api("PUT", f + "/ai-analyses/" + (await api("GET", f)).ai_analysis.id + "/feedback", { feedback: "up" });
+   ```
+   `200`, with `feedback: "up"` and your user ID in `feedback_by`. An analysis that didn't
+   succeed answers `409`.
+4. Read the org's AI usage:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/usage");
+   ```
+   `200`, with today in `days` (its `calls`, tokens and `cost_usd`) and the `totals`, once Bedrock
+   has answered at least once. Before that, `days` is empty and the totals are 0.
+5. Read the audit log as in B8 step 9: a queued re-run is an `ai.rerun_requested` event.
+6. Delete the test org as in B7 step 10.
+
 ## Part C: when things go wrong
 
 ### Pause uploads in an emergency
