@@ -168,9 +168,20 @@ def add_analysis(
     return analysis_id
 
 
+def add_usage(connection: Connection, org_id: UUID) -> None:
+    """Today's AI usage for the org: one call (spec §5.2, Plan 5c)."""
+    connection.execute(
+        text(
+            "INSERT INTO ai_usage (org_id, day, calls, input_tokens, output_tokens, cost_usd) "
+            "VALUES (:org, (now() AT TIME ZONE 'UTC')::date, 1, 1800, 320, 0.000222)"
+        ),
+        {"org": org_id},
+    )
+
+
 def add_tenant(admin: Engine) -> Tenant:
-    """An org with an owner, a pending invitation, and an analyzed upload with a finding that
-    has a succeeded AI analysis."""
+    """An org with an owner, a pending invitation, an analyzed upload with a finding that has a
+    succeeded AI analysis, and today's AI usage."""
     with admin.begin() as connection:
         owner = add_user(connection)
         org = add_org(connection, owner)
@@ -179,6 +190,7 @@ def add_tenant(admin: Engine) -> Tenant:
         upload = add_upload(connection, org, owner, "analyzed")
         finding = add_finding(connection, org, upload)
         analysis = add_analysis(connection, org, finding)
+        add_usage(connection, org)
     return Tenant(
         org_id=org,
         owner_id=owner,

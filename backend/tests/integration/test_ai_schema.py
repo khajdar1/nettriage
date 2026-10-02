@@ -1,6 +1,8 @@
 """AI analyses in Postgres (spec §5.2, §5.4): one row per finding, model, prompt and input, kept in
 its finding's org, and the triage worker's role with only the rights it needs."""
 
+from datetime import datetime
+from decimal import Decimal
 from uuid import UUID, uuid7
 
 import pytest
@@ -185,7 +187,8 @@ def test_the_worker_can_not_audit_into_another_org(database: Database) -> None:
         "UPDATE ai_analyses SET feedback = 'up'",
         "UPDATE ai_analyses SET finding_id = gen_random_uuid()",
         "DELETE FROM ai_analyses",
-        "DELETE FROM finding_techniques",
+        "UPDATE ai_usage SET org_id = gen_random_uuid()",
+        "DELETE FROM ai_usage",
         "INSERT INTO finding_events (id, org_id, finding_id, actor_id, type) "
         "SELECT gen_random_uuid(), org_id, finding_id, feedback_by, 'commented' FROM ai_analyses",
         "UPDATE detectors SET version = 99",
@@ -211,3 +214,105 @@ def test_the_worker_role_can_not_bypass_row_level_security(database: Database) -
     assert seen == {mine.org_id}
     assert theirs.org_id not in seen
     assert tuple(flags) == (False, False)
+
+
+COUNT_A_CALL = (
+    "INSERT INTO ai_usage (org_id, day, calls, input_tokens, output_tokens, cost_usd) "
+    "VALUES (:org, (now() AT TIME ZONE 'UTC')::date, 1, 100, 20, 0.000013) "
+    "ON CONFLICT (org_id, day) DO UPDATE SET calls = ai_usage.calls + EXCLUDED.calls, "
+    "input_tokens = ai_usage.input_tokens + EXCLUDED.input_tokens, "
+    "output_tokens = ai_usage.output_tokens + EXCLUDED.output_tokens, "
+    "cost_usd = ai_usage.cost_usd + EXCLUDED.cost_usd"
+)
+
+
+def test_the_worker_counts_every_call_per_org_and_day(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+
+    run_as_triage(database, tenant.org_id, COUNT_A_CALL, org=tenant.org_id)
+
+    with database.admin.connect() as connection:
+        counted = connection.execute(
+            text(
+                "SELECT calls, input_tokens, output_tokens, cost_usd FROM ai_usage "
+                "WHERE org_id = :org"
+            ),
+            {"org": tenant.org_id},
+        ).one()
+    assert tuple(counted) == (2, 1900, 340, Decimal("0.000235"))
+
+
+def test_the_worker_can_not_count_calls_for_another_org(database: Database) -> None:
+    mine, theirs = add_tenant(database.admin), add_tenant(database.admin)
+
+    with pytest.raises(ProgrammingError, match="row-level security"):
+        run_as_triage(database, mine.org_id, COUNT_A_CALL, org=theirs.org_id)
+
+
+def test_the_worker_may_take_back_only_the_ais_techniques(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+    with database.admin.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO finding_techniques (finding_id, technique_id, source, org_id, "
+                "rationale) VALUES (:finding, 'T1046', 'ai', :org, 'Many ports.')"
+            ),
+            {"finding": tenant.finding_id, "org": tenant.org_id},
+        )
+
+    removed = run_as_triage(
+        database,
+        tenant.org_id,
+        "DELETE FROM finding_techniques WHERE finding_id = :finding",
+        finding=tenant.finding_id,
+    )
+
+    with database.admin.connect() as connection:
+        left: set[str] = set(
+            connection.execute(
+                text("SELECT source FROM finding_techniques WHERE finding_id = :finding"),
+                {"finding": tenant.finding_id},
+            ).scalars()
+        )
+    assert (removed, left) == (1, {"detector"})
+
+
+def updated_at(database: Database, analysis_id: UUID) -> datetime:
+    with database.admin.connect() as connection:
+        found: datetime = connection.execute(
+            text("SELECT updated_at FROM ai_analyses WHERE id = :id"), {"id": analysis_id}
+        ).scalar_one()
+    return found
+
+
+def test_the_api_may_rate_an_analysis_without_making_it_newer(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+    before = updated_at(database, tenant.analysis_id)
+
+    with tenant_transaction(
+        database.app_api, org_id=tenant.org_id, user_id=tenant.owner_id
+    ) as connection:
+        rated = connection.execute(
+            text("UPDATE ai_analyses SET feedback = 'up', feedback_by = :user WHERE id = :id"),
+            {"user": tenant.owner_id, "id": tenant.analysis_id},
+        ).rowcount
+
+    assert rated == 1
+    assert updated_at(database, tenant.analysis_id) == before
+
+
+def test_a_retried_analysis_is_newer(database: Database) -> None:
+    tenant = add_tenant(database.admin)
+    with database.admin.begin() as connection:
+        failed = add_analysis(connection, tenant.org_id, tenant.finding_id, status="failed")
+    before = updated_at(database, failed)
+
+    run_as_triage(
+        database,
+        tenant.org_id,
+        "UPDATE ai_analyses SET error_code = 'provider_throttled' WHERE id = :id",
+        id=failed,
+    )
+
+    after = updated_at(database, failed)
+    assert after > before
