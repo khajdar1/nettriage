@@ -21,6 +21,7 @@ TABLES = {
     "finding_techniques",
     "finding_events",
     "ai_analyses",
+    "ai_usage",
 }
 
 

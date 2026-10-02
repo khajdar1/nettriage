@@ -10,6 +10,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from nettriage.application.rate_limits import header_values
 from nettriage.entrypoints.api.access import RedirectInstead
 from nettriage.entrypoints.api.routes import (
+    ai,
     attack_techniques,
     auth,
     findings,
@@ -20,6 +21,7 @@ from nettriage.entrypoints.api.routes import (
     orgs,
     triage,
     uploads,
+    usage,
 )
 from nettriage.entrypoints.api.services import Services
 from nettriage.platform.body_limit import BodySizeLimit
@@ -62,6 +64,8 @@ def create_app(
         uploads,
         findings,
         triage,
+        ai,
+        usage,
         attack_techniques,
     ):
         app.include_router(module.router, prefix="/api")

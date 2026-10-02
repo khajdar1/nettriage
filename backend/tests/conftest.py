@@ -30,6 +30,7 @@ from nettriage.adapters.postgres import create_database_engine, engine_url
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.reference_data import sync_reference_data
 from nettriage.adapters.sessions import SessionStore
+from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_storage import UploadStorage, uploads_client
 from nettriage.entrypoints.api.app import create_app
 from nettriage.entrypoints.api.services import Services
@@ -265,6 +266,8 @@ def services(
     metric_reader: InMemoryMetricReader,
 ) -> Services:
     table, client = runtime_table.name, runtime_table.client
+    sqs = boto3.client("sqs", region_name=REGION)
+    queue_url = sqs.create_queue(QueueName="nettriage-test-triage")["QueueUrl"]
     return Services(
         database=create_database_engine(NO_DATABASE),
         sessions=SessionStore(client, table),
@@ -276,6 +279,8 @@ def services(
         oidc=OidcClient(idp_settings(), httpx.Client(transport=idp.transport()), clock),
         clock=clock,
         metrics=AppMetrics(MeterProvider(metric_readers=[metric_reader])),
+        triage=TriageQueue(sqs, queue_url),
+        ai_model_id="fake-triage",
     )
 
 

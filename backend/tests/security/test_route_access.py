@@ -33,6 +33,12 @@ EXPECTED = {
     ("GET", "/api/v1/orgs/{org_id}/findings/{finding_id}"): "findings:read",
     ("PATCH", "/api/v1/orgs/{org_id}/findings/{finding_id}"): "findings:triage",
     ("POST", "/api/v1/orgs/{org_id}/findings/{finding_id}/comments"): "findings:comment",
+    ("POST", "/api/v1/orgs/{org_id}/findings/{finding_id}/ai-analyses"): "ai:request",
+    (
+        "PUT",
+        "/api/v1/orgs/{org_id}/findings/{finding_id}/ai-analyses/{analysis_id}/feedback",
+    ): "ai:feedback",
+    ("GET", "/api/v1/orgs/{org_id}/usage"): "usage:read",
     ("GET", "/api/v1/attack-techniques/{technique_id}"): "signed in",
 }
 # FastAPI's interactive docs, which only `local` and `dev` serve (spec §7).

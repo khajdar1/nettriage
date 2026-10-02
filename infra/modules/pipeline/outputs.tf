@@ -18,3 +18,11 @@ output "uploads_enabled_parameter" {
 output "ai_enabled_parameter" {
   value = aws_ssm_parameter.ai_enabled.name
 }
+
+output "triage_queue_url" {
+  value = aws_sqs_queue.triage.id
+}
+
+output "triage_queue_arn" {
+  value = aws_sqs_queue.triage.arn
+}

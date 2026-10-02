@@ -552,7 +552,7 @@ until then you read the explanation from the API.
    It has a `summary`, `why_it_matters`, `likely_benign_explanations`, `recommended_next_steps`,
    `attack_techniques`, a `severity_assessment`, a `confidence` and `insufficient_evidence`. It's
    AI-generated: the checks only let it name `203.0.113.9`, `10.0.0.5` and the ports in the file.
-   Tell Claude how it reads, with its `output_tokens`: that helps Plan 5c's evals.
+   Tell Claude how it reads, with its `output_tokens`: that helps Plan 5d's evals.
 4. Read the finding's history:
    ```js
    finding.events.map((event) => event.type);
@@ -573,6 +573,38 @@ until then you read the explanation from the API.
       `error_code: "ai_disabled"`.
    4. `just resume-ai`. Expected: `AI explanations in dev are on (… = true). …`
 7. Delete the test org as in B7 step 10.
+
+### B10. Try a re-run, a rating and the usage
+1. Do B7 steps 1 to 5 (sign in, create the "Analysis Test" org, upload the port scan, and wait
+   until it says `analyzed`), then read the finding as in B9 step 2:
+   ```js
+   const list = await api("GET", "/orgs/" + org.id + "/findings");
+   const f = "/orgs/" + org.id + "/findings/" + list.findings[0].id;
+   (await api("GET", f)).ai_analysis;
+   ```
+2. Ask for the explanation again. The `{}` is an empty body: CloudFront needs one, with its
+   hash, on every POST.
+   ```js
+   await api("POST", f + "/ai-analyses", {});
+   ```
+   - If the analysis in step 1 had `status: "succeeded"`: `200` with `status: "explained"` and
+     the same answer. Nothing is spent.
+   - Otherwise (for example `failed` while AWS still limits Bedrock): `202` with
+     `status: "queued"`. Read the finding again after a minute: the triage worker has tried again.
+3. If it succeeded, rate it:
+   ```js
+   await api("PUT", f + "/ai-analyses/" + (await api("GET", f)).ai_analysis.id + "/feedback", { feedback: "up" });
+   ```
+   `200`, with `feedback: "up"` and your user ID in `feedback_by`. An analysis that didn't
+   succeed answers `409`.
+4. Read the org's AI usage:
+   ```js
+   await api("GET", "/orgs/" + org.id + "/usage");
+   ```
+   `200`, with today in `days` (its `calls`, tokens and `cost_usd`) and the `totals`, once Bedrock
+   has answered at least once. Before that, `days` is empty and the totals are 0.
+5. Read the audit log as in B8 step 9: a queued re-run is an `ai.rerun_requested` event.
+6. Delete the test org as in B7 step 10.
 
 ## Part C: when things go wrong
 
@@ -622,7 +654,7 @@ redrive** on that queue, as for the analyze queue in "An upload isn't analyzed".
    | `budget_unavailable` | DynamoDB couldn't be read; send Claude the time |
    | `provider_denied` | Bedrock refused the worker: the $5 budget action ran (next section), or the role lacks a permission. Send Claude the time |
    | `provider_rejected` | Bedrock refused the request itself; send Claude the time |
-   | `provider_throttled`, `provider_timeout`, `provider_unavailable` | Bedrock failed three times in a row; Plan 5c adds a retry button. If every finding fails with `provider_throttled`, see "Bedrock refuses every call" below |
+   | `provider_throttled`, `provider_timeout`, `provider_unavailable` | Bedrock failed three times in a row. Ask for the explanation again as in B10 step 2; the app's button comes in Plan 6. If every finding fails with `provider_throttled`, see "Bedrock refuses every call" below |
    | `checks_failed` (with `status: "invalid_output"`) | The model's answer failed the checks twice, so nothing was added to the finding. Send Claude the finding's `id` |
 
 ### Bedrock refuses every call: "Too many tokens per day"

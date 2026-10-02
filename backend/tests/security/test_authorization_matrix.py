@@ -10,7 +10,15 @@ import pytest
 from browser import signed_in_as
 from conftest import Database, FakeClock
 from fastapi.testclient import TestClient
-from tenantdata import add_finding, add_invitation, add_member, add_org, add_upload, add_user
+from tenantdata import (
+    add_analysis,
+    add_finding,
+    add_invitation,
+    add_member,
+    add_org,
+    add_upload,
+    add_user,
+)
 
 from nettriage.application.organizations import new_invitation_token, token_hash
 from nettriage.entrypoints.api.services import Services
@@ -57,6 +65,17 @@ ENDPOINTS: dict[str, tuple[str, str, dict[str, Any] | None]] = {
         "/api/v1/orgs/{org}/findings/{finding}/comments",
         {"text": "Looks like our scanner."},
     ),
+    "re-run AI explanation": (
+        "POST",
+        "/api/v1/orgs/{org}/findings/{finding}/ai-analyses",
+        None,
+    ),
+    "rate AI explanation": (
+        "PUT",
+        "/api/v1/orgs/{org}/findings/{finding}/ai-analyses/{analysis}/feedback",
+        {"feedback": "up"},
+    ),
+    "read AI usage": ("GET", "/api/v1/orgs/{org}/usage", None),
 }
 # Headers an endpoint needs besides the session's: a triage change names the version it read.
 EXTRA_HEADERS: dict[str, dict[str, str]] = {"triage finding": {"If-Match": '"1"'}}
@@ -85,6 +104,9 @@ MATRIX: dict[str, tuple[int, int, int, int, int, int]] = {
     "read technique": (200, 200, 200, 200, 200, 401),
     "triage finding": (200, 200, 200, 403, 404, 401),
     "comment on finding": (201, 201, 201, 403, 404, 401),
+    "re-run AI explanation": (202, 202, 202, 403, 404, 401),
+    "rate AI explanation": (200, 200, 200, 403, 404, 401),
+    "read AI usage": (200, 200, 403, 403, 404, 401),
 }
 
 
@@ -111,6 +133,7 @@ def world(database: Database) -> World:
         add_invitation(connection, org, people["owner"], stranger_email)
         upload = add_upload(connection, org, people["analyst"], status="analyzed")
         finding = add_finding(connection, org, upload)
+        analysis = add_analysis(connection, org, finding)
         connection.exec_driver_sql(
             "UPDATE invitations SET token_hash = %s WHERE lower(email) = lower(%s)",
             (token_hash(token), stranger_email),
@@ -125,6 +148,7 @@ def world(database: Database) -> World:
             "new_email": f"{uuid4().hex}@example.com",
             "upload": str(upload),
             "finding": str(finding),
+            "analysis": str(analysis),
             "technique": "T1595",
             "sha256": "ab" * 32,
         },
@@ -184,6 +208,7 @@ def test_the_matrix_covers_every_org_route(client: TestClient) -> None:
                     "invitation": "{invitation_id}",
                     "upload": "{upload_id}",
                     "finding": "{finding_id}",
+                    "analysis": "{analysis_id}",
                     "technique": "{technique_id}",
                 },
             ),

@@ -35,6 +35,9 @@ variables {
   uploads_bucket            = "nettriage-dev-uploads-12345678"
   uploads_bucket_arn        = "arn:aws:s3:::nettriage-dev-uploads-12345678"
   uploads_enabled_parameter = "/nettriage/dev/kill/uploads-enabled"
+  triage_queue_url          = "https://sqs.eu-north-1.amazonaws.com/123456789012/nettriage-dev-triage"
+  triage_queue_arn          = "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage"
+  bedrock_model_id          = "openai.gpt-oss-20b-1:0"
 }
 
 run "function_is_arm64_python_behind_iam_auth" {
@@ -137,5 +140,22 @@ run "the_api_may_only_put_uploads_under_orgs" {
   assert {
     condition     = aws_lambda_function.api.environment[0].variables["NETTRIAGE_UPLOADS_BUCKET"] == "nettriage-dev-uploads-12345678" && aws_lambda_function.api.environment[0].variables["NETTRIAGE_UPLOADS_ENABLED_PARAMETER"] == "/nettriage/dev/kill/uploads-enabled"
     error_message = "The API is told the bucket and the kill switch's name, never values."
+  }
+}
+
+run "the_api_may_queue_a_re_run_and_nothing_else" {
+  command = apply
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.api_triage_queue.policy).Statement[0].Action == "sqs:SendMessage" && jsondecode(aws_iam_role_policy.api_triage_queue.policy).Statement[0].Resource == "arn:aws:sqs:eu-north-1:123456789012:nettriage-dev-triage"
+    error_message = "The API may only send to the triage queue, for re-runs (spec §7, Plan 5c)."
+  }
+  assert {
+    condition     = aws_lambda_function.api.environment[0].variables["NETTRIAGE_TRIAGE_QUEUE_URL"] == "https://sqs.eu-north-1.amazonaws.com/123456789012/nettriage-dev-triage"
+    error_message = "The API is told the triage queue's URL."
+  }
+  assert {
+    condition     = aws_lambda_function.api.environment[0].variables["NETTRIAGE_BEDROCK_MODEL_ID"] == "openai.gpt-oss-20b-1:0"
+    error_message = "The API knows the worker's model, so a re-run can find the current answer."
   }
 }

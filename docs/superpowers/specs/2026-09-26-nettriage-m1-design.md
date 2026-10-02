@@ -136,7 +136,7 @@ flowchart LR
 | Hot state | DynamoDB table `runtime` | Provisioned capacity within Always Free; TTL |
 | Files | S3 `uploads` bucket | Private, TLS-only, SSE-S3, deleted after 30 days |
 | Identity | Cognito user pool, Essentials tier | Managed login; MFA required (TOTP) |
-| LLM | Amazon Bedrock: OpenAI gpt-oss-20b on demand in eu-north-1 (the owner's choice in Plan 5b, until Plan 5c's evals choose) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
+| LLM | Amazon Bedrock: OpenAI gpt-oss-20b on demand in eu-north-1 (the owner's choice in Plan 5b, until Plan 5d's evals choose) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
 | Secrets and config | SSM Parameter Store (SecureString, AWS-managed key) | Database passwords, Cognito client secret, OTLP token, kill switches |
 | Telemetry | OpenTelemetry → Grafana Cloud (free tier) | Lambda platform logs stay in CloudWatch for 7 days |
 | Scheduling | EventBridge Scheduler | Probe, maintenance |
@@ -270,8 +270,9 @@ sequenceDiagram
 | `attack_techniques` | `id` text PK (for example `T1046`), `stix_id`, `name`, `tactics` text[], `description`, `url`, `attack_version`, `is_subtechnique`, `parent_id`, `deprecated`. Loaded from ATT&CK STIX v19.2: `tools/attack_subset.py` extracts the techniques the detectors can name, and their parents, into the backend package (Plan 4b). MITRE's copyright notice and license are kept |
 | `findings` | `id`, `org_id`, `upload_id`, `detector_id` → detectors, `detector_version`, `fingerprint`, `severity` CHECK in (low, medium, high, critical), `status` CHECK in (open, investigating, resolved, false_positive), `title`, `src_ip` inet, `dst_ip` inet, `dst_port` int CHECK 0–65535, `protocol` smallint, `time_window` tstzrange, `metrics` jsonb, `assignee_id` → a member of the finding's org (a composite foreign key to `memberships`; Plan 4c), `version` int; UNIQUE `(org_id, upload_id, fingerprint)`; UNIQUE `(org_id, id)` (target of child composite FKs); FK `(org_id, upload_id)` → uploads |
 | `finding_evidence` | `id`, `org_id`, `finding_id`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `protocol`, `packets` bigint, `bytes` bigint, `start_ts`, `end_ts`, `action`, `line_no`; FK `(org_id, finding_id)` |
-| `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings |
-| `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings. Only a succeeded row has an `output`. A new attempt for the same key updates the row, and a succeeded row is never overwritten: it is the cache (Plan 5a). `provider` is OpenTelemetry's `gen_ai.provider.name`, such as `aws.bedrock` (Plan 5b) |
+| `finding_techniques` | PK `(finding_id, technique_id, source)`; `org_id`; `technique_id` → attack_techniques; `source` CHECK in (detector, ai); `rationale`; FK `(org_id, finding_id)` → findings. The AI's techniques are exactly the latest succeeded analysis's: a newer one replaces them, and never touches the detector's (the owner's decision, Plan 5c) |
+| `ai_analyses` | `id`, `org_id`, `finding_id`, `status` CHECK in (pending, succeeded, failed, skipped_budget, invalid_output), `provider`, `model_id`, `prompt_version`, `output_schema_version`, `input_hash`, `output` jsonb, `input_tokens`, `output_tokens`, `cost_usd` numeric(10,6), `latency_ms`, `error_code`, `feedback` CHECK in (up, down) or NULL, `feedback_by`; UNIQUE `(finding_id, model_id, prompt_version, input_hash)`; FK `(org_id, finding_id)` → findings. Only a succeeded row has an `output`. A new attempt for the same key updates the row, and a succeeded row is never overwritten: it is the cache (Plan 5a). `provider` is OpenTelemetry's `gen_ai.provider.name`, such as `aws.bedrock` (Plan 5b). A rating (`feedback`) doesn't change `updated_at`, so it never changes which analysis is the latest (Plan 5c) |
+| `ai_usage` | PK `(org_id, day)` (UTC day); `calls`, `input_tokens`, `output_tokens`, `cost_usd` numeric(12,6); FK `org_id` → organizations. The triage worker adds every model call, including retries and repairs whose analysis isn't stored (the owner's decision, Plan 5c) |
 | `finding_events` | `id`, `org_id`, `finding_id`, `actor_id` (NULL for system events), `type` CHECK in (created, status_changed, assigned, commented, ai_explained), `payload` jsonb. Comments are at most 2,000 characters |
 | `audit_log` | `id`, `org_id` (no foreign key, so records outlive the entities they describe), `actor_user_id`, `actor_type` CHECK in (user, system, anonymous), `action`, `target_type`, `target_id`, `outcome` CHECK in (success, denied, error), `ip` inet, `user_agent` (at most 256 characters), `request_id`, `trace_id`, `details` jsonb |
 
@@ -306,9 +307,9 @@ A dedicated test runs a query with no org filter and must receive zero rows from
 | Role | Used by | Rights |
 |---|---|---|
 | `nettriage_owner` | Migrations (CI only) | Owns the schema; DDL |
-| `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations`. On findings it may UPDATE only `status`, `assignee_id` and `version`, and `finding_events` is insert-only (Plan 4c) |
+| `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations`. On findings it may UPDATE only `status`, `assignee_id` and `version`, and `finding_events` is insert-only (Plan 4c). On `ai_analyses` it may UPDATE only `feedback` and `feedback_by`, and it reads `ai_usage` (Plan 5c) |
 | `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`; SELECT of a finding's `id`, `org_id`, `upload_id` and `severity`, to queue the most severe for AI triage (Plan 5b). No `audit_log` until the worker records an event worth auditing (Plan 4b) |
-| `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`, `detectors`, `ai_analyses`; INSERT/UPDATE `ai_analyses` (column grants: never `feedback`); INSERT `finding_techniques` and UPDATE of their `rationale`; INSERT `finding_events` without an actor; INSERT `audit_log`, for `budget.exhausted` (Plan 5b) |
+| `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`, `detectors`, `ai_analyses`; INSERT/UPDATE `ai_analyses` (column grants: never `feedback`); INSERT `finding_techniques`, UPDATE of their `rationale`, and DELETE of the AI's own (`source = 'ai'`, a restrictive row policy); INSERT `finding_events` without an actor; INSERT `audit_log`, for `budget.exhausted` (Plan 5b); INSERT and UPDATE of `ai_usage`'s counts (Plan 5c) |
 | `app_ops` | `ops` Lambda | `SELECT 1` health checks; retention through `SECURITY DEFINER` functions only (purge `audit_log` rows older than 180 days, expire invitations, expire stale pending uploads) |
 | `app_backup` | Nightly backup | Read-only with `BYPASSRLS` (needed for a complete dump); used only by the backup workflow |
 
@@ -527,7 +528,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Pagination:** cursor-based (`cursor`, `limit` ≤ 100). Lists that §5.7's quotas keep small (members, invitations) return every item; the audit log pages with a cursor.
 - **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428. The ETag is the finding's version in quotes (`"3"`); `*`, a weak ETag or a list names no version and also gets 428. A 412 carries the current `ETag` (Plan 4c).
 - **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads`, `POST /orgs` and `POST …/comments` (Plan 4c) and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409. A request is its method, path and body, so a key can't be reused across routes or orgs (Plan 4a).
-- **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests.
+- **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests. A `POST` or `PUT` with no inputs, such as a re-run, sends `{}` so it carries a body and its hash too: AWS's guide requires the hash on every `POST` and `PUT` to a function URL (Plan 5c).
 - **No body on DELETE:** CloudFront's origin signing to the Lambda function URL rejects a DELETE that carries a body (found on dev in Plan 3c), so a DELETE takes its inputs from the path and the query. A test fails on any DELETE route that declares a body.
 - **Docs:** interactive API docs are enabled in `dev` only. Each build exports the OpenAPI JSON to the repository.
 
@@ -553,13 +554,13 @@ A failed condition returns the item as it was, which tells whether the request i
 | `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
 | `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. Newest first, a page at a time |
-| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, the latest AI analysis as `ai_analysis` (null until there is one: status, provider, model, prompt and output schema versions, output, `error_code`, tokens, `cost_usd` and latency; Plan 5b), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
+| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, the latest AI analysis as `ai_analysis` (null until there is one: status, provider, model, prompt and output schema versions, output, `error_code`, tokens, `cost_usd`, latency, and the rating's `feedback` and `feedback_by`; Plans 5b and 5c), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
 | `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Body: `status`, `assignee_id` (`null` unassigns), or both; `If-Match`. Any status can change to any other, and the assignee must be an Owner, Admin or Analyst of the org (422 otherwise; the owner's decisions, Plan 4c). Each change is an event in the finding's history and an audit event |
 | `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | Body: `text`, 1 to 2,000 characters, line breaks allowed. A comment joins the history without changing the finding's version; the audit event never holds its text |
-| `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits |
-| `PUT /api/v1/orgs/{org}/findings/{id}/ai-analyses/{aid}/feedback` | `ai:feedback` | `up` or `down` |
+| `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits (`ai.rerun.user`). `202 {"status": "queued"}`: the finding goes to the triage worker. `200 {"status": "explained", "ai_analysis": …}`: its latest analysis for the current model, prompt and input already succeeded, so that answer is returned and nothing is spent (the owner's decision, Plan 5c). 503 if the queue can't be reached |
+| `PUT /api/v1/orgs/{org}/findings/{id}/ai-analyses/{aid}/feedback` | `ai:feedback` | `{"feedback": "up"}` or `"down"`; a new rating replaces the last. Only a succeeded explanation can be rated (409 otherwise). Returns the analysis, with `feedback` and `feedback_by` (Plan 5c) |
 | `GET /api/v1/orgs/{org}/audit-log` | `audit:read` | |
-| `GET /api/v1/orgs/{org}/usage` | `usage:read` | AI tokens and cost by day |
+| `GET /api/v1/orgs/{org}/usage` | `usage:read` | AI tokens and cost by day: `?days=` 1 to 90 (30 by default), UTC days newest first, each with `calls`, `input_tokens`, `output_tokens` and `cost_usd`, and their `totals`. Days without a call aren't listed (Plan 5c) |
 | `GET /api/v1/attack-techniques/{id}` | session | Reference data, with MITRE's notice; 404 for an unknown or malformed ID |
 
 ## 8. Detection and AI pipeline
@@ -639,7 +640,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Model candidates:** gpt-oss-20b, Ministral 3 8B and Claude Haiku 4.5 (quality baseline), all through Bedrock structured outputs. As checked in Plan 5b (2026-10-01):
   - gpt-oss-20b (`openai.gpt-oss-20b-1:0`) runs on demand in eu-north-1, us-east-1 and us-west-2, at $0.07 / $0.30 per million input / output tokens in eu-north-1. It runs live from Plan 5b.
   - Ministral 3 8B (`mistral.ministral-3-8b-instruct`) runs on demand on Converse only in us-east-1 and us-west-2 ($0.15 / $0.15).
-  - Claude Haiku 4.5 has no on-demand model ID for Converse in any Region, only cross-Region inference profiles, which the account can't use (Revision 2, R4): it can't be a candidate. Plan 5c picks the quality baseline.
+  - Claude Haiku 4.5 has no on-demand model ID for Converse in any Region, only cross-Region inference profiles, which the account can't use (Revision 2, R4): it can't be a candidate. Plan 5d picks the quality baseline.
 - **Selection:** the eval suite runs on every candidate, and the default is the cheapest model that meets all gates (8.5).
 
 ### 8.4 Prompt-injection posture and output handling
@@ -722,7 +723,7 @@ Metric names follow OTel conventions where they exist:
 
 ### 9.4 Audit events
 
-`auth.session_created`, `auth.logout`, `auth.logout_all`, `org.created`, `org.renamed`, `org.deleted`, `member.invited`, `member.joined`, `member.role_changed`, `member.removed`, `member.left`, `invitation.revoked`, `upload.created`, `finding.status_changed`, `finding.assigned`, `finding.commented`, `ai.rerun_requested`, `authz.denied` (sampled: at most one per caller and permission per minute), `budget.exhausted`, and `ratelimit.limited` (sampled: at most one per subject and policy per minute).
+`auth.session_created`, `auth.logout`, `auth.logout_all`, `org.created`, `org.renamed`, `org.deleted`, `member.invited`, `member.joined`, `member.role_changed`, `member.removed`, `member.left`, `invitation.revoked`, `upload.created`, `finding.status_changed`, `finding.assigned`, `finding.commented`, `ai.rerun_requested` (when a re-run is queued; Plan 5c), `authz.denied` (sampled: at most one per caller and permission per minute), `budget.exhausted`, and `ratelimit.limited` (sampled: at most one per subject and policy per minute).
 
 ### 9.5 Dashboards
 

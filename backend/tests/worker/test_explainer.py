@@ -465,3 +465,36 @@ def test_a_spent_budget_is_audited_once_a_day_per_org(
             {"scope": "org"},
         )
     ]
+
+
+def todays_usage(database: Database, tenant: Tenant) -> tuple[int, int, int]:
+    with database.admin.begin() as connection:
+        row = connection.execute(
+            text(
+                "SELECT calls, input_tokens, output_tokens FROM ai_usage "
+                "WHERE org_id = :org AND day = (now() AT TIME ZONE 'UTC')::date"
+            ),
+            {"org": tenant.org_id},
+        ).one()
+    return row.calls, row.input_tokens, row.output_tokens
+
+
+def test_every_model_call_is_counted_in_the_orgs_usage(database: Database, rig: Rig) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [UNGROUNDED, answer()]
+
+    rig.explainer.explain(tenant.org_id, tenant.finding_id)
+
+    assert todays_usage(database, tenant) == (3, 1800 + 2 * 900, 320 + 2 * 300)
+
+
+def test_a_paid_call_is_counted_even_when_the_repair_is_handed_back(
+    database: Database, rig: Rig
+) -> None:
+    tenant = add_tenant(database.admin)
+    rig.model.script = [UNGROUNDED, ProviderError("provider_throttled")]
+
+    with pytest.raises(ExplainLater):
+        rig.explainer.explain(tenant.org_id, tenant.finding_id, last_delivery=False)
+
+    assert todays_usage(database, tenant) == (2, 1800 + 900, 320 + 300)

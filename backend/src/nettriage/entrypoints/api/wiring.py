@@ -16,6 +16,7 @@ from nettriage.adapters.parameters import AWS_CONFIG, read_parameters
 from nettriage.adapters.postgres import create_database_engine
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
+from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_storage import UploadStorage, uploads_client
 from nettriage.application.clock import system_clock
 from nettriage.entrypoints.api.services import Services
@@ -58,4 +59,6 @@ def build_services(settings: Settings, session: boto3.session.Session | None = N
         ),
         clock=system_clock,
         metrics=AppMetrics(),
+        triage=TriageQueue(session.client("sqs", config=AWS_CONFIG), settings.triage_queue_url),
+        ai_model_id=settings.bedrock_model_id,
     )

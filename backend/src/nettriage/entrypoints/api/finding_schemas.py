@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -21,6 +21,7 @@ from nettriage.adapters.findings import (
     FindingSummary,
     FindingTechnique,
 )
+from nettriage.entrypoints.api.schemas import Strict
 
 
 class FindingSummaryOut(BaseModel):
@@ -108,12 +109,29 @@ class AiAnalysisOut(BaseModel):
     output_tokens: int | None
     cost_usd: Decimal | None
     latency_ms: int | None
+    feedback: Literal["up", "down"] | None
+    feedback_by: UUID | None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def of(cls, analysis: AiAnalysis) -> AiAnalysisOut:
         return cls(**vars(analysis))
+
+
+class FeedbackIn(Strict):
+    """A reader's rating of an explanation: `up` or `down` (spec §7)."""
+
+    feedback: Literal["up", "down"]
+
+
+class RerunOut(BaseModel):
+    """`queued` (202): the triage worker explains the finding again. `explained` (200): its
+    latest analysis for the current model, prompt and input already succeeded, so that answer is
+    returned and nothing is spent."""
+
+    status: Literal["queued", "explained"]
+    ai_analysis: AiAnalysisOut | None
 
 
 class FindingOut(FindingSummaryOut):

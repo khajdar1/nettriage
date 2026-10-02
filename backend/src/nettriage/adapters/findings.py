@@ -98,6 +98,9 @@ class AiAnalysis:
     output_tokens: int | None
     cost_usd: Decimal | None
     latency_ms: int | None
+    # A reader's rating of a succeeded explanation (`up` or `down`), and who gave it.
+    feedback: str | None
+    feedback_by: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -185,17 +188,31 @@ def read_finding(connection: Connection, org_id: UUID, finding_id: UUID) -> Find
     )
 
 
+_ANALYSIS = (
+    "id, status, provider, model_id, prompt_version, output_schema_version, output, error_code, "
+    "input_tokens, output_tokens, cost_usd, latency_ms, feedback, feedback_by, created_at, "
+    "updated_at"
+)
+
+
 def _latest_analysis(connection: Connection, finding_id: UUID) -> AiAnalysis | None:
     row = connection.execute(
         text(
-            "SELECT id, status, provider, model_id, prompt_version, output_schema_version, "
-            "output, error_code, input_tokens, output_tokens, cost_usd, latency_ms, created_at, "
-            "updated_at FROM ai_analyses WHERE finding_id = :id "
+            f"SELECT {_ANALYSIS} FROM ai_analyses WHERE finding_id = :id "  # noqa: S608
             "ORDER BY updated_at DESC, id DESC LIMIT 1"
         ),
         {"id": finding_id},
     ).one_or_none()
     return None if row is None else AiAnalysis(**row._mapping)
+
+
+def read_analysis(connection: Connection, analysis_id: UUID) -> AiAnalysis:
+    """One analysis of the connection's org, by its ID."""
+    row = connection.execute(
+        text(f"SELECT {_ANALYSIS} FROM ai_analyses WHERE id = :id"),  # noqa: S608
+        {"id": analysis_id},
+    ).one()
+    return AiAnalysis(**row._mapping)
 
 
 def _evidence(connection: Connection, finding_id: UUID) -> list[Evidence]:

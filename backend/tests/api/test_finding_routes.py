@@ -288,6 +288,8 @@ def test_a_finding_shows_its_latest_ai_analysis_with_what_it_said_and_cost(
         "output_tokens": 320,
         "cost_usd": "0.000222",
         "latency_ms": 1450,
+        "feedback": None,
+        "feedback_by": None,
         "created_at": "2026-09-28T10:00:00Z",
         "updated_at": "2026-09-28T10:00:00Z",
     }
