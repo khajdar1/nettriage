@@ -15,6 +15,7 @@ from nettriage.adapters.login_states import LoginStateStore
 from nettriage.adapters.oidc import OidcClient
 from nettriage.adapters.rate_limiter import RateLimiter
 from nettriage.adapters.sessions import SessionStore
+from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_storage import UploadStorage
 from nettriage.application.clock import Clock
 from nettriage.application.rate_limits import UNKNOWN_SESSIONS_PER_IP, LocalLimiter
@@ -33,6 +34,9 @@ class Services:
     oidc: OidcClient
     clock: Clock
     metrics: AppMetrics
+    # Re-runs go to the triage worker's queue; an answer by this model is the current one.
+    triage: TriageQueue
+    ai_model_id: str
     unknown_sessions: LocalLimiter = field(
         default_factory=lambda: LocalLimiter(UNKNOWN_SESSIONS_PER_IP)
     )

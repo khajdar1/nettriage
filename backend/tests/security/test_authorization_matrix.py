@@ -57,6 +57,11 @@ ENDPOINTS: dict[str, tuple[str, str, dict[str, Any] | None]] = {
         "/api/v1/orgs/{org}/findings/{finding}/comments",
         {"text": "Looks like our scanner."},
     ),
+    "re-run AI explanation": (
+        "POST",
+        "/api/v1/orgs/{org}/findings/{finding}/ai-analyses",
+        None,
+    ),
 }
 # Headers an endpoint needs besides the session's: a triage change names the version it read.
 EXTRA_HEADERS: dict[str, dict[str, str]] = {"triage finding": {"If-Match": '"1"'}}
@@ -85,6 +90,7 @@ MATRIX: dict[str, tuple[int, int, int, int, int, int]] = {
     "read technique": (200, 200, 200, 200, 200, 401),
     "triage finding": (200, 200, 200, 403, 404, 401),
     "comment on finding": (201, 201, 201, 403, 404, 401),
+    "re-run AI explanation": (202, 202, 202, 403, 404, 401),
 }
 
 

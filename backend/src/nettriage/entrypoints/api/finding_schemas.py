@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -114,6 +114,15 @@ class AiAnalysisOut(BaseModel):
     @classmethod
     def of(cls, analysis: AiAnalysis) -> AiAnalysisOut:
         return cls(**vars(analysis))
+
+
+class RerunOut(BaseModel):
+    """`queued` (202): the triage worker explains the finding again. `explained` (200): its
+    latest analysis for the current model, prompt and input already succeeded, so that answer is
+    returned and nothing is spent."""
+
+    status: Literal["queued", "explained"]
+    ai_analysis: AiAnalysisOut | None
 
 
 class FindingOut(FindingSummaryOut):
