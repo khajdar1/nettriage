@@ -21,6 +21,7 @@ from nettriage.entrypoints.api.routes import (
     orgs,
     triage,
     uploads,
+    usage,
 )
 from nettriage.entrypoints.api.services import Services
 from nettriage.platform.body_limit import BodySizeLimit
@@ -64,6 +65,7 @@ def create_app(
         findings,
         triage,
         ai,
+        usage,
         attack_techniques,
     ):
         app.include_router(module.router, prefix="/api")
