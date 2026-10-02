@@ -187,7 +187,7 @@ def test_an_answer_that_isnt_json_fails() -> None:
     [
         {"inferenceTypesSupported": ["PROVISIONED"], "modelLifecycle": {"status": "ACTIVE"}},
         {"inferenceTypesSupported": ["INFERENCE_PROFILE"], "modelLifecycle": {"status": "ACTIVE"}},
-        {"inferenceTypesSupported": ["ON_DEMAND"], "modelLifecycle": {"status": "LEGACY"}},
+        {"inferenceTypesSupported": ["ON_DEMAND"], "modelLifecycle": {"status": "RETIRED"}},
     ],
 )
 def test_a_model_that_isnt_on_demand_and_active_fails(details: dict[str, object]) -> None:
@@ -196,6 +196,21 @@ def test_a_model_that_isnt_on_demand_and_active_fails(details: dict[str, object]
     )
 
     assert not preflight.model_check(run, {}, "eu-north-1", "openai.gpt-oss-20b-1:0").ok
+
+
+def test_a_legacy_model_still_passes_with_a_warning() -> None:
+    """Bedrock keeps a legacy model invokable for at least six months: an unrelated deploy must
+    not wait for the switch to another model."""
+    details = {"inferenceTypesSupported": ["ON_DEMAND"], "modelLifecycle": {"status": "LEGACY"}}
+    run = FakeRun().on(
+        "aws", "bedrock", "get-foundation-model", returns=json.dumps({"modelDetails": details})
+    )
+
+    check = preflight.model_check(run, {}, "eu-north-1", "openai.gpt-oss-20b-1:0")
+
+    assert check.ok
+    assert "LEGACY" in check.detail
+    assert "plan a switch" in check.detail
 
 
 def test_a_model_bedrock_doesnt_offer_there_fails_with_a_hint() -> None:

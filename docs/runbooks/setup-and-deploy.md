@@ -61,8 +61,9 @@ The first output line is `AWS account …, region eu-north-1`, then the account 
 (`PASS  Lambda in eu-north-1`, `PASS  IAM`, …). If any line says `FAIL`, the command stops with
 `STOP: Preflight failed; nothing was created.`; send the output to Claude. Terraform then shows
 the plan: the state bucket
-`nettriage-tfstate-<account>` with its settings, the `nettriage-monthly` budget and, optionally,
-the anomaly subscription. Type `yes`. If the command stops partway, it keeps the partial state in
+`nettriage-tfstate-<account>` with its settings, the `nettriage-monthly` budget, the
+`nettriage-deny-bedrock` policy and, optionally, the anomaly subscription. Type `yes`. The $5
+Bedrock cutoff itself waits for A8, because it needs a stage's triage worker. If the command stops partway, it keeps the partial state in
 `infra/bootstrap/terraform.tfstate.recovered`; keep that file (see Part C). It ends with
 `Bootstrap state is now in s3://nettriage-tfstate-<account>/bootstrap/terraform.tfstate`.
 Confirm the AWS Budgets email if one arrives.
@@ -71,8 +72,9 @@ Confirm the AWS Budgets email if one arrives.
 Plan 5b adds two things to the bootstrap (spec §6.7):
 - the monthly budget counts usage before credits. With credits counted, the Free plan's usage nets
   to $0, so no alert would ever fire;
-- at $5 of usage in a month, a Budgets action denies Bedrock to the `nettriage-dev-triage` worker.
-  The action needs that worker's role, so run this after B2 has deployed Plan 5b.
+- at $5 of usage in a month, a Budgets action denies Bedrock to the stages' triage workers. The
+  bootstrap finds their roles by name (`nettriage-<stage>-triage`) and creates the action only
+  when one exists, so run this after B2 has deployed Plan 5b.
 
 1. `aws login --profile nettriage` (skip this if you're signed in).
 2. On `main`, run the bootstrap again with the same email, and the anomaly monitor ARN if you used
@@ -82,12 +84,15 @@ Plan 5b adds two things to the bootstrap (spec §6.7):
    ```
 3. Terraform shows the plan. Expect `Plan: 4 to add, 1 to change, 0 to destroy`: the
    `nettriage-deny-bedrock` policy, the `nettriage-budget-action` role and its policy, the budget
-   action, and the budget's new credit setting.
+   action, and the budget's new credit setting. (On an account first bootstrapped after Plan 5b,
+   the policy and the credit setting exist already: `3 to add, 0 to change`.)
    - If the plan says `1 to destroy` (the anomaly subscription), type `no`, then run step 2 again
      with your anomaly monitor ARN (A4 shows how to find it).
    - Otherwise type `yes`.
 4. In the AWS console, open **Billing and Cost Management → Budgets → nettriage-monthly**. The
-   **Actions** tab lists one action at $5.00 that applies the IAM policy `nettriage-deny-bedrock`.
+   **Actions** tab lists one action at $5.00 that applies the IAM policy `nettriage-deny-bedrock`,
+   with the status **Standby** (waiting for its threshold). Any other status means Budgets didn't
+   accept it: send Claude what it says.
 
 ### A5. Run the preflight
 ```bash
@@ -595,9 +600,14 @@ carry on. A deploy never switches the AI back on.
 ### An AI explanation is missing
 When Bedrock is throttled, slow or down, the triage worker hands the finding back, and SQS
 delivers it again 24 minutes later, three times at most. The first call of a day can take
-minutes while Bedrock prepares the answer's schema, so a first try may time out. After the
-third failure the finding gets `status: "failed"`, and the message waits in
-`nettriage-dev-triage-dlq` for 14 days.
+minutes while Bedrock prepares the answer's schema, so a first try may time out. On the third
+delivery the worker stores the failure: the finding's `ai_analysis` has `status: "failed"` and
+an `error_code` (step 2), and the message is done.
+
+Anything else that goes wrong (the database stays down past its retries, or the worker crashes
+or times out) leaves `ai_analysis` at `null`. After three deliveries that message waits in
+`nettriage-dev-triage-dlq` for 14 days; once the cause is fixed, send it back with **Start DLQ
+redrive** on that queue, as for the analyze queue in "An upload isn't analyzed".
 1. In the AWS console, with the Region set to Europe (Stockholm), open **CloudWatch → Log groups
    → /aws/lambda/nettriage-dev-triage**, and open the log stream from around the upload's time.
    Look for `finding_explain_later` and `triage_failed` lines, and send Claude their
@@ -681,6 +691,7 @@ passes, then run B2 again.
 | `STOP: Syncing reference data failed; nothing in AWS changed. …` | The migrations ran, but the detectors and ATT&CK techniques weren't loaded. Send the output to Claude |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
 | `FAIL  Triage model on Bedrock` … `isn't offered in eu-north-1` or `isn't active and on demand` | Bedrock no longer offers the model there. Send the output to Claude, who picks another model with you |
+| `PASS  Triage model on Bedrock  … (LEGACY: Bedrock will retire it; plan a switch)` | The deploy goes on: Bedrock keeps a legacy model working for at least six months. Tell Claude, who plans the switch to another model with you |
 | `FAIL  Lambda Web Adapter layer` or `FAIL  OpenTelemetry collector layer` … `isn't a eu-north-1 layer ARN; fix it in terraform.tfvars` or `not found or not shared; check the layer's current version…` | Ask Claude to update the layer ARN to its current version |
 | `STOP: Couldn't comment on this branch's PR: …` | Open the branch's PR, then plan again. To plan without posting a comment, run `uv run --project backend python -m tools.deploy plan --no-comment` (`just plan-dev` always posts) |
 | `STOP: Deploys run from main …`, `… uncommitted changes …` or `… differs from GitHub's main …` | Follow the command in the message. `… uncommitted changes …` also applies to `just plan-dev` |

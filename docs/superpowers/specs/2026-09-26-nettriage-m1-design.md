@@ -491,7 +491,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Request limits:** JSON request bodies are at most 64 KB. Files never pass through the API.
 - **AWS Budgets:**
   - Alerts at $1 and $3, on both actual and forecast spend.
-  - At $5, a Budgets **action** attaches a deny policy for `bedrock:InvokeModel*` to the triage role. It lives in the bootstrap next to the budget, names the stages' triage roles, and needs them to exist: the owner re-runs the bootstrap after the stage's first deploy with a triage worker (Plan 5b).
+  - At $5, a Budgets **action** attaches a deny policy for `bedrock:InvokeModel*` to the triage role. It lives in the bootstrap next to the budget and finds the stages' triage roles by name; with none yet (a first bootstrap), it waits, so the owner re-runs the bootstrap after the stage's first deploy with a triage worker (Plan 5b).
   - The budget counts usage before credits: with credits included, the Free plan's usage nets to $0 and no alert or action would fire (Plan 5b).
   - Budgets refreshes up to three times a day, so the action lags spending by hours; the AI budgets in DynamoDB are the real-time limit (6.6).
   - Cost Anomaly Detection runs with lowered thresholds.
@@ -1017,7 +1017,7 @@ Revision 2 (D3–D4) splits CI from CD: GitHub Actions verifies and builds, and 
 |---|---|
 | The Lambda Web Adapter and OpenTelemetry collector layers, and the python3.14 runtime, in eu-north-1 (checked by `just preflight`) | `python3.13`; `force_flush` instead of the collector layer |
 | Terraform using the owner's `aws login` session through a `credential_process` helper profile (the default in `tools/deploy/`) | Export the session as environment variables for each command, keeping each run under the credentials' 15-minute lifetime |
-| Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Checked in Plan 5b (8.3): gpt-oss-20b runs on demand in Stockholm; Ministral 3 8B only in the US Regions; Claude Haiku 4.5 is dropped (cross-Region profiles only). `just preflight` checks the live model before each deploy |
+| Bedrock model IDs, structured-output support and on-demand availability for the candidates in eu-north-1, us-east-1 or us-west-2, without cross-Region inference profiles (Revision 2, R4); whether credits cover Claude | Checked in Plan 5b (8.3): gpt-oss-20b runs on demand in Stockholm; Ministral 3 8B only in the US Regions; Claude Haiku 4.5 is dropped (cross-Region profiles only). `just preflight` checks the live model before each deploy: it fails unless the model is offered on demand, and warns once Bedrock marks it legacy |
 | Neon Terraform provider reliability | Create the projects by hand and document it (taken in Plan 3a: the provider isn't code-signed and the owner's machine blocks unsigned executables; see ADR 0002) |
 | The account's Lambda concurrency quota (new accounts may be low) | Request an increase; workers are already capped at 2 |
 | Current Lambda Function URL + OAC permission requirements (resource-policy actions, body-hash header) | Follow AWS's current docs; if needed, API Gateway HTTP API ($1 per million requests) |

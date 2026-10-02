@@ -91,9 +91,12 @@ def model_check(run: Runner, env: Mapping[str, str], region: str, model_id: str)
     except ValueError:
         return Check(name, False, "Bedrock's answer wasn't JSON; run the preflight again")
     on_demand = "ON_DEMAND" in details.get("inferenceTypesSupported", [])
-    active = details.get("modelLifecycle", {}).get("status") == "ACTIVE"
-    if not (on_demand and active):
+    status = details.get("modelLifecycle", {}).get("status")
+    # A legacy model stays invokable for at least six months: warn, but let deploys through.
+    if not on_demand or status not in ("ACTIVE", "LEGACY"):
         return Check(name, False, f"{model_id} in {region} isn't active and on demand; pick another model")
+    if status == "LEGACY":
+        return Check(name, True, f"{model_id} in {region} (LEGACY: Bedrock will retire it; plan a switch)")
     return Check(name, True, f"{model_id} in {region}")
 
 
