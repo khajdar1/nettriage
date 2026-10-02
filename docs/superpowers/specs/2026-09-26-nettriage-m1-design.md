@@ -136,7 +136,7 @@ flowchart LR
 | Hot state | DynamoDB table `runtime` | Provisioned capacity within Always Free; TTL |
 | Files | S3 `uploads` bucket | Private, TLS-only, SSE-S3, deleted after 30 days |
 | Identity | Cognito user pool, Essentials tier | Managed login; MFA required (TOTP) |
-| LLM | Amazon Bedrock: OpenAI gpt-oss-20b on demand in eu-north-1 (the owner's choice in Plan 5b, until Plan 5c's evals choose) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
+| LLM | Amazon Bedrock: OpenAI gpt-oss-20b on demand in eu-north-1 (the owner's choice in Plan 5b, until Plan 5d's evals choose) | Structured outputs; model chosen by evals; on-demand models only, no cross-Region inference profiles (Revision 2, R4) |
 | Secrets and config | SSM Parameter Store (SecureString, AWS-managed key) | Database passwords, Cognito client secret, OTLP token, kill switches |
 | Telemetry | OpenTelemetry → Grafana Cloud (free tier) | Lambda platform logs stay in CloudWatch for 7 days |
 | Scheduling | EventBridge Scheduler | Probe, maintenance |
@@ -528,7 +528,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Pagination:** cursor-based (`cursor`, `limit` ≤ 100). Lists that §5.7's quotas keep small (members, invitations) return every item; the audit log pages with a cursor.
 - **Optimistic concurrency:** findings return an `ETag`. `PATCH` requires `If-Match`: a stale version gets **412 Precondition Failed**, and a missing header gets 428. The ETag is the finding's version in quotes (`"3"`); `*`, a weak ETag or a list names no version and also gets 428. A 412 carries the current `ETag` (Plan 4c).
 - **Idempotency:** `Idempotency-Key` is supported on `POST …/uploads`, `POST /orgs` and `POST …/comments` (Plan 4c) and is kept for 24 hours. A key reused with a different request gets 422, and a retry while the first request still runs gets 409. A request is its method, path and body, so a key can't be reused across routes or orgs (Plan 4a).
-- **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests.
+- **SPA request headers:** `x-amz-content-sha256` on every request with a body (the OAC requirement), and `X-CSRF-Token` on state-changing requests. A `POST` or `PUT` with no inputs, such as a re-run, sends `{}` so it carries a body and its hash too: AWS's guide requires the hash on every `POST` and `PUT` to a function URL (Plan 5c).
 - **No body on DELETE:** CloudFront's origin signing to the Lambda function URL rejects a DELETE that carries a body (found on dev in Plan 3c), so a DELETE takes its inputs from the path and the query. A test fails on any DELETE route that declares a body.
 - **Docs:** interactive API docs are enabled in `dev` only. Each build exports the OpenAPI JSON to the repository.
 
@@ -554,7 +554,7 @@ A failed condition returns the item as it was, which tells whether the request i
 | `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
 | `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
 | `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. Newest first, a page at a time |
-| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, the latest AI analysis as `ai_analysis` (null until there is one: status, provider, model, prompt and output schema versions, output, `error_code`, tokens, `cost_usd` and latency; Plan 5b), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
+| `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, the latest AI analysis as `ai_analysis` (null until there is one: status, provider, model, prompt and output schema versions, output, `error_code`, tokens, `cost_usd`, latency, and the rating's `feedback` and `feedback_by`; Plans 5b and 5c), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
 | `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Body: `status`, `assignee_id` (`null` unassigns), or both; `If-Match`. Any status can change to any other, and the assignee must be an Owner, Admin or Analyst of the org (422 otherwise; the owner's decisions, Plan 4c). Each change is an event in the finding's history and an audit event |
 | `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | Body: `text`, 1 to 2,000 characters, line breaks allowed. A comment joins the history without changing the finding's version; the audit event never holds its text |
 | `POST /api/v1/orgs/{org}/findings/{id}/ai-analyses` | `ai:request` | Re-run, subject to budget and rate limits (`ai.rerun.user`). `202 {"status": "queued"}`: the finding goes to the triage worker. `200 {"status": "explained", "ai_analysis": …}`: its latest analysis for the current model, prompt and input already succeeded, so that answer is returned and nothing is spent (the owner's decision, Plan 5c). 503 if the queue can't be reached |
@@ -640,7 +640,7 @@ A failed condition returns the item as it was, which tells whether the request i
 - **Model candidates:** gpt-oss-20b, Ministral 3 8B and Claude Haiku 4.5 (quality baseline), all through Bedrock structured outputs. As checked in Plan 5b (2026-10-01):
   - gpt-oss-20b (`openai.gpt-oss-20b-1:0`) runs on demand in eu-north-1, us-east-1 and us-west-2, at $0.07 / $0.30 per million input / output tokens in eu-north-1. It runs live from Plan 5b.
   - Ministral 3 8B (`mistral.ministral-3-8b-instruct`) runs on demand on Converse only in us-east-1 and us-west-2 ($0.15 / $0.15).
-  - Claude Haiku 4.5 has no on-demand model ID for Converse in any Region, only cross-Region inference profiles, which the account can't use (Revision 2, R4): it can't be a candidate. Plan 5c picks the quality baseline.
+  - Claude Haiku 4.5 has no on-demand model ID for Converse in any Region, only cross-Region inference profiles, which the account can't use (Revision 2, R4): it can't be a candidate. Plan 5d picks the quality baseline.
 - **Selection:** the eval suite runs on every candidate, and the default is the cheapest model that meets all gates (8.5).
 
 ### 8.4 Prompt-injection posture and output handling
