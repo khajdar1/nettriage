@@ -16,6 +16,7 @@
   },
   "packageManager": "pnpm@12.6.0",
   "dependencies": {
+    "openapi-fetch": "^0.17.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
