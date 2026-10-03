@@ -1,2 +1,5 @@
 dist
+# Generated: the API's OpenAPI document, and the client types made from it (`just openapi`).
+openapi.json
+src/api/schema.ts
 pnpm-lock.yaml

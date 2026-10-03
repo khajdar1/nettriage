@@ -96,6 +96,8 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - name: Check that the typed client matches the API's OpenAPI document
+        run: pnpm check:api
       - run: pnpm test
       - run: pnpm test:scripts
       - run: pnpm build
