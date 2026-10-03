@@ -606,6 +606,26 @@ until then you read the explanation from the API.
 5. Read the audit log as in B8 step 9: a queued re-run is an `ai.rerun_requested` event.
 6. Delete the test org as in B7 step 10.
 
+### B11. Try the web app
+1. Open `https://<id>.cloudfront.net/`. NetTriage's landing page opens, in the deck's navy and
+   teal.
+2. Click **Sign in / Sign up** and sign in with your password and a fresh code from the
+   authenticator app. You land on **Your organizations**.
+3. Under **Create an organization**, type `Web Test` and click **Create organization**. The
+   organization opens on its **Members** page, with you as its Owner.
+4. Under **Invitations**, type an email address that has no NetTriage account yet, keep
+   **Viewer**, and click **Invite**. The invitation's link appears once; click **Copy link**.
+5. Optional, to try accepting it: open a private window, paste the link, and sign up with that
+   email address (it needs a password and an authenticator app of its own). You land on
+   **Web Test**'s **Members** page as a Viewer, with nothing you can change. Close the private
+   window. If you skip this, click **Revoke** next to the invitation.
+6. Click the **Settings** tab. Rename the organization to `Web Test 2` and click **Save**: the
+   new name shows at the top at once.
+7. Under **Delete this organization**, type `Web Test 2` and click **Delete organization**. You're
+   back on **Your organizations**, without it.
+8. Click **Account settings** at the top: your email address shows. Click **Sign out**: you're
+   signed out of NetTriage and of Cognito, and the landing page offers **Sign in / Sign up**.
+
 ## Part C: when things go wrong
 
 ### Pause uploads in an emergency

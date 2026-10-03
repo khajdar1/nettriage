@@ -779,11 +779,11 @@ CI adds a deploy annotation for every deploy.
 
 **Pages:**
 - `/` Landing: what NetTriage is, "View the live demo", "Sign in / Sign up", and a GitHub link.
-- `/demo`: the read-only demo workspace, rendered from the static snapshot, with a clear "demo" banner.
-- `/invite`: reads the token from the URL fragment, signs the user in if needed, then accepts.
-- `/app`: an org switcher, plus onboarding (create an org or accept an invitation).
+- `/demo`: the read-only demo workspace, rendered from the static snapshot, with a clear "demo" banner (Plan 6c, written once Bedrock answers, so the demo's explanations are real; the owner's decision).
+- `/invite`: reads the token from the URL fragment, signs the user in if needed, then accepts. The token leaves the address bar at once and waits in the tab's `sessionStorage` while the person signs in (Plan 6a).
+- `/app`: an org switcher (the list of the person's organizations, which the product name in the top bar returns to), plus onboarding (create an org or accept an invitation).
 - `/app/orgs/:org/uploads`: the uploads list and an upload dialog with progress. The browser computes the file's SHA-256 before requesting a slot.
-- `/app/orgs/:org/findings`: a table with filters (severity, status, detector, upload) and sorting.
+- `/app/orgs/:org/findings`: a table with filters (severity, status, detector, upload) and sorting by severity or newest, done by the API (the owner's decision; Plan 6b adds `sort` to `GET …/findings`).
 - `/app/orgs/:org/findings/:id`:
   - summary and metrics,
   - an evidence table,
@@ -791,14 +791,15 @@ CI adds a deploy annotation for every deploy.
   - an AI explanation panel with the "AI-generated" label, model and prompt version, feedback and re-run,
   - an activity timeline with comments,
   - status and assignee controls.
-- `/app/orgs/:org/members`: members, roles, invitations.
+- `/app/orgs/:org/members`: members, roles, invitations. An invitation's link is shown once, ready to copy.
+- `/app/orgs/:org/settings`: rename (Owner, Admin), leave (anyone), and delete after typing the org's name (Owner) (Plan 6a).
 - `/app/orgs/:org/audit` and `/app/orgs/:org/usage`: Owner and Admin only.
-- `/app/settings`: "sign out everywhere".
+- `/app/settings`: account settings: who is signed in, and "sign out everywhere".
 
 **Libraries:**
 - React, TypeScript (strict) and Vite.
 - React Router and TanStack Query.
-- A typed client generated from the OpenAPI spec, with `openapi-typescript` and `openapi-fetch`. A wrapper adds `x-amz-content-sha256` and `X-CSRF-Token`.
+- A typed client generated from the OpenAPI document the API exports to `frontend/openapi.json` (`just openapi`), with `openapi-typescript` and `openapi-fetch`. A wrapper adds `x-amz-content-sha256` (sending `{}` on a POST or PUT with no inputs) and `X-CSRF-Token`; a create sends an `Idempotency-Key` (Plan 6a).
 
 **Security:**
 - No `dangerouslySetInnerHTML`.
@@ -810,7 +811,7 @@ CI adds a deploy annotation for every deploy.
 
 **Accessibility:** WCAG 2.2 AA is the target (keyboard navigation, labels, contrast).
 
-**Visual design** is guided by the frontend-design skill during implementation.
+**Visual design** matches the directors' deck (the owner's decision, Plan 6a): navy, teal and off-white, with Space Grotesk headings and IBM Plex Sans text, self-hosted with @fontsource so the CSP needs no other origin. Every style lives in one stylesheet, and a lint rule forbids inline styles and `dangerouslySetInnerHTML`.
 
 ## 11. Engineering practices
 
@@ -879,8 +880,8 @@ Implementation is test-first.
   - redaction of sensitive log fields,
   - a test that fails if any free-text field from an upload could reach the prompt.
 - **Integration tests** run against real Postgres (testcontainers) with all migrations applied, DynamoDB Local and moto.
-- **Contract checks:** an OpenAPI diff on every PR. The generated frontend client stops compiling when the API drifts.
-- **End-to-end:** Playwright smoke tests after each deploy:
+- **Contract checks:** an OpenAPI diff on every PR. The generated frontend client stops compiling when the API drifts. The API's document is committed as `frontend/openapi.json`, so a PR's diff shows every API change; a backend test fails when it differs from the API, and `pnpm check:api` when the generated client differs from it (Plan 6a).
+- **End-to-end:** Playwright smoke tests after each deploy (Plan 7, the owner's decision; they need a test user whose authenticator secret is kept in SSM):
   - the demo page loads,
   - health checks pass,
   - a scripted login succeeds (the test user's TOTP code is generated in the test),
