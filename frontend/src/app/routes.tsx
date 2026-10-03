@@ -1,4 +1,5 @@
 import { Navigate, type RouteObject } from "react-router";
+import { Invite } from "../pages/Invite";
 import { Landing } from "../pages/Landing";
 import { NotFound } from "../pages/NotFound";
 import { Members } from "../pages/org/Members";
@@ -12,6 +13,7 @@ import { RequireSession } from "./RequireSession";
 /** Every page of the app (spec §10). CloudFront serves index.html for each of these paths. */
 export const routes: RouteObject[] = [
   { path: "/", element: <Landing /> },
+  { path: "/invite", element: <Invite /> },
   {
     path: "/app",
     element: (
