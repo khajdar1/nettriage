@@ -4,7 +4,8 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig([
-  { ignores: ["dist", "node_modules"] },
+  // src/api/schema.ts is generated from openapi.json by `just openapi`.
+  { ignores: ["dist", "node_modules", "src/api/schema.ts"] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   { files: ["src/**/*.{ts,tsx}"], languageOptions: { globals: globals.browser } },

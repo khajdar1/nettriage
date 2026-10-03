@@ -38,7 +38,12 @@ build-lambda:
 
 # Frontend: install, lint, test, build and CSP-check
 web-check:
-    cd frontend && pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm test:scripts && pnpm build && pnpm check:csp
+    cd frontend && pnpm install --frozen-lockfile && pnpm lint && pnpm check:api && pnpm test && pnpm test:scripts && pnpm build && pnpm check:csp
+
+# API: export the OpenAPI document and regenerate the frontend's typed client from it
+openapi:
+    cd backend && uv run python -m nettriage.entrypoints.api.openapi_document ../frontend/openapi.json
+    cd frontend && pnpm generate:api
 
 # CloudFront Functions tests
 edge-test:
