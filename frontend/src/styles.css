@@ -1,37 +1,38 @@
 /*
- * NetTriage's look matches the directors' deck (the owner's decision, Plan 6a): navy, teal and
- * off-white, Space Grotesk for headings and IBM Plex Sans for text. The fonts are served from
- * the app itself (@fontsource), because the CSP allows no other origin (spec §6.7). Every style
- * lives in this file: the CSP allows no inline styles.
+ * NetTriage's look, "Sweep" (the owner's choice, 2026-10-04). Cool instrument paper, the deck's
+ * navy for ink and teal for links and focus, and sodium amber for one thing only: what a detector
+ * found (probed ports, severity). Archivo carries the voice through its width axis, expanded for
+ * the brand and headlines and condensed for data labels; Martian Mono is for machine values
+ * (addresses, ports, log lines). Fonts are served by the app itself, and every style lives in
+ * this file, because the CSP allows no other origin and no inline styles (spec §6.7, §10).
  */
 
 :root {
-  --navy: #0f1b2a;
-  --navy-raised: #16263a;
-  --navy-line: #2a3b52;
-  --teal: #5cc8c0;
-  --teal-dark: #0b6e6e;
-  --teal-darker: #085858;
-  --paper: #f4f5f1;
-  --card: #fbfbf8;
-  --line: #d9ddd5;
+  --ink: #10202f;
+  --ink-soft: #24384b;
+  --paper: #eef1f3;
+  --plate: #ffffff;
+  --plate-sunk: #f6f8f9;
+  --grid: #d3dae0;
+  --row: #e5e9ed;
+  --graphite: #536170;
   --field-line: #7d8579;
-  --ink: #0f1b2a;
-  --text: #3a4658;
-  --muted: #5b6779;
-  --danger: #b42318;
-  --danger-dark: #8f1c13;
-  --danger-tint: #fdecea;
-  --ok-tint: #e6f4f1;
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-text: "IBM Plex Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --radius: 12px;
-  font-family: var(--font-text);
+  --signal: #f2a900;
+  --signal-ink: #8a5a00;
+  --signal-tint: #fdeab3;
+  --teal: #0b6e6e;
+  --teal-tint: #e3f0ef;
+  --danger: #a3241a;
+  --danger-tint: #fbeae8;
+  --sans: "Archivo Variable", system-ui, sans-serif;
+  --mono: "Martian Mono Variable", ui-monospace, monospace;
+  --radius: 8px;
+  font-family: var(--sans);
   font-size: 16px;
   line-height: 1.5;
-  color: var(--text);
+  color: var(--ink);
   background: var(--paper);
+  font-variant-numeric: tabular-nums;
 }
 
 *,
@@ -42,50 +43,63 @@
 
 body {
   margin: 0;
+  background: var(--paper);
 }
 
 h1,
 h2,
 h3 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  color: var(--ink);
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-stretch: 112%;
+  font-size: 1.95rem;
+}
+
+h2 {
+  font-stretch: 108%;
+  font-size: 1.3rem;
+}
+
+h3 {
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+
+p {
+  margin: 0 0 1rem;
 }
 
 a {
-  color: var(--teal-dark);
+  color: var(--teal);
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}
+
+mark {
+  background: var(--signal-tint);
+  color: var(--ink);
+  padding: 0 0.12em;
 }
 
 code,
 .mono {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-
-:focus-visible {
-  outline: 3px solid var(--teal-dark);
-  outline-offset: 2px;
-}
-
-/* On navy, the darker teal is too faint to see: WCAG 1.4.11 wants 3:1. */
-.topbar :focus-visible,
-.landing :focus-visible {
-  outline-color: var(--teal);
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--teal-dark);
+  font-family: var(--mono);
+  font-stretch: 87.5%;
+  font-size: 0.82em;
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--graphite);
 }
 
 .visually-hidden {
@@ -97,141 +111,309 @@ code,
   white-space: nowrap;
 }
 
-/* Buttons and links that look like buttons */
+.skip-link {
+  position: absolute;
+  top: -3rem;
+  left: 1rem;
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--plate);
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+/* The mark: a tiny port map and the name, set wide */
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  font-stretch: 125%;
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.logo {
+  display: block;
+  flex: none;
+}
+
+.logo-cell {
+  fill: var(--grid);
+}
+
+.logo-lit {
+  fill: var(--signal);
+}
+
+/* Buttons, and links that act like buttons */
 
 .button {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.55rem 1.05rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card);
+  min-height: 2.6rem;
+  padding: 0.4rem 1.05rem;
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  background: var(--plate);
   color: var(--ink);
   font: inherit;
   font-weight: 600;
+  line-height: 1.3;
   text-decoration: none;
   cursor: pointer;
 }
 
 .button:hover {
-  border-color: var(--teal-dark);
+  border-color: var(--ink);
 }
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.55;
 }
 
 .button-primary {
-  border-color: var(--teal-dark);
-  background: var(--teal-dark);
-  color: #fff;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--plate);
 }
 
 .button-primary:hover {
-  background: var(--teal-darker);
+  background: var(--ink-soft);
 }
 
 .button-danger {
   border-color: var(--danger);
   background: var(--danger);
-  color: #fff;
+  color: var(--plate);
 }
 
 .button-danger:hover {
-  border-color: var(--danger-dark);
-  background: var(--danger-dark);
+  border-color: var(--ink);
+}
+
+/* Until it can be used, a dangerous button is only an outline. */
+.button-danger:disabled {
+  border-color: var(--grid);
+  background: var(--plate);
+  color: var(--danger);
+  opacity: 1;
 }
 
 .button-quiet {
   border-color: transparent;
   background: transparent;
-  color: var(--teal-dark);
+  color: var(--ink);
+}
+
+.button-quiet:hover {
+  border-color: var(--grid);
+}
+
+.text-link {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.75rem 1.25rem;
 }
 
 /* Messages */
 
 .notice {
   margin: 1rem 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid;
-  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  border-left: 3px solid;
+  border-radius: 0 6px 6px 0;
+  max-width: 44rem;
 }
 
 .notice-error {
-  border-color: #f2b8b2;
+  border-color: var(--danger);
   background: var(--danger-tint);
-  color: #6f160f;
+  color: var(--danger);
 }
 
 .notice-ok {
-  border-color: #b5ddd6;
-  background: var(--ok-tint);
-  color: #084646;
+  border-color: var(--teal);
+  background: var(--teal-tint);
+  color: var(--teal);
 }
 
-/* Pages, cards, forms and tables */
+/* Severity: lit bars beside a word, never color alone */
+
+.sev {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: -1px;
+}
+
+.sev i {
+  display: block;
+  width: 5px;
+  height: 14px;
+  background: var(--grid);
+}
+
+.sev i.on {
+  background: var(--signal);
+}
+
+/* Pages and their parts */
 
 .page {
-  max-width: 64rem;
+  width: 100%;
+  max-width: 68rem;
   margin: 0 auto;
-  padding: 2.5rem 1.5rem 4rem;
+  padding: 2.25rem 1.75rem 4rem;
 }
 
-.narrow {
-  max-width: 36rem;
+/* Narrow pages keep the frame's left edge; only their content is narrower. */
+.narrow > * {
+  max-width: 40rem;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.block {
+  margin-top: 3rem;
+}
+
+.block > h2 {
+  margin-bottom: 0.35rem;
+}
+
+.block > .inline-form {
+  margin: 1.25rem 0;
+}
+
+/* A setting: what it is and why on the left, how to change it on the right. */
+.setting {
+  display: grid;
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  gap: 0.75rem 3rem;
+  padding: 1.6rem 0;
+  border-top: 1px solid var(--grid);
+}
+
+.setting:last-of-type {
+  border-bottom: 1px solid var(--grid);
+}
+
+.setting h2 {
+  margin-bottom: 0.35rem;
+  font-size: 1.1rem;
+}
+
+.setting-what p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--graphite);
+}
+
+.setting-how > p:only-child {
+  margin: 0;
+}
+
+.setting-danger h2 {
+  color: var(--danger);
+}
+
+.page > h1 {
+  margin-bottom: 1.5rem;
 }
 
 .card {
-  margin: 1.5rem 0;
-  padding: 1.5rem;
-  border: 1px solid var(--line);
+  margin: 1.25rem 0;
+  padding: 1.25rem 1.4rem 1.4rem;
+  border: 1px solid var(--grid);
   border-radius: var(--radius);
-  background: var(--card);
+  background: var(--plate);
 }
 
 .card h2 {
-  margin-top: 0;
-  font-size: 1.25rem;
+  margin-bottom: 0.6rem;
+  font-size: 1.15rem;
+}
+
+.card p:last-child {
+  margin-bottom: 0;
 }
 
 .card-danger {
-  border-color: #f2b8b2;
+  border-left: 3px solid var(--danger);
 }
+
+.badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-stretch: 75%;
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: var(--graphite);
+}
+
+.state {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Forms */
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
   margin-bottom: 1rem;
 }
 
 .field label {
-  font-weight: 600;
-  color: var(--ink);
+  font-stretch: 75%;
+  font-weight: 650;
+  font-size: 1rem;
+  color: var(--graphite);
 }
 
 .field input,
 .field select {
-  padding: 0.55rem 0.7rem;
+  min-width: 14rem;
+  height: 2.6rem;
+  padding: 0 0.65rem;
   border: 1px solid var(--field-line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: 6px;
+  background: var(--plate);
   color: var(--ink);
   font: inherit;
 }
 
 .field .hint {
   font-size: 0.9rem;
-  color: var(--muted);
+  color: var(--graphite);
 }
 
 .inline-form {
@@ -245,140 +427,423 @@ code,
   margin-bottom: 0;
 }
 
+select {
+  font: inherit;
+  color: var(--ink);
+}
+
+.table .button {
+  min-height: 2.2rem;
+  padding: 0.25rem 0.8rem;
+}
+
+.table select {
+  height: 2.2rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--field-line);
+  border-radius: 6px;
+  background: var(--plate);
+}
+
+/* Tables sit on a white plate; headers are condensed, rows are calm */
+
 .table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  background: var(--plate);
+  overflow: hidden;
 }
 
 .table th,
 .table td {
-  padding: 0.65rem 0.5rem;
-  border-bottom: 1px solid var(--line);
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--row);
   text-align: left;
   vertical-align: middle;
 }
 
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
 .table th {
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
+  border-bottom-color: var(--grid);
+  background: var(--plate-sunk);
+  font-stretch: 75%;
+  font-weight: 650;
+  font-size: 0.95rem;
+  color: var(--graphite);
 }
 
-.badge {
-  display: inline-block;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  background: #e3e7df;
-  color: var(--ink);
-  font-size: 0.85rem;
-  font-weight: 600;
+.table .date {
+  white-space: nowrap;
 }
 
-/* The signed-in frame */
-
-.skip-link {
-  position: absolute;
-  top: -3rem;
-  left: 1rem;
-  z-index: 10;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  background: var(--teal);
-  color: var(--navy);
-  font-weight: 600;
+.table td .muted {
+  font-size: 0.9rem;
 }
 
-.skip-link:focus {
-  top: 0.5rem;
+/* The landing page and the pages outside the app */
+
+.site {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 0 2rem;
 }
 
-.topbar {
+.site-top {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem 1.5rem;
-  background: var(--navy);
-  color: #c9d2dc;
+  padding: 1.2rem 0;
+  border-bottom: 1px solid var(--grid);
 }
 
-.topbar a {
-  color: var(--paper);
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.75rem;
 }
 
-.brand {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
+.site-nav a:not(.button) {
+  color: var(--ink);
+  font-weight: 500;
   text-decoration: none;
+}
+
+.site-nav a:not(.button):hover {
+  text-decoration: underline;
+}
+
+.standalone .page {
+  max-width: none;
+  margin: 0;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 38rem);
+  gap: 4.5rem;
+  align-items: center;
+  padding: 5rem 0 5.5rem;
+}
+
+.finding-kind {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  font-stretch: 75%;
+  font-weight: 650;
+  font-size: 1.05rem;
+  color: var(--signal-ink);
+}
+
+.hero h1 {
+  max-width: 15ch;
+  font-stretch: 112%;
+  font-size: clamp(2.1rem, 3.5vw, 3.05rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  max-width: 31rem;
+  margin: 1.6rem 0 2.2rem;
+  font-size: 1.2rem;
+  line-height: 1.55;
+  color: var(--graphite);
+}
+
+.lede strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* The port map */
+
+.port-map {
+  margin: 0;
+}
+
+.port-map-grid {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.port-map-grid .cell {
+  fill: var(--grid);
+}
+
+.port-map-grid .cell.lit {
+  fill: var(--signal);
+}
+
+.port-map-grid .cell.now {
+  fill: var(--ink);
+}
+
+.port-map-grid .tick {
+  font-family: var(--mono);
+  font-stretch: 87.5%;
+  font-size: 10px;
+  fill: var(--graphite);
+}
+
+.port-map-grid .call {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 650;
+  fill: var(--ink);
+  transition: opacity 0.4s;
+}
+
+.port-map-grid .port {
+  font-family: var(--mono);
+  font-stretch: 87.5%;
+  font-weight: 500;
+}
+
+.port-map-grid .lead {
+  stroke: var(--graphite);
+  stroke-width: 0.75;
+  transition: opacity 0.4s;
+}
+
+.port-map-grid .ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  transition: opacity 0.4s;
+}
+
+.port-map-grid.sweeping .call,
+.port-map-grid.sweeping .lead,
+.port-map-grid.sweeping .ring {
+  opacity: 0;
+}
+
+.port-map figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-top: 1rem;
+  padding-right: 14%;
+  font-size: 0.95rem;
+  color: var(--graphite);
+}
+
+.port-map figcaption b {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+/* How a finding is made: four steps on one line, each with its real artifact */
+
+.how {
+  padding: 4.5rem 0 5rem;
+  border-top: 1px solid var(--grid);
+}
+
+.how h2 {
+  margin-bottom: 3rem;
+  font-stretch: 112%;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+.steps {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps::before {
+  position: absolute;
+  top: 13px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--grid);
+  content: "";
+}
+
+.step {
+  position: relative;
+}
+
+.step-n {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  background: var(--ink);
+  color: var(--plate);
+  font-stretch: 75%;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.step-detect .step-n {
+  background: var(--signal);
+  color: var(--ink);
+}
+
+.step h3 {
+  margin: 1.1rem 0 0.45rem;
+}
+
+.step p {
+  color: var(--graphite);
+}
+
+.artifact {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.step p.artifact {
+  color: var(--ink);
+}
+
+.logline {
+  padding: 0.1rem 0 0.1rem 0.8rem;
+  border-left: 3px solid var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.rule {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.8rem;
+}
+
+.rule dt {
+  font-stretch: 75%;
+  font-weight: 650;
+  color: var(--graphite);
+}
+
+.rule dd {
+  margin: 0;
+}
+
+.ai-quote {
+  padding: 0.1rem 0 0.1rem 0.8rem;
+  border-left: 3px solid var(--teal);
+}
+
+.ai-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-stretch: 75%;
+  font-weight: 650;
+  color: var(--teal);
+}
+
+.events {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  list-style: none;
+}
+
+.events li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.events b {
+  font-weight: 650;
+}
+
+.site-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 2rem 0 3rem;
+  border-top: 1px solid var(--grid);
+  font-size: 0.95rem;
+  color: var(--graphite);
+}
+
+/* The signed-in frame */
+
+.app-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1.75rem;
+  border-bottom: 1px solid var(--grid);
 }
 
 .account {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
+  gap: 0.4rem 1.25rem;
 }
 
-.account .button-quiet {
-  color: var(--teal);
-}
-
-.org-list {
-  display: grid;
-  gap: 0.75rem;
-  margin: 1.5rem 0;
-  padding: 0;
-  list-style: none;
-}
-
-.org-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-}
-
-.org-list a {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
+.account a {
+  color: var(--ink);
   font-weight: 600;
+  text-decoration: none;
 }
 
-/* An organization's frame */
+.account a:hover {
+  text-decoration: underline;
+}
+
+.who {
+  color: var(--graphite);
+}
+
+/* An organization: its name and your role, then its tabs */
 
 .org-bar {
-  border-bottom: 1px solid var(--line);
-  background: var(--card);
+  border-bottom: 1px solid var(--grid);
+  background: var(--plate);
 }
 
 .org-bar-inner {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
-  max-width: 64rem;
+  gap: 0.5rem 1.5rem;
+  max-width: 68rem;
   margin: 0 auto;
-  padding: 0.75rem 1.5rem;
+  padding: 1rem 1.75rem 0;
 }
 
 .org-name {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--ink);
+  margin: 0 0 0.75rem;
+  font-stretch: 108%;
+  font-weight: 700;
+  font-size: 1.2rem;
 }
 
 .tabs {
@@ -388,105 +853,159 @@ code,
 }
 
 .tabs a {
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
-  color: var(--text);
+  padding: 0.45rem 0.75rem 0.65rem;
+  border-bottom: 2px solid transparent;
+  color: var(--graphite);
   font-weight: 600;
   text-decoration: none;
 }
 
 .tabs a:hover {
-  background: #e9ece5;
+  color: var(--ink);
 }
 
 .tabs a[aria-current="page"] {
-  background: var(--teal-dark);
-  color: #fff;
+  border-bottom-color: var(--ink);
+  color: var(--ink);
 }
+
+/* Your organizations */
+
+.org-list {
+  margin: 1.25rem 0 2rem;
+  padding: 0;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  background: var(--plate);
+  list-style: none;
+}
+
+.org-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--row);
+}
+
+.org-list li:last-child {
+  border-bottom: 0;
+}
+
+.org-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.9rem;
+}
+
+.org-list a {
+  color: var(--ink);
+  font-stretch: 108%;
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-decoration: none;
+}
+
+.org-list a:hover {
+  text-decoration: underline;
+}
+
+/* A new invitation's link, shown once */
 
 .invite-link {
   margin-top: 1.25rem;
-  padding: 1rem;
-  border: 1px solid #b5ddd6;
-  border-radius: 8px;
-  background: var(--ok-tint);
+  padding: 0.9rem 1rem;
+  border-left: 3px solid var(--teal);
+  background: var(--teal-tint);
 }
 
 .invite-link input {
   flex: 1 1 24rem;
-  padding: 0.55rem 0.7rem;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
   border: 1px solid var(--field-line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: 6px;
+  background: var(--plate);
+  color: var(--ink);
 }
 
-/* The landing page */
+/* Narrow screens */
 
-.landing {
-  min-height: 100vh;
-  background: var(--navy);
-  color: #c9d2dc;
+@media (max-width: 62rem) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3rem;
+    padding-top: 3.5rem;
+  }
+
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 3rem;
+  }
+
+  .steps::before {
+    display: none;
+  }
 }
 
-.landing .hero,
-.landing .features {
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 0 1.5rem;
+@media (max-width: 40rem) {
+  .site {
+    padding: 0 1.1rem;
+  }
+
+  .page {
+    padding: 1.75rem 1.1rem 3rem;
+  }
+
+  .app-top,
+  .org-bar-inner {
+    padding-right: 1.1rem;
+    padding-left: 1.1rem;
+  }
+
+  .site-nav {
+    gap: 1rem;
+  }
+
+  .site-nav a:not(.button),
+  .who {
+    display: none;
+  }
+
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .port-map figcaption {
+    padding-right: 0;
+  }
+
+  .field input,
+  .field select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .inline-form .field {
+    flex: 1 1 100%;
+  }
+
+  .table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .setting {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-.landing .hero {
-  padding-top: 16vh;
-  padding-bottom: 4rem;
-}
-
-.landing .eyebrow {
-  color: var(--teal);
-}
-
-.landing h1 {
-  margin: 0.5rem 0 1rem;
-  font-size: clamp(3rem, 9vw, 5.5rem);
-  color: var(--paper);
-}
-
-.landing .lede {
-  max-width: 40rem;
-  font-size: 1.3rem;
-}
-
-.landing .actions {
-  margin-top: 2rem;
-}
-
-.landing .button {
-  border-color: var(--navy-line);
-  background: transparent;
-  color: var(--paper);
-}
-
-.landing .button-primary {
-  border-color: var(--teal);
-  background: var(--teal);
-  color: var(--navy);
-}
-
-.landing .features {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 1.5rem;
-  padding-bottom: 6rem;
-}
-
-.landing .feature {
-  padding: 1.5rem;
-  border: 1px solid var(--navy-line);
-  border-radius: var(--radius);
-  background: var(--navy-raised);
-}
-
-.landing .feature h2 {
-  margin-top: 0;
-  font-size: 1.3rem;
-  color: var(--paper);
+@media (prefers-reduced-motion: reduce) {
+  .port-map-grid .call,
+  .port-map-grid .lead,
+  .port-map-grid .ring {
+    transition: none;
+  }
 }

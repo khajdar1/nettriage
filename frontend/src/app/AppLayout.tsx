@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Link, Outlet } from "react-router";
 import { signOut, useMe } from "../auth/session";
 import { ErrorNotice } from "../ui/ErrorNotice";
+import { Wordmark } from "../ui/Wordmark";
 
 /** The frame of every signed-in page: the product, the person, and signing out. */
 export function AppLayout() {
@@ -12,10 +13,8 @@ export function AppLayout() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <header className="topbar">
-        <Link to="/app" className="brand">
-          NetTriage
-        </Link>
+      <header className="app-top">
+        <Wordmark to="/app" />
         <nav className="account" aria-label="Account">
           <span className="who">{me.data?.user.email}</span>
           <Link to="/app/settings">Account settings</Link>

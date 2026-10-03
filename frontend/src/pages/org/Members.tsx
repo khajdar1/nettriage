@@ -24,7 +24,16 @@ export function Members() {
   });
   return (
     <main id="main" className="page">
-      <h1>Members</h1>
+      <div className="page-head">
+        <h1>Members</h1>
+        {members.data !== undefined && (
+          <span className="muted">
+            {members.data.members.length === 1
+              ? "1 member"
+              : `${members.data.members.length} members`}
+          </span>
+        )}
+      </div>
       {members.isPending && <Loading />}
       {members.isError && <ErrorNotice error={members.error} />}
       {members.data !== undefined && (

@@ -18,8 +18,8 @@ export function membersKey(orgId: string) {
 
 /**
  * One member: their role, which an Owner or Admin may choose and then save, and removing them.
- * A role is saved only with its button, because keyboards change a closed select on every arrow
- * key, and each change would otherwise be saved and audited.
+ * A role is saved only with its button, which appears once a different role is chosen: keyboards
+ * change a closed select on every arrow key, and each change would otherwise be saved and audited.
  */
 export function MemberRow({ org, member, isSelf }: { org: Org; member: Member; isSelf: boolean }) {
   const queryClient = useQueryClient();
@@ -77,21 +77,23 @@ export function MemberRow({ org, member, isSelf }: { org: Org; member: Member; i
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                className="button"
-                aria-label={`Save the role of ${who}`}
-                disabled={chosen === member.role || changeRole.isPending}
-                onClick={() => changeRole.mutate(chosen)}
-              >
-                Save role
-              </button>
+              {chosen !== member.role && (
+                <button
+                  type="button"
+                  className="button button-primary"
+                  aria-label={`Save the role of ${who}`}
+                  disabled={changeRole.isPending}
+                  onClick={() => changeRole.mutate(chosen)}
+                >
+                  Save role
+                </button>
+              )}
             </span>
           ) : (
             roleLabel(member.role)
           )}
         </td>
-        <td>{formatDate(member.joined_at)}</td>
+        <td className="date">{formatDate(member.joined_at)}</td>
         <td>
           {manageable &&
             (confirming ? (
