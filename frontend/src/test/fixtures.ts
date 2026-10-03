@@ -1,5 +1,5 @@
 /** Data the fake API answers with, typed by the API's own schema. */
-import type { Me } from "../auth/session";
+import type { Me, Membership } from "../auth/session";
 import type { Reply } from "./fakeApi";
 
 export const SIGNED_OUT: Reply = {
@@ -16,3 +16,16 @@ export const ME: Me = {
   memberships: [],
   csrf_token: "csrf-1",
 };
+
+export const ORG_ID = "01a10333-a115-741b-91ff-41d6e310d817";
+
+export const ACME: Membership = {
+  org_id: ORG_ID,
+  name: "Acme Security",
+  slug: "acme-security",
+  role: "owner",
+};
+
+export function memberOf(...memberships: Membership[]): Me {
+  return { ...ME, memberships };
+}
