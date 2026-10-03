@@ -14,19 +14,21 @@ export function AppLayout() {
         Skip to content
       </a>
       <header className="app-top">
-        <Wordmark to="/app" />
-        <nav className="account" aria-label="Account">
-          <span className="who">{me.data?.user.email}</span>
-          <Link to="/app/settings">Account settings</Link>
-          <button
-            type="button"
-            className="button button-quiet"
-            disabled={leaving.isPending}
-            onClick={() => leaving.mutate()}
-          >
-            Sign out
-          </button>
-        </nav>
+        <div className="app-top-inner">
+          <Wordmark to="/app" />
+          <nav className="account" aria-label="Account">
+            <span className="who">{me.data?.user.email}</span>
+            <Link to="/app/settings">Account settings</Link>
+            <button
+              type="button"
+              className="button button-quiet"
+              disabled={leaving.isPending}
+              onClick={() => leaving.mutate()}
+            >
+              Sign out
+            </button>
+          </nav>
+        </div>
       </header>
       {leaving.isError && (
         <div className="page">

@@ -791,13 +791,19 @@ select {
 /* The signed-in frame */
 
 .app-top {
+  border-bottom: 1px solid var(--grid);
+}
+
+/* The same column as the pages, so the wordmark lines up with every heading below it. */
+.app-top-inner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  max-width: 68rem;
+  margin: 0 auto;
   padding: 0.8rem 1.75rem;
-  border-bottom: 1px solid var(--grid);
 }
 
 .account {
@@ -959,7 +965,7 @@ select {
     padding: 1.75rem 1.1rem 3rem;
   }
 
-  .app-top,
+  .app-top-inner,
   .org-bar-inner {
     padding-right: 1.1rem;
     padding-left: 1.1rem;
