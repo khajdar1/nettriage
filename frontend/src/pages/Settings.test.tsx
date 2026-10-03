@@ -12,9 +12,11 @@ test("settings show who is signed in", async () => {
 
   renderAt("/app/settings");
 
-  expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "Account settings" }),
+  ).toBeInTheDocument();
   expect(screen.getAllByText("ana@example.com").length).toBeGreaterThan(0);
-  expect(document.title).toBe("Settings · NetTriage");
+  expect(document.title).toBe("Account settings · NetTriage");
 });
 
 test("sign out everywhere ends every session, then Cognito's", async () => {

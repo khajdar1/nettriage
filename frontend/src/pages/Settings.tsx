@@ -5,12 +5,12 @@ import { usePageTitle } from "../ui/usePageTitle";
 
 /** `/app/settings`: the account, and "sign out everywhere" (spec §2.2, §10). */
 export function Settings() {
-  usePageTitle("Settings");
+  usePageTitle("Account settings");
   const me = useMe();
   const everywhere = useMutation({ mutationFn: () => signOut({ everywhere: true }) });
   return (
     <main id="main" className="page narrow">
-      <h1>Settings</h1>
+      <h1>Account settings</h1>
       <section className="card" aria-labelledby="account">
         <h2 id="account">Your account</h2>
         <p>

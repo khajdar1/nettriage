@@ -18,7 +18,7 @@ export function AppLayout() {
         </Link>
         <nav className="account" aria-label="Account">
           <span className="who">{me.data?.user.email}</span>
-          <Link to="/app/settings">Settings</Link>
+          <Link to="/app/settings">Account settings</Link>
           <button
             type="button"
             className="button button-quiet"

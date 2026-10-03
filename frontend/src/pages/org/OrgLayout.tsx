@@ -48,6 +48,7 @@ export function OrgLayout() {
           </p>
           <nav className="tabs" aria-label="Organization">
             <NavLink to="members">Members</NavLink>
+            <NavLink to="settings">Settings</NavLink>
           </nav>
         </div>
       </div>
