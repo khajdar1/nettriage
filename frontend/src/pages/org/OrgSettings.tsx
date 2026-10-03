@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate } from "react-router";
 import { api } from "../../api/client";
 import { unwrap } from "../../api/problem";
@@ -69,6 +70,11 @@ function useGone() {
 function Leave({ org, userId }: { org: Org; userId: string }) {
   const gone = useGone();
   const [confirming, setConfirming] = useState(false);
+  const leaveButton = useRef<HTMLButtonElement>(null);
+  function cancel() {
+    flushSync(() => setConfirming(false));
+    leaveButton.current?.focus();
+  }
   const leave = useMutation({
     mutationFn: async () =>
       unwrap(
@@ -89,15 +95,21 @@ function Leave({ org, userId }: { org: Org; userId: string }) {
             className="button button-danger"
             disabled={leave.isPending}
             onClick={() => leave.mutate()}
+            autoFocus
           >
             Yes, leave {org.name}
           </button>
-          <button type="button" className="button" onClick={() => setConfirming(false)}>
+          <button type="button" className="button" onClick={cancel}>
             Cancel
           </button>
         </div>
       ) : (
-        <button type="button" className="button" onClick={() => setConfirming(true)}>
+        <button
+          ref={leaveButton}
+          type="button"
+          className="button"
+          onClick={() => setConfirming(true)}
+        >
           Leave
         </button>
       )}

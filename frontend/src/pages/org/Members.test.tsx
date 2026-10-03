@@ -74,6 +74,8 @@ test("an owner changes a member's role", async () => {
     await screen.findByRole("combobox", { name: "Role of cleo@example.com" }),
     "Analyst",
   );
+  expect(fake.requests.some((request) => request.method === "PATCH")).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Save the role of cleo@example.com" }));
 
   await vi.waitFor(() => expect(fake.requests.some((r) => r.method === "PATCH")).toBe(true));
   const patch = fake.requests.find((request) => request.method === "PATCH");
@@ -100,11 +102,13 @@ test("removing a member asks first", async () => {
   const { user } = renderAt(`/app/orgs/${ORG_ID}/members`);
 
   await user.click(await screen.findByRole("button", { name: "Remove cleo@example.com" }));
+  expect(screen.getByRole("button", { name: "Yes, remove cleo@example.com" })).toHaveFocus();
   await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Remove cleo@example.com" })).toHaveFocus();
   expect(fake.requests.some((request) => request.method === "DELETE")).toBe(false);
 
   await user.click(screen.getByRole("button", { name: "Remove cleo@example.com" }));
-  await user.click(screen.getByRole("button", { name: "Yes, remove" }));
+  await user.click(screen.getByRole("button", { name: "Yes, remove cleo@example.com" }));
 
   await vi.waitFor(() => expect(fake.requests.some((r) => r.method === "DELETE")).toBe(true));
 });
@@ -122,6 +126,7 @@ test("a change the API refuses says why", async () => {
     await screen.findByRole("combobox", { name: "Role of cleo@example.com" }),
     "Owner",
   );
+  await user.click(screen.getByRole("button", { name: "Save the role of cleo@example.com" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "You can't give a role above your own. (reference t9)",

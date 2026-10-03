@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import type { Member } from "./MemberRow";
-import { ADMIN, ORG_ID, OWNER, VIEWER, org } from "../../test/fixtures";
+import { ACME, ADMIN, ORG_ID, OWNER, SIGNED_OUT, VIEWER, memberOf, org } from "../../test/fixtures";
 import { ORG, signedInAs } from "../../test/orgApi";
 import { renderAt } from "../../test/render";
 
@@ -80,6 +80,10 @@ test("leaving asks first, then leaves for the organization list", async () => {
   const { user, router } = renderAt(SETTINGS);
 
   await user.click(await screen.findByRole("button", { name: "Leave" }));
+  expect(screen.getByRole("button", { name: "Yes, leave Acme Security" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Leave" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "Leave" }));
   await user.click(screen.getByRole("button", { name: "Yes, leave Acme Security" }));
 
   await vi.waitFor(() => expect(router.state.location.pathname).toBe("/app"));
@@ -106,4 +110,21 @@ test("the last owner can't leave, and is told why", async () => {
     "An organization keeps at least one owner. (reference l1)",
   );
   expect(router.state.location.pathname).toBe(SETTINGS);
+});
+
+test("a change after the session ended asks to sign in again, then comes back here", async () => {
+  let reads = 0;
+  signedInAs(OWNER, {
+    "GET /api/v1/me": () => (++reads === 1 ? { body: memberOf(ACME) } : SIGNED_OUT),
+    [`PATCH ${ORG}`]: SIGNED_OUT,
+  });
+  const { user } = renderAt(SETTINGS);
+
+  await user.click(await screen.findByRole("button", { name: "Save" }));
+
+  expect(await screen.findByRole("heading", { name: "Sign in to continue" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+    "href",
+    `/api/auth/login?return_to=${encodeURIComponent(SETTINGS)}`,
+  );
 });

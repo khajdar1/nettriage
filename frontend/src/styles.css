@@ -15,6 +15,7 @@
   --paper: #f4f5f1;
   --card: #fbfbf8;
   --line: #d9ddd5;
+  --field-line: #7d8579;
   --ink: #0f1b2a;
   --text: #3a4658;
   --muted: #5b6779;
@@ -66,6 +67,12 @@ code,
 :focus-visible {
   outline: 3px solid var(--teal-dark);
   outline-offset: 2px;
+}
+
+/* On navy, the darker teal is too faint to see: WCAG 1.4.11 wants 3:1. */
+.topbar :focus-visible,
+.landing :focus-visible {
+  outline-color: var(--teal);
 }
 
 .eyebrow {
@@ -215,7 +222,7 @@ code,
 .field input,
 .field select {
   padding: 0.55rem 0.7rem;
-  border: 1px solid #b9c0b4;
+  border: 1px solid var(--field-line);
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
@@ -408,7 +415,7 @@ code,
 .invite-link input {
   flex: 1 1 24rem;
   padding: 0.55rem 0.7rem;
-  border: 1px solid #b9c0b4;
+  border: 1px solid var(--field-line);
   border-radius: 8px;
   background: #fff;
 }

@@ -42,13 +42,17 @@ test.each([
   expect(screen.getByRole("alert")).toHaveTextContent(message);
 });
 
-test("a sign-in reason it doesn't know shows nothing", () => {
-  fakeApi({ "GET /api/v1/me": SIGNED_OUT });
+test.each(["<script>", "__proto__", "constructor", "toString"])(
+  "a sign-in reason it doesn't know (%s) shows nothing, and the page still works",
+  (reason) => {
+    fakeApi({ "GET /api/v1/me": SIGNED_OUT });
 
-  renderAt("/?sign_in=<script>");
+    renderAt(`/?sign_in=${encodeURIComponent(reason)}`);
 
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
+    expect(screen.getByRole("heading", { level: 1, name: "NetTriage" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  },
+);
 
 test("the source link opens in a new tab that can't reach back", () => {
   fakeApi({ "GET /api/v1/me": SIGNED_OUT });

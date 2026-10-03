@@ -48,7 +48,7 @@ export function Invite() {
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [token] = useState(() => keepToken(location.hash));
+  const [token, setToken] = useState(() => keepToken(location.hash));
   const me = useMe();
   const accept = useMutation({
     mutationFn: async (value: string) =>
@@ -59,18 +59,21 @@ export function Invite() {
       await navigate(`/app/orgs/${org.id}`, { replace: true });
     },
   });
-  const started = useRef(false);
+  // The last token sent: each is accepted once, StrictMode's second effect run included.
+  const sent = useRef<string | null>(null);
 
   useEffect(() => {
-    // Take the token out of the address bar and the history.
+    // Keep a link's token, even one pasted into a tab already here, then take it out of the
+    // address bar and the history.
     if (location.hash !== "") {
+      setToken(keepToken(location.hash));
       void navigate({ pathname: "/invite" }, { replace: true });
     }
   }, [location.hash, navigate]);
 
   useEffect(() => {
-    if (token !== null && me.data && !started.current) {
-      started.current = true;
+    if (token !== null && me.data && sent.current !== token) {
+      sent.current = token;
       accept.mutate(token);
     }
   }, [token, me.data, accept]);

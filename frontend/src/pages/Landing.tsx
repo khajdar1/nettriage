@@ -32,7 +32,9 @@ const FEATURES = [
 export function Landing() {
   usePageTitle(null);
   const [params] = useSearchParams();
-  const problem = SIGN_IN_PROBLEMS[params.get("sign_in") ?? ""];
+  const reason = params.get("sign_in") ?? "";
+  // Only the reasons above: an inherited name such as `__proto__` is no reason.
+  const problem = Object.hasOwn(SIGN_IN_PROBLEMS, reason) ? SIGN_IN_PROBLEMS[reason] : undefined;
   const me = useMe();
   return (
     <main className="landing">

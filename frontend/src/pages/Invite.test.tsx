@@ -74,3 +74,16 @@ test("an invitation that can't be used says why", async () => {
     "This invitation is for a different email address. (reference i1)",
   );
 });
+
+test("a link pasted into a tab already on /invite is accepted too", async () => {
+  const fake = fakeApi({ "GET /api/v1/me": { body: ME }, [ACCEPT]: { body: org("viewer") } });
+  const { router } = renderAt("/invite");
+  await screen.findByRole("heading", { name: "Invitation link incomplete" });
+
+  await router.navigate("/invite#tok2");
+
+  await vi.waitFor(() => expect(router.state.location.pathname).toBe(`/app/orgs/${ORG_ID}`));
+  const accepted = fake.requests.filter((request) => request.method === "POST");
+  expect(accepted).toHaveLength(1);
+  expect(await accepted[0]?.json()).toEqual({ token: "tok2" });
+});

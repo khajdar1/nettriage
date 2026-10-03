@@ -1,6 +1,6 @@
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { browser } from "../auth/session";
+import { ME_KEY, browser } from "../auth/session";
 import { fakeApi } from "../test/fakeApi";
 import { ME } from "../test/fixtures";
 import { renderAt } from "../test/render";
@@ -63,4 +63,22 @@ test("a sign-out that fails says why and keeps the person here", async () => {
     "Signing out is unavailable. (reference t1)",
   );
   expect(go).not.toHaveBeenCalled();
+});
+
+test("a session check that fails in the background keeps the page as it is", async () => {
+  let reads = 0;
+  fakeApi({
+    "GET /api/v1/me": () =>
+      ++reads === 1 ? { body: ME } : { status: 503, body: { title: "Service Unavailable" } },
+  });
+  const { client } = renderAt("/app/settings");
+  await screen.findByRole("heading", { level: 1, name: "Account settings" });
+
+  await act(() => client.refetchQueries({ queryKey: ME_KEY }));
+  // TanStack Query tells React on its next tick; let that happen before looking.
+  await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+
+  expect(reads).toBe(2);
+  expect(screen.getByRole("heading", { level: 1, name: "Account settings" })).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

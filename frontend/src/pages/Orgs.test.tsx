@@ -73,6 +73,7 @@ test("creating an organization sends its name once, then opens it", async () => 
   await user.click(screen.getByRole("button", { name: "Create organization" }));
 
   await vi.waitFor(() => expect(router.state.location.pathname).toBe(`/app/orgs/${ORG_ID}`));
+  expect(fake.requests.filter((request) => request.method === "POST")).toHaveLength(1);
   const post = fake.requests.find((request) => request.method === "POST");
   expect(await post?.json()).toEqual({ name: "Acme Security" });
   expect(post?.headers.get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/);
@@ -114,4 +115,28 @@ test("at three organizations there's no way to create a fourth", async () => {
     await screen.findByText("You belong to 3 organizations, the most there can be."),
   ).toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "Organization name" })).not.toBeInTheDocument();
+});
+
+test("a create sent again after a failure reuses its key, so it can't make two", async () => {
+  let posts = 0;
+  const fake = fakeApi({
+    "GET /api/v1/me": { body: ME },
+    "POST /api/v1/orgs": () =>
+      ++posts === 1
+        ? { status: 503, body: { title: "Service Unavailable", trace_id: "u1" } }
+        : { status: 201, body: CREATED },
+  });
+  const { user, router } = renderAt("/app");
+
+  await user.type(await screen.findByRole("textbox", { name: "Organization name" }), "Acme");
+  await user.click(screen.getByRole("button", { name: "Create organization" }));
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("button", { name: "Create organization" }));
+
+  await vi.waitFor(() => expect(router.state.location.pathname).toBe(`/app/orgs/${ORG_ID}`));
+  const keys = fake.requests
+    .filter((request) => request.method === "POST")
+    .map((request) => request.headers.get("Idempotency-Key"));
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
 });

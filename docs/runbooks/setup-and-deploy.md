@@ -619,10 +619,11 @@ until then you read the explanation from the API.
    email address (it needs a password and an authenticator app of its own). You land on
    **Web Test**'s **Members** page as a Viewer, with nothing you can change. Close the private
    window. If you skip this, click **Revoke** next to the invitation.
-6. Click the **Settings** tab. Rename the organization to `Web Test 2` and click **Save**: the
-   new name shows at the top at once.
-7. Under **Delete this organization**, type `Web Test 2` and click **Delete organization**. You're
-   back on **Your organizations**, without it.
+6. Click the **Settings** tab. Rename the organization to `Web Test (2) & Bob's` and click
+   **Save**: the new name shows at the top at once. (The punctuation checks that the name gets
+   through CloudFront's signing when you delete.)
+7. Under **Delete this organization**, type `Web Test (2) & Bob's` and click
+   **Delete organization**. You're back on **Your organizations**, without it.
 8. Click **Account settings** at the top: your email address shows. Click **Sign out**: you're
    signed out of NetTriage and of Cognito, and the landing page offers **Sign in / Sign up**.
 

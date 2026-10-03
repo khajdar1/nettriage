@@ -22,17 +22,11 @@ function SignInPrompt({ returnTo }: { returnTo: string }) {
 export function RequireSession({ children }: { children: ReactNode }) {
   const me = useMe();
   const location = useLocation();
-  if (me.isPending) {
+  if (me.data === undefined) {
+    // A check that fails later keeps the page and what's typed in it: only a first load fails.
     return (
-      <main id="main" className="page">
-        <Loading />
-      </main>
-    );
-  }
-  if (me.isError) {
-    return (
-      <main id="main" className="page narrow">
-        <ErrorNotice error={me.error} />
+      <main id="main" className={me.isError ? "page narrow" : "page"}>
+        {me.isError ? <ErrorNotice error={me.error} /> : <Loading />}
       </main>
     );
   }
