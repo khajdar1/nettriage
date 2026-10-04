@@ -1,9 +1,9 @@
 /*
  * NetTriage's look, "Sweep" (the owner's choice, 2026-10-04). Cool instrument paper, the deck's
- * navy for ink and teal for links and focus, and sodium amber for one thing only: what a detector
- * found (probed ports, severity). Archivo carries the voice through its width axis, expanded for
- * the brand and headlines and condensed for data labels; Martian Mono is for machine values
- * (addresses, ports, log lines). Fonts are served by the app itself, and every style lives in
+ * navy for ink and teal for links and focus, and sodium amber for what a detector found (probed
+ * ports, severity) and for the mark's lit cells, nothing else. Archivo carries the voice through
+ * its width axis, expanded for the brand and headlines and condensed for data labels; Martian
+ * Mono is for machine values (addresses, ports, log lines). Fonts are served by the app itself, and every style lives in
  * this file, because the CSP allows no other origin and no inline styles (spec §6.7, §10).
  */
 

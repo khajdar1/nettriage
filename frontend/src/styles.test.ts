@@ -64,14 +64,16 @@ test("form fields' borders are at least 3:1 on white, so the fields can be seen"
   expect(css).toMatch(
     /\.field input,\s*\.field select\s*\{[^}]*border: 1px solid var\(--field-line\);/,
   );
+  expect(css).toMatch(/\.invite-link input\s*\{[^}]*border: 1px solid var\(--field-line\);/);
+  expect(css).toMatch(/\.table select\s*\{[^}]*border: 1px solid var\(--field-line\);/);
 });
 
-test("amber is the detectors' color: probed ports and severity, nothing else", () => {
+test("amber is the detectors' color: probed ports, severity and the mark, nothing else", () => {
   const uses = [...css.matchAll(/([^{}]+)\{[^}]*var\(--signal\)[^}]*\}/g)].map(([, selector]) =>
     (selector ?? "").trim(),
   );
   expect(uses.length).toBeGreaterThan(0);
   for (const selector of uses) {
-    expect(selector, selector).toMatch(/\.(lit|sev|step-detect|logo-lit)/);
+    expect(selector, selector).toMatch(/\.(lit|sev|step-detect|logo-lit)(?![\w-])/);
   }
 });
