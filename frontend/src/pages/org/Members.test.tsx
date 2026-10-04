@@ -82,6 +82,72 @@ test("an owner changes a member's role", async () => {
   expect(await patch?.json()).toEqual({ role: "analyst" });
 });
 
+test("a role's Save button shows only while a different role is chosen", async () => {
+  signedInAs(OWNER);
+  const { user } = renderAt(`/app/orgs/${ORG_ID}/members`);
+  const role = await screen.findByRole("combobox", { name: "Role of cleo@example.com" });
+  const save = () => screen.queryByRole("button", { name: "Save the role of cleo@example.com" });
+  expect(save()).toBeNull();
+
+  await user.selectOptions(role, "Analyst");
+  expect(save()).toBeInTheDocument();
+
+  await user.selectOptions(role, "Viewer");
+  expect(save()).toBeNull();
+});
+
+test("after a save, the role keeps the keyboard focus as its button goes", async () => {
+  let saved = false;
+  signedInAs(OWNER, {
+    [`GET ${ORG}/members`]: () => ({
+      body: { members: [OWNER, ADMIN, { ...VIEWER, role: saved ? "analyst" : "viewer" }] },
+    }),
+    [`PATCH ${ORG}/members/${VIEWER.user_id}`]: () => {
+      saved = true;
+      return { body: { ...VIEWER, role: "analyst" } };
+    },
+  });
+  const { user } = renderAt(`/app/orgs/${ORG_ID}/members`);
+  const role = await screen.findByRole("combobox", { name: "Role of cleo@example.com" });
+
+  await user.selectOptions(role, "Analyst");
+  await user.click(screen.getByRole("button", { name: "Save the role of cleo@example.com" }));
+
+  await vi.waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Save the role of cleo@example.com" })).toBeNull(),
+  );
+  expect(role).toHaveFocus();
+  expect(role).toHaveValue("analyst");
+});
+
+test("a role someone else changed shows up, with nothing offered to save", async () => {
+  let reads = 0;
+  signedInAs(OWNER, {
+    [`GET ${ORG}/members`]: () =>
+      ++reads === 1
+        ? { body: { members: [OWNER, ADMIN, VIEWER] } }
+        : { body: { members: [OWNER, { ...VIEWER, role: "analyst" }] } },
+    [`DELETE ${ORG}/members/${ADMIN.user_id}`]: { status: 204 },
+  });
+  const { user } = renderAt(`/app/orgs/${ORG_ID}/members`);
+
+  // Removing Ben reloads the list, which brings in the role someone else gave Cleo.
+  await user.click(await screen.findByRole("button", { name: "Remove Ben Admin" }));
+  await user.click(screen.getByRole("button", { name: "Yes, remove Ben Admin" }));
+  await vi.waitFor(() => expect(screen.queryByText("Ben Admin")).toBeNull());
+
+  expect(screen.getByRole("combobox", { name: "Role of cleo@example.com" })).toHaveValue("analyst");
+  expect(screen.queryByRole("button", { name: "Save the role of cleo@example.com" })).toBeNull();
+});
+
+test("the members heading counts them", async () => {
+  signedInAs(OWNER);
+
+  renderAt(`/app/orgs/${ORG_ID}/members`);
+
+  expect(await screen.findByText("3 members")).toBeInTheDocument();
+});
+
 test("an admin changes only analysts and viewers, and never themselves", async () => {
   signedInAs(ADMIN);
 

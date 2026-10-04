@@ -24,6 +24,12 @@ export function membersKey(orgId: string) {
 export function MemberRow({ org, member, isSelf }: { org: Org; member: Member; isSelf: boolean }) {
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState<Role>(member.role);
+  const [savedRole, setSavedRole] = useState<Role>(member.role);
+  // A role saved here or by someone else replaces the choice, so Save never offers to undo it.
+  if (member.role !== savedRole) {
+    setSavedRole(member.role);
+    setChosen(member.role);
+  }
   const [confirming, setConfirming] = useState(false);
   const roleSelect = useRef<HTMLSelectElement>(null);
   const removeButton = useRef<HTMLButtonElement>(null);
