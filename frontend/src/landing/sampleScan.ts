@@ -1,5 +1,5 @@
 /**
- * The landing page's example: the 150 ports of 10.0.0.5 that 203.0.113.9 probed, in the shuffled
+ * The landing page's example: the 150 ports of 10.0.0.5 that 10.0.3.17 probed, in the shuffled
  * order a scanner tries them. Seeded, so the page is the same on every load.
  */
 
