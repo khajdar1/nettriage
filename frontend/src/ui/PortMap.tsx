@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useId, useLayoutEffect, useMemo, useRef } from "react";
 
 /**
  * A host's ports 0 to 1023 as a 32 by 32 grid, with the probed ones lit (the look's one bold
@@ -26,6 +26,18 @@ function motionAllowed(): boolean {
   );
 }
 
+/** The ports on the map, each once, in the order they were first probed. */
+function probeOrder(signature: string): number[] {
+  const order = new Set<number>();
+  for (const part of signature.split(",")) {
+    const port = Number(part);
+    if (part !== "" && Number.isInteger(port) && port >= 0 && port < PORTS) {
+      order.add(port);
+    }
+  }
+  return [...order];
+}
+
 function x(port: number): number {
   return (port % COLS) * PITCH;
 }
@@ -48,37 +60,47 @@ export function PortMap({
   const grid = useRef<SVGSVGElement>(null);
   const count = useRef<HTMLElement>(null);
   const captionId = useId();
-  const probed = new Set(ports);
+  // Keyed by the ports' values, so a new list of the same probes doesn't replay the sweep.
+  const signature = ports.join(",");
+  const order = useMemo(() => probeOrder(signature), [signature]);
+  const probed = new Set(order);
 
-  useEffect(() => {
+  // Before the first paint, so a sweep never flashes the finished map first. The count is written
+  // here, not rendered, because the sweep rewrites it as it goes.
+  useLayoutEffect(() => {
     const svg = grid.current;
     const counter = count.current;
-    if (!sweep || svg === null || counter === null || !motionAllowed()) {
+    if (svg === null || counter === null) {
       return;
     }
-    const cells = new Map<number, Element>();
-    for (const cell of svg.querySelectorAll("rect.cell")) {
-      cells.set(Number(cell.getAttribute("data-port")), cell);
+    // Reads what's probed from the drawing, which already shows the newest ports when this runs.
+    const finish = () => {
+      const lit = svg.querySelectorAll("rect.cell[data-probed]");
+      for (const cell of svg.querySelectorAll("rect.cell.now")) {
+        cell.classList.remove("now");
+      }
+      for (const cell of lit) {
+        cell.classList.add("lit");
+      }
+      svg.classList.remove("sweeping");
+      counter.textContent = String(lit.length);
+    };
+    if (!sweep || !motionAllowed()) {
+      finish();
+      return;
     }
-    const order = ports.map((port) => cells.get(port)).filter((cell) => cell !== undefined);
-    for (const cell of order) {
+    const cells = svg.querySelectorAll("rect.cell");
+    const steps = order.map((port) => cells[port]).filter((cell) => cell !== undefined);
+    for (const cell of steps) {
       cell.classList.remove("lit");
     }
     svg.classList.add("sweeping");
     counter.textContent = "0";
     let next = 0;
     let timer = 0;
-    const finish = () => {
-      for (const cell of order) {
-        cell.classList.remove("now");
-        cell.classList.add("lit");
-      }
-      svg.classList.remove("sweeping");
-      counter.textContent = String(order.length);
-    };
     const tick = () => {
-      order[next - 1]?.classList.replace("now", "lit");
-      const cell = order[next];
+      steps[next - 1]?.classList.replace("now", "lit");
+      const cell = steps[next];
       if (cell === undefined) {
         finish();
         return;
@@ -93,7 +115,7 @@ export function PortMap({
       window.clearTimeout(timer);
       finish();
     };
-  }, [ports, sweep]);
+  }, [order, sweep]);
 
   return (
     <figure className="port-map" aria-labelledby={captionId}>
@@ -102,6 +124,7 @@ export function PortMap({
           <rect
             key={port}
             data-port={port}
+            data-probed={probed.has(port) ? "" : undefined}
             className={probed.has(port) ? "cell lit" : "cell"}
             x={x(port)}
             y={y(port)}
@@ -145,7 +168,7 @@ export function PortMap({
       <figcaption>
         <span id={captionId}>{caption}</span>
         <span>
-          <b ref={count}>{ports.length}</b> probed
+          <b ref={count} /> probed
         </span>
       </figcaption>
     </figure>
