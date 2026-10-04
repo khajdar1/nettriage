@@ -778,7 +778,7 @@ CI adds a deploy annotation for every deploy.
 ## 10. Frontend (Milestone 1)
 
 **Pages:**
-- `/` Landing: what NetTriage is, "View the live demo", "Sign in / Sign up", and a GitHub link.
+- `/` Landing: what NetTriage is (a finding it wrote, with the port map behind it, then how a finding is made), "View the live demo", "Sign in or sign up", and a "Source code" link to GitHub.
 - `/demo`: the read-only demo workspace, rendered from the static snapshot, with a clear "demo" banner (Plan 6c, written once Bedrock answers, so the demo's explanations are real; the owner's decision).
 - `/invite`: reads the token from the URL fragment, signs the user in if needed, then accepts. The token leaves the address bar at once and waits in the tab's `sessionStorage` while the person signs in (Plan 6a).
 - `/app`: an org switcher (the list of the person's organizations, which the product name in the top bar returns to), plus onboarding (create an org or accept an invitation).
@@ -811,7 +811,7 @@ CI adds a deploy annotation for every deploy.
 
 **Accessibility:** WCAG 2.2 AA is the target (keyboard navigation, labels, contrast).
 
-**Visual design** matches the directors' deck (the owner's decision, Plan 6a): navy, teal and off-white, with Space Grotesk headings and IBM Plex Sans text, self-hosted with @fontsource so the CSP needs no other origin. Every style lives in one stylesheet, and a lint rule forbids inline styles and `dangerouslySetInnerHTML`.
+**Visual design** is "Sweep" (the owner's decision on 2026-10-04, chosen from three mockups; it replaces Plan 6a's match with the directors' deck). The page is cool paper (#EEF1F3) with the deck's navy ink (#10202F). Signal amber (#F2A900) marks what a detector found (probed ports, severity bars, the detection step) and nothing else, except the logo's lit cells. Teal (#0B6E6E) is for links and keyboard focus. Archivo carries the voice through its width axis: expanded for the brand and headings, condensed for labels. Martian Mono is only for machine values (addresses, ports, log lines). Both fonts are self-hosted with @fontsource so the CSP needs no other origin. The landing page leads with a real finding sentence and a map of the scanned host's ports 0–1023, lit once in the order they were probed (finished at rest, and shown finished to anyone who prefers reduced motion). Settings are two-column rows, not stacked cards. Every style lives in one stylesheet, and a lint rule forbids inline styles and `dangerouslySetInnerHTML`.
 
 ## 11. Engineering practices
 

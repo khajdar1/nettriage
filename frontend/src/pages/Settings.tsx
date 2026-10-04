@@ -9,26 +9,35 @@ export function Settings() {
   const me = useMe();
   const everywhere = useMutation({ mutationFn: () => signOut({ everywhere: true }) });
   return (
-    <main id="main" className="page narrow">
+    <main id="main" className="page">
       <h1>Account settings</h1>
-      <section className="card" aria-labelledby="account">
-        <h2 id="account">Your account</h2>
-        <p>
-          Signed in as <strong>{me.data?.user.email}</strong>.
-        </p>
+      <section className="setting" aria-labelledby="account">
+        <div className="setting-what">
+          <h2 id="account">Your account</h2>
+          <p>The address you sign in with, verified by Cognito.</p>
+        </div>
+        <div className="setting-how">
+          <p>
+            Signed in as <strong>{me.data?.user.email}</strong>
+          </p>
+        </div>
       </section>
-      <section className="card" aria-labelledby="everywhere">
-        <h2 id="everywhere">Sign out everywhere</h2>
-        <p>Ends your sessions in every browser and on every device, this one included.</p>
-        <button
-          type="button"
-          className="button button-danger"
-          disabled={everywhere.isPending}
-          onClick={() => everywhere.mutate()}
-        >
-          Sign out everywhere
-        </button>
-        {everywhere.isError && <ErrorNotice error={everywhere.error} />}
+      <section className="setting" aria-labelledby="everywhere">
+        <div className="setting-what">
+          <h2 id="everywhere">Sign out everywhere</h2>
+          <p>Ends your sessions in every browser and on every device, this one included.</p>
+        </div>
+        <div className="setting-how">
+          <button
+            type="button"
+            className="button button-danger"
+            disabled={everywhere.isPending}
+            onClick={() => everywhere.mutate()}
+          >
+            Sign out everywhere
+          </button>
+          {everywhere.isError && <ErrorNotice error={everywhere.error} />}
+        </div>
       </section>
     </main>
   );

@@ -31,27 +31,32 @@ function Rename({ org }: { org: Org }) {
     rename.mutate();
   }
   return (
-    <section className="card" aria-labelledby="rename">
-      <h2 id="rename">Name</h2>
-      <form className="inline-form" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="org-rename">Organization name</label>
-          <input
-            id="org-rename"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={100}
-          />
-        </div>
-        <button type="submit" className="button button-primary" disabled={rename.isPending}>
-          Save
-        </button>
-      </form>
-      <p role="status" className="muted">
-        {rename.isSuccess && "Saved."}
-      </p>
-      {rename.isError && <ErrorNotice error={rename.error} />}
+    <section className="setting" aria-labelledby="rename">
+      <div className="setting-what">
+        <h2 id="rename">Name</h2>
+        <p>What everyone in it sees.</p>
+      </div>
+      <div className="setting-how">
+        <form className="inline-form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="org-rename">Organization name</label>
+            <input
+              id="org-rename"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={100}
+            />
+          </div>
+          <button type="submit" className="button button-primary" disabled={rename.isPending}>
+            Save
+          </button>
+        </form>
+        <p role="status" className="muted">
+          {rename.isSuccess && "Saved."}
+        </p>
+        {rename.isError && <ErrorNotice error={rename.error} />}
+      </div>
     </section>
   );
 }
@@ -85,35 +90,39 @@ function Leave({ org, userId }: { org: Org; userId: string }) {
     onSuccess: () => gone(org.id),
   });
   return (
-    <section className="card" aria-labelledby="leave">
-      <h2 id="leave">Leave this organization</h2>
-      <p>You lose access to its uploads and findings until someone invites you again.</p>
-      {confirming ? (
-        <div className="actions">
+    <section className="setting" aria-labelledby="leave">
+      <div className="setting-what">
+        <h2 id="leave">Leave this organization</h2>
+        <p>You lose access to its uploads and findings until someone invites you again.</p>
+      </div>
+      <div className="setting-how">
+        {confirming ? (
+          <div className="actions">
+            <button
+              type="button"
+              className="button button-danger"
+              disabled={leave.isPending}
+              onClick={() => leave.mutate()}
+              autoFocus
+            >
+              Yes, leave {org.name}
+            </button>
+            <button type="button" className="button" onClick={cancel}>
+              Cancel
+            </button>
+          </div>
+        ) : (
           <button
+            ref={leaveButton}
             type="button"
-            className="button button-danger"
-            disabled={leave.isPending}
-            onClick={() => leave.mutate()}
-            autoFocus
+            className="button"
+            onClick={() => setConfirming(true)}
           >
-            Yes, leave {org.name}
+            Leave
           </button>
-          <button type="button" className="button" onClick={cancel}>
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button
-          ref={leaveButton}
-          type="button"
-          className="button"
-          onClick={() => setConfirming(true)}
-        >
-          Leave
-        </button>
-      )}
-      {leave.isError && <ErrorNotice error={leave.error} />}
+        )}
+        {leave.isError && <ErrorNotice error={leave.error} />}
+      </div>
     </section>
   );
 }
@@ -135,31 +144,35 @@ function Delete({ org }: { org: Org }) {
     remove.mutate();
   }
   return (
-    <section className="card card-danger" aria-labelledby="delete">
-      <h2 id="delete">Delete this organization</h2>
-      <p>
-        This deletes its members, invitations, uploads, findings and AI explanations. It can't be
-        undone.
-      </p>
-      <form className="inline-form" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="org-confirm">Type {org.name} to confirm</label>
-          <input
-            id="org-confirm"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            autoComplete="off"
-          />
-        </div>
-        <button
-          type="submit"
-          className="button button-danger"
-          disabled={typed !== org.name || remove.isPending}
-        >
-          Delete organization
-        </button>
-      </form>
-      {remove.isError && <ErrorNotice error={remove.error} />}
+    <section className="setting setting-danger" aria-labelledby="delete">
+      <div className="setting-what">
+        <h2 id="delete">Delete this organization</h2>
+        <p>
+          This deletes its members, invitations, uploads, findings and AI explanations. It can't be
+          undone.
+        </p>
+      </div>
+      <div className="setting-how">
+        <form className="inline-form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="org-confirm">Type {org.name} to confirm</label>
+            <input
+              id="org-confirm"
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <button
+            type="submit"
+            className="button button-danger"
+            disabled={typed !== org.name || remove.isPending}
+          >
+            Delete organization
+          </button>
+        </form>
+        {remove.isError && <ErrorNotice error={remove.error} />}
+      </div>
     </section>
   );
 }
@@ -170,7 +183,7 @@ export function OrgSettings() {
   usePageTitle(`Settings · ${org.name}`);
   const me = useMe();
   return (
-    <main id="main" className="page narrow">
+    <main id="main" className="page">
       <h1>Settings</h1>
       {canRename(org.role) && <Rename org={org} />}
       {me.data && <Leave org={org} userId={me.data.user.id} />}

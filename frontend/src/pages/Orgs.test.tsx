@@ -25,6 +25,18 @@ test("signed out, the app asks to sign in and comes back to the same page", asyn
   );
 });
 
+test("while the session is checked, the app's own header is already in place", async () => {
+  fakeApi({ "GET /api/v1/me": () => new Promise(() => {}) });
+
+  renderAt("/app");
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Loading");
+  const mark = screen.getByRole("link", { name: "NetTriage" });
+  expect(mark).toHaveAttribute("href", "/app");
+  // The same header as the signed-in pages, so the mark doesn't jump when the check ends.
+  expect(mark.closest("header")).toHaveClass("app-top");
+});
+
 test("someone new is shown how to start", async () => {
   fakeApi({ "GET /api/v1/me": { body: ME } });
 

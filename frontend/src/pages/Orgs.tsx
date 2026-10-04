@@ -35,24 +35,29 @@ function CreateOrg() {
     create.mutate(name.trim());
   }
   return (
-    <section className="card" aria-labelledby="create-org">
-      <h2 id="create-org">Create an organization</h2>
-      <form className="inline-form" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="org-name">Organization name</label>
-          <input
-            id="org-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={100}
-          />
-        </div>
-        <button type="submit" className="button button-primary" disabled={create.isPending}>
-          Create organization
-        </button>
-      </form>
-      {create.isError && <ErrorNotice error={create.error} />}
+    <section className="setting" aria-labelledby="create-org">
+      <div className="setting-what">
+        <h2 id="create-org">Create an organization</h2>
+        <p>You'll be its owner, and can invite your team.</p>
+      </div>
+      <div className="setting-how">
+        <form className="inline-form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="org-name">Organization name</label>
+            <input
+              id="org-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              required
+              maxLength={100}
+            />
+          </div>
+          <button type="submit" className="button button-primary" disabled={create.isPending}>
+            Create organization
+          </button>
+        </form>
+        {create.isError && <ErrorNotice error={create.error} />}
+      </div>
     </section>
   );
 }
@@ -71,7 +76,10 @@ export function Orgs() {
         <ul className="org-list">
           {memberships.map((membership) => (
             <li key={membership.org_id}>
-              <Link to={`/app/orgs/${membership.org_id}`}>{membership.name}</Link>
+              <span className="org-who">
+                <Link to={`/app/orgs/${membership.org_id}`}>{membership.name}</Link>
+                <span className="mono muted">{membership.slug}</span>
+              </span>
               <span className="badge">{roleLabel(membership.role)}</span>
             </li>
           ))}

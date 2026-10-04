@@ -1,12 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
 import { unwrap } from "../api/problem";
 import { ME_KEY, signInUrl, useMe } from "../auth/session";
 import { ErrorNotice } from "../ui/ErrorNotice";
 import { Loading } from "../ui/Loading";
-import { usePageTitle } from "../ui/usePageTitle";
+import { StandalonePage as Page } from "../ui/StandalonePage";
 
 // The token travels in the link's fragment, which browsers never send to a server (spec §6.3).
 // Signing in leaves the app, so it waits in this tab's sessionStorage until it's accepted.
@@ -31,16 +31,6 @@ function forgetToken(): void {
   } catch {
     // Storage is blocked, so nothing was kept.
   }
-}
-
-function Page({ title, children }: { title: string; children: ReactNode }) {
-  usePageTitle(title);
-  return (
-    <main id="main" className="page narrow">
-      <h1>{title}</h1>
-      {children}
-    </main>
-  );
 }
 
 /** `/invite#<token>`: signs the person in if needed, then accepts the invitation (spec §10). */

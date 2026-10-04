@@ -607,9 +607,11 @@ until then you read the explanation from the API.
 6. Delete the test org as in B7 step 10.
 
 ### B11. Try the web app
-1. Open `https://<id>.cloudfront.net/`. NetTriage's landing page opens, in the deck's navy and
-   teal.
-2. Click **Sign in / Sign up** and sign in with your password and a fresh code from the
+1. Open `https://<id>.cloudfront.net/`. NetTriage's landing page opens with a port scan finding
+   on the left. On the right is a grid of ports 0 to 1023 that light up amber one by one, and
+   then labels appear for 22 ssh, 80 http and 443 https. (If your system asks apps to reduce
+   motion, the grid shows up already lit.) Below it, **How a finding is made** shows four steps.
+2. Click **Sign in or sign up** and sign in with your password and a fresh code from the
    authenticator app. You land on **Your organizations**.
 3. Under **Create an organization**, type `Web Test` and click **Create organization**. The
    organization opens on its **Members** page, with you as its Owner.
@@ -625,7 +627,7 @@ until then you read the explanation from the API.
 7. Under **Delete this organization**, type `Web Test (2) & Bob's` and click
    **Delete organization**. You're back on **Your organizations**, without it.
 8. Click **Account settings** at the top: your email address shows. Click **Sign out**: you're
-   signed out of NetTriage and of Cognito, and the landing page offers **Sign in / Sign up**.
+   signed out of NetTriage and of Cognito, and the landing page offers **Sign in or sign up**.
 
 ## Part C: when things go wrong
 

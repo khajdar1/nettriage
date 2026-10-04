@@ -52,6 +52,17 @@ def test_an_internal_source_is_always_high_with_network_service_discovery() -> N
     assert finding.candidate_techniques == ("T1046",)
 
 
+def test_the_landing_pages_example_is_what_the_detector_writes() -> None:
+    # frontend/src/pages/Landing.tsx shows this finding as one NetTriage wrote; keep them equal.
+    flows = [make_flow("10.0.3.17", "10.0.0.5", 1 + n, at=n * 2.0) for n in range(150)]
+
+    [finding] = detect_port_scans(flows)
+
+    assert finding.title == "Port scan of 10.0.0.5 from 10.0.3.17: 150 TCP ports in 5 minutes"
+    assert finding.severity is Severity.HIGH
+    assert finding.candidate_techniques == ("T1046",)
+
+
 def test_ninety_nine_ports_is_not_a_scan() -> None:
     assert detect_port_scans(vertical(ATTACKER, 99)) == []
 

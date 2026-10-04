@@ -31,12 +31,18 @@ function contrast(a: string, b: string): number {
 }
 
 const TEXT_ON: [string, string][] = [
-  ["text", "paper"],
   ["ink", "paper"],
-  ["muted", "card"],
-  ["teal-dark", "paper"],
-  ["teal", "navy"],
-  ["paper", "navy-raised"],
+  ["ink", "plate"],
+  ["graphite", "paper"],
+  ["graphite", "plate"],
+  ["signal-ink", "paper"],
+  ["signal-ink", "plate"],
+  ["teal", "paper"],
+  ["teal", "plate"],
+  ["danger", "plate"],
+  ["plate", "ink"],
+  ["plate", "danger"],
+  ["ink", "signal"],
 ];
 
 test("text is at least 4.5:1 on the backgrounds it's used on", () => {
@@ -47,18 +53,27 @@ test("text is at least 4.5:1 on the backgrounds it's used on", () => {
   }
 });
 
-test("focus rings stand out at 3:1, in teal on the navy parts of the app", () => {
-  expect(contrast(color("teal-dark"), color("paper"))).toBeGreaterThan(3);
-  expect(contrast(color("teal"), color("navy"))).toBeGreaterThan(3);
-  expect(css).toMatch(
-    /\.topbar :focus-visible,\s*\.landing :focus-visible\s*\{\s*outline-color: var\(--teal\);/,
-  );
+test("focus rings stand out at 3:1 on every surface", () => {
+  expect(contrast(color("teal"), color("paper"))).toBeGreaterThan(3);
+  expect(contrast(color("teal"), color("plate"))).toBeGreaterThan(3);
+  expect(css).toMatch(/:focus-visible\s*\{\s*outline: 3px solid var\(--teal\);/);
 });
 
 test("form fields' borders are at least 3:1 on white, so the fields can be seen", () => {
-  expect(contrast(color("field-line"), "#ffffff")).toBeGreaterThan(3);
+  expect(contrast(color("field-line"), color("plate"))).toBeGreaterThan(3);
   expect(css).toMatch(
     /\.field input,\s*\.field select\s*\{[^}]*border: 1px solid var\(--field-line\);/,
   );
   expect(css).toMatch(/\.invite-link input\s*\{[^}]*border: 1px solid var\(--field-line\);/);
+  expect(css).toMatch(/\.table select\s*\{[^}]*border: 1px solid var\(--field-line\);/);
+});
+
+test("amber is the detectors' color: probed ports, severity and the mark, nothing else", () => {
+  const uses = [...css.matchAll(/([^{}]+)\{[^}]*var\(--signal\)[^}]*\}/g)].map(([, selector]) =>
+    (selector ?? "").trim(),
+  );
+  expect(uses.length).toBeGreaterThan(0);
+  for (const selector of uses) {
+    expect(selector, selector).toMatch(/\.(lit|sev|step-detect|logo-lit)(?![\w-])/);
+  }
 });

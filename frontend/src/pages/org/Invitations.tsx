@@ -134,8 +134,11 @@ export function Invitations({ org }: { org: Org }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: invitationsKey(org.id) }),
   });
   return (
-    <section className="card" aria-labelledby="invitations">
+    <section className="block" aria-labelledby="invitations">
       <h2 id="invitations">Invitations</h2>
+      <p className="muted">
+        A link works once, for 7 days, and only for the email address it was sent to.
+      </p>
       <InviteForm org={org} />
       {revoke.isError && <ErrorNotice error={revoke.error} />}
       {invitations.isPending && <Loading />}
@@ -161,7 +164,7 @@ export function Invitations({ org }: { org: Org }) {
                 <tr key={invitation.id}>
                   <td>{invitation.email}</td>
                   <td>{roleLabel(invitation.role)}</td>
-                  <td>{formatDate(invitation.expires_at)}</td>
+                  <td className="date">{formatDate(invitation.expires_at)}</td>
                   <td>
                     <button
                       type="button"

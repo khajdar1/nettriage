@@ -1,19 +1,30 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { fakeApi } from "../test/fakeApi";
 import { ME, SIGNED_OUT } from "../test/fixtures";
 import { renderAt } from "../test/render";
 
-test("the landing page names the product and offers to sign in", async () => {
+const SIGN_IN = "/api/auth/login?return_to=%2Fapp";
+
+test("the landing page leads with a finding NetTriage wrote, and offers to sign in", async () => {
   fakeApi({ "GET /api/v1/me": SIGNED_OUT });
 
   renderAt("/");
 
-  expect(screen.getByRole("heading", { level: 1, name: "NetTriage" })).toBeInTheDocument();
-  expect(await screen.findByRole("link", { name: "Sign in / Sign up" })).toHaveAttribute(
+  expect(
+    screen.getByRole("heading", {
+      level: 1,
+      name: /^Port scan of 10\.0\.0\.5 from 10\.0\.3\.17: 150\sTCP ports in 5\sminutes$/,
+    }),
+  ).toBeInTheDocument();
+  // As backend/tests/unit/domain/test_port_scan.py pins it: an internal source is High.
+  expect(screen.getByText("High: port scan")).toBeInTheDocument();
+  expect(await screen.findByRole("link", { name: "Sign in or sign up" })).toHaveAttribute(
     "href",
-    "/api/auth/login?return_to=%2Fapp",
+    SIGN_IN,
   );
+  expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", SIGN_IN);
+  expect(screen.getByRole("link", { name: "NetTriage" })).toHaveAttribute("href", "/");
   expect(document.title).toBe("NetTriage");
 });
 
@@ -26,6 +37,55 @@ test("signed in, it opens the person's organizations instead", async () => {
     "href",
     "/app",
   );
+  expect(screen.getByRole("link", { name: "Your organizations" })).toHaveAttribute("href", "/app");
+  expect(screen.queryByRole("link", { name: "Sign in" })).not.toBeInTheDocument();
+});
+
+test("the scan's port map says in words what it draws", () => {
+  fakeApi({ "GET /api/v1/me": SIGNED_OUT });
+
+  renderAt("/");
+
+  expect(
+    screen.getByRole("figure", {
+      name: "Ports 0 to 1023 of 10.0.0.5, lit in the order they were probed",
+    }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("150")).toBeInTheDocument();
+});
+
+test("how a finding is made is shown as its four real steps, in order", () => {
+  fakeApi({ "GET /api/v1/me": SIGNED_OUT });
+
+  renderAt("/");
+
+  const section = screen.getByRole("region", { name: "How a finding is made" });
+  const list = within(section).getAllByRole("list")[0] as HTMLElement;
+  const steps = within(list)
+    .getAllByRole("listitem")
+    .filter((item) => item.parentElement === list);
+  expect(steps.map((step) => within(step).getByRole("heading", { level: 3 }).textContent)).toEqual([
+    "Upload a flow log",
+    "Rules find it",
+    "An AI explains it",
+    "Your team triages it",
+  ]);
+  expect(
+    within(steps[1] as HTMLElement).getByText("T1046 Network Service Discovery"),
+  ).toBeVisible();
+  // Written by hand until Bedrock answers, so it says it's an example, not the model's words.
+  expect(within(steps[2] as HTMLElement).getByText("Example of an AI explanation")).toBeVisible();
+  expect(section).not.toHaveTextContent(/AI-generated/);
+});
+
+test("every step tells the same finding: one source, one host", () => {
+  fakeApi({ "GET /api/v1/me": SIGNED_OUT });
+
+  renderAt("/");
+
+  const section = screen.getByRole("region", { name: "How a finding is made" });
+  expect(section).toHaveTextContent("10.0.3.17");
+  expect(document.body).not.toHaveTextContent("203.0.113.9");
 });
 
 test.each([
@@ -49,17 +109,17 @@ test.each(["<script>", "__proto__", "constructor", "toString"])(
 
     renderAt(`/?sign_in=${encodeURIComponent(reason)}`);
 
-    expect(screen.getByRole("heading", { level: 1, name: "NetTriage" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   },
 );
 
-test("the source link opens in a new tab that can't reach back", () => {
+test("the source code opens in a new tab that can't reach back", () => {
   fakeApi({ "GET /api/v1/me": SIGNED_OUT });
 
   renderAt("/");
 
-  const link = screen.getByRole("link", { name: "Source on GitHub" });
+  const link = screen.getByRole("link", { name: "Source code" });
   expect(link).toHaveAttribute("href", "https://github.com/khajdar1/nettriage");
   expect(link).toHaveAttribute("target", "_blank");
   expect(link).toHaveAttribute("rel", "noopener noreferrer");
@@ -72,5 +132,6 @@ test("an address that isn't a page says so and leads home", () => {
 
   expect(screen.getByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Go to the home page" })).toHaveAttribute("href", "/");
+  expect(screen.getByRole("link", { name: "NetTriage" })).toHaveAttribute("href", "/");
   expect(document.title).toBe("Page not found · NetTriage");
 });
