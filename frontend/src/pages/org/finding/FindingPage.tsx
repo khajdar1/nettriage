@@ -42,7 +42,9 @@ export function FindingPage() {
       </main>
     );
   }
-  if (finding.isError) {
+  // Only a first read that fails replaces the page. A refresh that fails keeps what's on it, such
+  // as a chosen status or a comment being written, and says so above it.
+  if (finding.data === undefined) {
     if (finding.error instanceof ApiError && finding.error.status === 404) {
       return <FindingNotFound />;
     }
@@ -55,6 +57,7 @@ export function FindingPage() {
   const found = finding.data;
   return (
     <main id="main" className="page">
+      {finding.isError && <ErrorNotice error={finding.error} />}
       <p className="back">
         <Link to="../findings">All findings</Link>
       </p>

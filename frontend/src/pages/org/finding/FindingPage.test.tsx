@@ -196,6 +196,28 @@ test("opening a finding reads it once, though several parts of the page show it"
   expect(reads).toHaveLength(1);
 });
 
+test("a refresh that fails keeps the page as it was, and says so", async () => {
+  let reads = 0;
+  signedInAs(OWNER, {
+    [`GET ${FINDING}`]: () =>
+      ++reads === 1
+        ? { body: finding() }
+        : {
+            status: 503,
+            body: { title: "Service Unavailable", detail: "Try again.", trace_id: "t3" },
+          },
+    "GET /api/v1/attack-techniques/T1046": technique("T1046"),
+    [`POST ${FINDING}/ai-analyses`]: { status: 202, body: { status: "queued", ai_analysis: null } },
+  });
+  const { user } = renderAt(PAGE);
+
+  await user.click(await screen.findByRole("button", { name: "Explain this finding" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Try again. (reference t3)");
+  expect(screen.getByRole("heading", { level: 1, name: /Port scan of 10\.0\.0\.5/ })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Triage" })).toBeInTheDocument();
+});
+
 test("a finding that isn't there, or isn't the organization's, says so", async () => {
   signedInAs(OWNER, { [`GET ${FINDING}`]: { status: 404, body: { title: "Not Found" } } });
 
