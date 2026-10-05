@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from "react-router";
 import { Invite } from "../pages/Invite";
 import { Landing } from "../pages/Landing";
 import { NotFound } from "../pages/NotFound";
+import { Findings } from "../pages/org/Findings";
 import { Members } from "../pages/org/Members";
 import { OrgLayout } from "../pages/org/OrgLayout";
 import { OrgSettings } from "../pages/org/OrgSettings";
@@ -29,7 +30,8 @@ export const routes: RouteObject[] = [
         path: "orgs/:orgId",
         element: <OrgLayout />,
         children: [
-          { index: true, element: <Navigate to="members" replace /> },
+          { index: true, element: <Navigate to="findings" replace /> },
+          { path: "findings", element: <Findings /> },
           { path: "uploads", element: <Uploads /> },
           { path: "members", element: <Members /> },
           { path: "settings", element: <OrgSettings /> },

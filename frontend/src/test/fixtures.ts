@@ -2,6 +2,7 @@
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
 import type { Member } from "../orgs/members";
+import type { FindingSummary } from "../findings/findings";
 import type { Upload } from "../uploads/uploads";
 import type { Reply } from "./fakeApi";
 
@@ -87,6 +88,30 @@ export function upload(fields: Partial<Upload> = {}): Upload {
     uploaded_by: ME.user.id,
     created_at: "2026-10-04T09:30:00Z",
     processed_at: "2026-10-04T09:31:00Z",
+    ...fields,
+  };
+}
+
+export const FINDING_ID = "01a10600-0000-7000-8000-000000000001";
+
+export function findingSummary(fields: Partial<FindingSummary> = {}): FindingSummary {
+  return {
+    id: FINDING_ID,
+    upload_id: UPLOAD_ID,
+    detector_id: "port_scan",
+    detector_version: 1,
+    severity: "high",
+    status: "open",
+    title: "Port scan of 10.0.0.5 from 10.0.3.17: 150 TCP ports in 5 minutes",
+    src_ip: "10.0.3.17",
+    dst_ip: "10.0.0.5",
+    dst_port: null,
+    protocol: 6,
+    window_start: "2026-10-01T12:00:00Z",
+    window_end: "2026-10-01T12:05:00Z",
+    assignee_id: null,
+    version: 1,
+    created_at: "2026-10-04T09:31:00Z",
     ...fields,
   };
 }

@@ -47,6 +47,7 @@ export function OrgLayout() {
             <span className="badge">{roleLabel(org.data.role)}</span>
           </p>
           <nav className="tabs" aria-label="Organization">
+            <NavLink to="findings">Findings</NavLink>
             <NavLink to="uploads">Uploads</NavLink>
             <NavLink to="members">Members</NavLink>
             <NavLink to="settings">Settings</NavLink>

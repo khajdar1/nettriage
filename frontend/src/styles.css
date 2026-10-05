@@ -102,6 +102,10 @@ code,
   color: var(--graphite);
 }
 
+.nowrap {
+  white-space: nowrap;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -836,10 +840,40 @@ select {
   color: var(--graphite);
 }
 
-/* Lists that load a page at a time */
+/* Lists that load a page at a time, narrowed by filters above them */
 
 .more {
   margin-top: 1rem;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.filters .field {
+  margin-bottom: 0;
+}
+
+.filters .field select {
+  min-width: 11rem;
+}
+
+.scope {
+  margin: 0 0 1rem;
+  color: var(--graphite);
+}
+
+.empty {
+  padding: 2rem 0;
+  border-top: 1px solid var(--grid);
+}
+
+.empty > p:first-child {
+  margin-top: 0;
+  font-weight: 650;
 }
 
 /* Choosing a file: the browser's picker button, dressed as the app's buttons */
