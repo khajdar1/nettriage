@@ -632,21 +632,24 @@ until then you read the explanation from the API.
 
 ### B12. Triage in the web app
 Uploads, findings, triage, the AI explanation, the audit log and the AI usage (Plan 6b). Until AWS
-lifts the new account's Bedrock limits, the AI panel says the AI service was busy, or that the AI
-is working on it; that's expected.
+lifts the new account's Bedrock limits, a new finding's AI panel says **Not explained yet.** for
+about 48 minutes (Bedrock refuses each try, and NetTriage tries three times, 24 minutes apart),
+then **The AI service was busy. Try again later.**; that's expected.
 1. Sign in as in B11 step 2, and create an organization named `Triage Test`. It opens on
    **Findings**, which says **No findings yet.** with a link to **Upload a flow log**.
 2. Click **Upload a flow log**. Under **Flow log file**, click **Choose File** and pick
    `docs/samples/port-scan.log` from your copy of the repository: the landing page's example, 150
    rejected TCP probes from 10.0.3.17 to 10.0.0.5. Click **Upload**. You see **Reading the
-   file…**, a progress bar, then **Uploaded port-scan.log.** The file is listed as **Analyzing**,
-   and within about a minute it turns **Analyzed** with 150 rows, without reloading the page.
+   file…**, a progress bar, then **Uploaded port-scan.log.** The file is listed as **Waiting for
+   the file** for a moment, then **Analyzing**, and within about a minute it turns **Analyzed**
+   with 150 rows, without reloading the page.
 3. Click **Findings** on its row. One finding: **High**, `Port scan of 10.0.0.5 from 10.0.3.17:
    150 TCP ports in 5 minutes`, **Open**, **Unassigned**. Set **Severity** to **Low**: **No
    findings match these filters.** Click **Clear filters**.
 4. Click the finding's title, and check its page:
    - **AI explanation**: an explanation labeled **AI-generated** with its model and prompt
-     version, or, while Bedrock is limited, **The AI service was busy. Try again later.**
+     version; or, while Bedrock is limited, **Not explained yet.** in the first 48 minutes or so,
+     and **The AI service was busy. Try again later.** after that.
    - **Evidence**: the port map with 50 amber cells, captioned `Ports 0 to 1023 of 10.0.0.5. The
      scan probed 150 ports; the evidence keeps a sample.`, then the 50 flows, all `REJECT`.
    - **ATT&CK techniques**: **T1046 Network Service Discovery**, from the detector; the link
@@ -657,9 +660,11 @@ is working on it; that's expected.
 6. Under **Add a comment**, type `Checking with the owner of 10.0.3.17.` and click **Comment**. It
    joins the activity, as written.
 7. Optional, to see that a change never overwrites a newer one: open the same page in a second
-   tab, set **Status** to **Resolved** there and save. Back in the first tab, choose **False
-   positive** and save. The first tab says someone changed the finding while you had it open,
-   and now shows **Resolved**.
+   browser window, and place the two windows side by side so both stay in view. (A tab you
+   switch back to reads the finding again, and would show the other change before you save.) In
+   the second window, set **Status** to **Resolved** and save. In the first, choose **False
+   positive** and save: it says someone changed the finding while you had it open, and now
+   shows **Resolved**.
 8. Click **Audit log**: the upload, the status change, the assignment and the comment, newest
    first, each in words with its code beneath. Click **AI usage**: the AI's calls and cost per
    UTC day, or **No AI calls in the last 30 days.** until Bedrock answers.

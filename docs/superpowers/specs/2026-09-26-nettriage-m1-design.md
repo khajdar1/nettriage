@@ -788,7 +788,7 @@ CI adds a deploy annotation for every deploy.
   - summary and metrics,
   - an evidence table; a port scan of one host also draws its evidence on the port map, captioned as the sample it is (at most 50 flows; the owner's decision, Plan 6b),
   - ATT&CK techniques, linking to attack.mitre.org, each listed once with who named it (the detector, the AI or both), and MITRE's notice,
-  - an AI explanation panel with the "AI-generated" label, model and prompt version, feedback and re-run. After a re-run it checks back every few seconds for five minutes. An answer whose shape doesn't match output schema v1 isn't shown,
+  - an AI explanation panel with the "AI-generated" label, model and prompt version, feedback and re-run. After a re-run it checks back every few seconds for five minutes, then says it's taking longer and offers to check again. An answer whose shape doesn't match output schema v1 isn't shown,
   - an activity timeline with comments,
   - status and assignee controls, saved together with `If-Match`. A 412 shows the newer version and says someone changed the finding meanwhile.
 - `/app/orgs/:org/members`: members, roles, invitations. An invitation's link is shown once, ready to copy.
