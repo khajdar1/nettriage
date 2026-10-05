@@ -273,6 +273,15 @@ code,
   background: var(--signal);
 }
 
+.severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-stretch: 75%;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 /* Pages and their parts */
 
 .page {

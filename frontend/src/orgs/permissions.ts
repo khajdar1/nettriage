@@ -32,3 +32,16 @@ export function canRename(role: Role): boolean {
 export function canDelete(role: Role): boolean {
   return role === "owner";
 }
+
+/** Owners, Admins and Analysts upload, triage, comment and ask the AI; Viewers only read. */
+export function canContribute(role: Role): boolean {
+  return role !== "viewer";
+}
+
+export function canReadAudit(role: Role): boolean {
+  return role === "owner" || role === "admin";
+}
+
+export function canReadUsage(role: Role): boolean {
+  return role === "owner" || role === "admin";
+}

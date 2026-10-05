@@ -1,7 +1,7 @@
 /** Data the fake API answers with, typed by the API's own schema. */
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
-import type { Member } from "../pages/org/MemberRow";
+import type { Member } from "../orgs/members";
 import type { Reply } from "./fakeApi";
 
 export const SIGNED_OUT: Reply = {
