@@ -20,12 +20,14 @@ export function FindingFilters({
   filters: Filters;
   onChange: (filters: Filters) => void;
 }) {
-  function set(name: "severity" | "status" | "detector", value: string) {
+  function set(name: "severity" | "status" | "assignee" | "detector", value: string) {
     const next: Filters = { ...filters };
     if (name === "severity") {
       next.severity = isSeverity(value) ? value : undefined;
     } else if (name === "status") {
-      next.status = isStatus(value) ? value : undefined;
+      next.status = value === "any" || isStatus(value) ? value : undefined;
+    } else if (name === "assignee") {
+      next.assignee = value === "me" || value === "none" ? value : undefined;
     } else {
       next.detector = value === "" ? undefined : value;
     }
@@ -55,12 +57,25 @@ export function FindingFilters({
           value={filters.status ?? ""}
           onChange={(event) => set("status", event.target.value)}
         >
-          <option value="">Any status</option>
+          <option value="">Unresolved</option>
+          <option value="any">Any status</option>
           {STATUSES.map((status) => (
             <option key={status} value={status}>
               {statusLabel(status)}
             </option>
           ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="filter-assignee">Assignee</label>
+        <select
+          id="filter-assignee"
+          value={filters.assignee ?? ""}
+          onChange={(event) => set("assignee", event.target.value)}
+        >
+          <option value="">Anyone</option>
+          <option value="me">Yours</option>
+          <option value="none">Unassigned</option>
         </select>
       </div>
       <div className="field">

@@ -3,7 +3,7 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { unwrap } from "../api/problem";
 import type { Membership } from "../auth/session";
-import type { FindingSummary } from "./findings";
+import { type FindingSummary, UNRESOLVED } from "./findings";
 import { severityLevel } from "./vocabulary";
 
 /** At most this many per organization; the home links to the rest. */
@@ -25,7 +25,7 @@ export function useAssignedToMe(memberships: Membership[]) {
               path: { org_id: membership.org_id },
               query: {
                 assignee: "me",
-                status: ["open", "investigating"],
+                status: [...UNRESOLVED],
                 sort: "severity",
                 limit: ASSIGNED_LIMIT,
               },

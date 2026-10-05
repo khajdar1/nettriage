@@ -1199,6 +1199,217 @@ select {
   font-weight: 650;
 }
 
+/* Findings at a glance: the unresolved by severity, quick views, every finding by status
+   (Plan 6d). Amber stays the detectors': only the severity bars carry it. */
+
+.glance {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 1.4rem;
+  margin-bottom: 1.5rem;
+  padding: 1.1rem 1.2rem 1.2rem;
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  background: var(--plate-sunk);
+}
+
+.glance-title {
+  margin-bottom: 0.55rem;
+  font-stretch: 75%;
+  font-weight: 650;
+  font-size: 1rem;
+  letter-spacing: 0;
+  color: var(--graphite);
+}
+
+.ladder {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.rung {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: end;
+  gap: 0.15rem 0.7rem;
+  padding: 0.8rem 0.9rem 0.75rem;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  background: var(--plate);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.rung:hover {
+  border-color: var(--ink);
+}
+
+/* The severity's bars, drawn large beside its count and word. */
+.rung .sev {
+  grid-row: span 2;
+  gap: 3px;
+  align-items: end;
+}
+
+.rung .sev i {
+  width: 7px;
+  height: 30px;
+}
+
+.rung b {
+  font-stretch: 118%;
+  font-weight: 750;
+  font-size: 1.9rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rung span:last-child {
+  font-stretch: 75%;
+  font-weight: 650;
+  color: var(--graphite);
+}
+
+/* Nothing unresolved at this severity: the tile stays, dimmed. */
+.rung.zero b,
+.rung.zero span:last-child {
+  color: var(--graphite);
+  font-weight: 500;
+}
+
+.rung.zero .sev i.on {
+  background: var(--signal-tint);
+}
+
+.views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  background: var(--plate);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.chip:hover {
+  border-color: var(--ink);
+}
+
+.chip b {
+  min-width: 1.2rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 0.85rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The view in use looks pressed. */
+.chip[aria-current="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--plate);
+}
+
+.chip[aria-current="true"] b {
+  background: var(--ink-soft);
+}
+
+.status-track {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin-bottom: 0.6rem;
+  border-radius: 6px;
+  background: var(--grid);
+}
+
+/* One class colors a status in the track (fill) and in its legend (background). */
+.track-open {
+  fill: var(--ink);
+  background: var(--ink);
+}
+
+.track-investigating {
+  fill: #4a5a6a;
+  background: #4a5a6a;
+}
+
+.track-resolved {
+  fill: #a9b4be;
+  background: #a9b4be;
+}
+
+.track-false-positive {
+  fill: url(#track-hatch);
+  background: repeating-linear-gradient(135deg, #a9b4be 0 1.5px, #e4e9ed 1.5px 4px);
+}
+
+.hatch-ground {
+  fill: #e4e9ed;
+}
+
+.hatch-line {
+  stroke: #a9b4be;
+  stroke-width: 1.5;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 1rem;
+  font-size: 0.92rem;
+}
+
+.legend a {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.legend a:hover {
+  border-bottom-color: var(--grid);
+}
+
+.legend b {
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.legend .key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.glance-upload {
+  margin: 0.8rem 0 0;
+  font-size: 0.9rem;
+}
+
 /* Choosing a file: the browser's picker button, dressed as the app's buttons */
 
 .field input[type="file"] {
@@ -1416,7 +1627,8 @@ select {
 /* Narrow screens */
 
 @media (max-width: 62rem) {
-  .finding-grid {
+  .finding-grid,
+  .glance {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1489,6 +1701,10 @@ select {
 
   .org-facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ladder {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
