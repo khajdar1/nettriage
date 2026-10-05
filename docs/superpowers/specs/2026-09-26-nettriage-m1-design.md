@@ -551,9 +551,10 @@ A failed condition returns the item as it was, which tells whether the request i
 | `DELETE /api/v1/orgs/{org}/invitations/{id}` | `members:invite` | Revoke |
 | `POST /api/v1/invitations/accept` | session | Body: token |
 | `POST /api/v1/orgs/{org}/uploads` | `uploads:create` | Body: `filename`, `size_bytes` (at most 25 MB), `sha256` (hex). Returns a presigned PUT that expires in 5 minutes. It signs `Content-Length`, `x-amz-checksum-sha256` and `x-amz-meta-traceparent`, so S3 accepts only the declared file; the response lists the headers to send. Counts against `uploads.org`; 503 while uploads are paused |
-| `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | |
-| `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics |
-| `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: status, severity, detector, upload. `sort=newest` (the default) or `sort=severity`: most severe first, then newest (Plan 6b). A page at a time; a cursor works only with the order it was made for |
+| `GET /api/v1/orgs/{org}/uploads` | `uploads:read` | Each upload with `findings`, how many it kept, and `worst_severity`, the most severe of them (null when none; Plan 6d) |
+| `GET /api/v1/orgs/{org}/uploads/{id}` | `uploads:read` | Status and statistics, with `findings` and `worst_severity` |
+| `GET /api/v1/orgs/{org}/overview` | `findings:read` | Where the org's findings stand, in one read (Plan 6d): `unresolved_by_severity` (Open or Investigating), `by_status`, `unresolved_unassigned`, `unresolved_mine` (assigned to the caller), `new_last_day` (detected in the last 24 hours, any status), `member_count` and `last_upload` (null when none). Counted by queries over existing tables; no new column |
+| `GET /api/v1/orgs/{org}/findings` | `findings:read` | Filters: `status`, one or several (at most 4; Plan 6d), severity, detector, upload, `assignee` (`me` or `none`) and `since`, a moment the findings were detected at or after (Plan 6d). `sort=newest` (the default) or `sort=severity`: most severe first, then newest (Plan 6b). A page at a time; a cursor works only with the order it was made for. Each finding carries `ai_status`, the status of its latest AI analysis (null until there is one; Plan 6d) |
 | `GET /api/v1/orgs/{org}/findings/{id}` | `findings:read` | With evidence, techniques, the latest AI analysis as `ai_analysis` (null until there is one: status, provider, model, prompt and output schema versions, output, `error_code`, tokens, `cost_usd`, latency, and the rating's `feedback` and `feedback_by`; Plans 5b and 5c), and the latest 100 events with `events_total` (Plan 4c); the `ETag` is the finding's version |
 | `PATCH /api/v1/orgs/{org}/findings/{id}` | `findings:triage` | Body: `status`, `assignee_id` (`null` unassigns), or both; `If-Match`. Any status can change to any other, and the assignee must be an Owner, Admin or Analyst of the org (422 otherwise; the owner's decisions, Plan 4c). Each change is an event in the finding's history and an audit event |
 | `POST /api/v1/orgs/{org}/findings/{id}/comments` | `findings:comment` | Body: `text`, 1 to 2,000 characters, line breaks allowed. A comment joins the history without changing the finding's version; the audit event never holds its text |
@@ -781,10 +782,17 @@ CI adds a deploy annotation for every deploy.
 - `/` Landing: what NetTriage is (a finding it wrote, with the port map behind it, then how a finding is made), "View the live demo", "Sign in or sign up", and a "Source code" link to GitHub.
 - `/demo`: the read-only demo workspace, rendered from the static snapshot, with a clear "demo" banner (Plan 6c, written once Bedrock answers, so the demo's explanations are real; the owner's decision).
 - `/invite`: reads the token from the URL fragment, signs the user in if needed, then accepts. The token leaves the address bar at once and waits in the tab's `sessionStorage` while the person signs in (Plan 6a).
-- `/app`: an org switcher (the list of the person's organizations, which the product name in the top bar returns to), plus onboarding (create an org or accept an invitation).
-- `/app/orgs/:org/uploads`: the uploads list, and an upload panel with progress. The panel sits on the page, since the app has no modal dialogs (Plan 6a). The browser computes the file's SHA-256 before requesting a slot, and puts the file in S3 with an `XMLHttpRequest`, the one browser API that reports upload progress. The list checks back every few seconds while an upload is being analyzed (Plan 6b).
-- `/app/orgs/:org/findings`, where an organization opens (the owner's decision, Plan 6b): a table with filters (severity, status, detector, upload) and sorting, done by the API with `sort`. It opens most severe first, then newest (the owner's decision); newest first is one choice away. The filters and the order live in the address.
+- `/app`, the home and the org switcher, which the product name in the top bar returns to (Plan 6d):
+  - **Assigned to you:** the unresolved (Open or Investigating) findings assigned to the person in all their organizations, most severe first, then newest. At most 20 are read per organization, with a link to the rest.
+  - **Organizations:** a card per membership with its unresolved findings by severity, its unassigned and yours, its members and its last upload, each count linking to the findings it counts.
+  - Onboarding: create an org, or accept an invitation.
+- `/app/orgs/:org/uploads`: the uploads list, and an upload panel with progress. The panel sits on the page, since the app has no modal dialogs (Plan 6a). The browser computes the file's SHA-256 before requesting a slot, and puts the file in S3 with an `XMLHttpRequest`, the one browser API that reports upload progress. The list checks back every few seconds while an upload is being analyzed (Plan 6b). Each analyzed upload says how many findings it had and the worst, such as "6 findings, worst High", linking to all of them (Plan 6d).
+- `/app/orgs/:org/findings`, where an organization opens (the owner's decision, Plan 6b): a table with filters (severity, status, assignee, detector, upload) and sorting, done by the API with `sort`. It opens most severe first, then newest (the owner's decision); newest first is one choice away. The filters and the order live in the address. Plan 6d adds:
+  - **Unresolved** (Open or Investigating) as the status filter's default, beside Any status and each status, and an **Assignee** filter (Anyone, Yours, Unassigned);
+  - a glance above the filters, read from the overview: the unresolved by severity as four tiles, the quick views Yours, Unassigned and New in the last day, every finding by status as a track with its legend, and the last upload. Each number links to exactly the findings it counts;
+  - on each row, the detector, the flow and whether the AI explained it under the title, the assignee with their initials, and when it was detected.
 - `/app/orgs/:org/findings/:id`:
+  - under the title, a summary strip: status, assignee, when it was detected, its window, its upload and the AI's verdict (Plan 6d),
   - summary and metrics,
   - an evidence table; a port scan of one host also draws its evidence on the port map, captioned as the sample it is (at most 50 flows; the owner's decision, Plan 6b),
   - ATT&CK techniques, linking to attack.mitre.org, each listed once with who named it (the detector, the AI or both), and MITRE's notice,
@@ -795,6 +803,8 @@ CI adds a deploy annotation for every deploy.
 - `/app/orgs/:org/settings`: rename (Owner, Admin), leave (anyone), and delete after typing the org's name (Owner) (Plan 6a).
 - `/app/orgs/:org/audit` and `/app/orgs/:org/usage`: Owner and Admin only. Usage draws the cost per UTC day as ink bars above the table of days and totals, for the last 7, 30 or 90 days (the owner's decision, Plan 6b).
 - `/app/settings`: account settings: who is signed in, and "sign out everywhere".
+
+Times read as how long ago they were ("2 h ago"), with the exact local time on hover; the audit log keeps exact times, as a record should (Plan 6d).
 
 **Libraries:**
 - React, TypeScript (strict) and Vite.
