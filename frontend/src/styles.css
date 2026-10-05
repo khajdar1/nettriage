@@ -868,20 +868,28 @@ select {
   margin: 0 0 1.5rem;
 }
 
-.facts dl {
+.triage .field select {
+  min-width: 0;
+  width: 100%;
+}
+
+.facts dl,
+.facts-list {
   display: grid;
   grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
   gap: 0.45rem 1rem;
   margin: 0;
 }
 
-.facts dt {
+.facts dt,
+.facts-list dt {
   font-stretch: 75%;
   font-weight: 650;
   color: var(--graphite);
 }
 
-.facts dd {
+.facts dd,
+.facts-list dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -898,6 +906,64 @@ select {
 
 .techniques li p {
   margin: 0.3rem 0 0;
+}
+
+.timeline {
+  margin: 0 0 1.75rem;
+  padding: 0;
+  list-style: none;
+  border-left: 2px solid var(--grid);
+}
+
+.timeline li {
+  position: relative;
+  padding: 0 0 1.1rem 1.1rem;
+}
+
+.timeline li::before {
+  content: "";
+  position: absolute;
+  top: 0.5rem;
+  left: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--graphite);
+}
+
+.event-what {
+  font-weight: 600;
+}
+
+.comment {
+  max-width: 40rem;
+  margin: 0.45rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  background: var(--plate);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-form {
+  max-width: 40rem;
+}
+
+.field textarea {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--field-line);
+  border-radius: 6px;
+  background: var(--plate);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.field p {
+  margin: 0;
+  font-size: 0.88rem;
 }
 
 .mitre {

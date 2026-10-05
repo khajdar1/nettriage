@@ -7,10 +7,12 @@ import { ErrorNotice } from "../../../ui/ErrorNotice";
 import { Loading } from "../../../ui/Loading";
 import { Severity } from "../../../ui/Severity";
 import { usePageTitle } from "../../../ui/usePageTitle";
+import { Activity } from "./Activity";
 import { EvidenceMap } from "./EvidenceMap";
 import { EvidenceTable } from "./EvidenceTable";
 import { FindingFacts } from "./FindingFacts";
 import { Techniques } from "./Techniques";
+import { Triage } from "./Triage";
 
 function FindingNotFound() {
   return (
@@ -67,8 +69,10 @@ export function FindingPage() {
             <EvidenceMap finding={found} />
             <EvidenceTable finding={found} />
           </section>
+          <Activity org={org} finding={found} />
         </div>
         <div className="finding-side">
+          <Triage org={org} finding={found} />
           <FindingFacts finding={found} />
           <Techniques techniques={found.techniques} />
         </div>
