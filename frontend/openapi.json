@@ -905,7 +905,7 @@
     "/api/v1/orgs/{org_id}/findings": {
       "get": {
         "summary": "Findings",
-        "description": "The org's findings, newest first, or most severe first and then newest with\n`sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only\nwith the order it was made for.",
+        "description": "The org's findings, newest first, or most severe first and then newest with\n`sort=severity` (Plan 6b). Filters, combined: any of the given statuses, severity, detector,\nupload, the assignee (`me` or `none`) and `since` a moment (Plan 6d). A cursor works only\nwith the order it was made for.",
         "operationId": "findings_api_v1_orgs__org_id__findings_get",
         "parameters": [
           {
@@ -925,7 +925,11 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/FindingStatus"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FindingStatus"
+                  },
+                  "maxItems": 4
                 },
                 {
                   "type": "null"
@@ -982,6 +986,43 @@
                 }
               ],
               "title": "Upload"
+            }
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "me",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
             }
           },
           {
@@ -1637,6 +1678,16 @@
         "title": "AiAnalysisOut",
         "description": "AI-generated: the UI labels it so, with the model and prompt version (spec §8.4)."
       },
+      "AiStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "succeeded",
+          "failed",
+          "skipped_budget",
+          "invalid_output"
+        ]
+      },
       "AuditEventOut": {
         "properties": {
           "id": {
@@ -2069,6 +2120,16 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "ai_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "metrics": {
             "additionalProperties": true,
             "type": "object",
@@ -2128,6 +2189,7 @@
           "assignee_id",
           "version",
           "created_at",
+          "ai_status",
           "metrics",
           "evidence",
           "techniques",
@@ -2252,6 +2314,16 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "ai_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AiStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2271,7 +2343,8 @@
           "window_end",
           "assignee_id",
           "version",
-          "created_at"
+          "created_at",
+          "ai_status"
         ],
         "title": "FindingSummaryOut"
       },

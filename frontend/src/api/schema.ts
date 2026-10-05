@@ -319,7 +319,8 @@ export interface paths {
         /**
          * Findings
          * @description The org's findings, newest first, or most severe first and then newest with
-         *     `sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only
+         *     `sort=severity` (Plan 6b). Filters, combined: any of the given statuses, severity, detector,
+         *     upload, the assignee (`me` or `none`) and `since` a moment (Plan 6d). A cursor works only
          *     with the order it was made for.
          */
         get: operations["findings_api_v1_orgs__org_id__findings_get"];
@@ -521,6 +522,8 @@ export interface components {
              */
             updated_at: string;
         };
+        /** @enum {string} */
+        AiStatus: "pending" | "succeeded" | "failed" | "skipped_budget" | "invalid_output";
         /** AuditEventOut */
         AuditEventOut: {
             /**
@@ -709,6 +712,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            ai_status: components["schemas"]["AiStatus"] | null;
             /** Metrics */
             metrics: {
                 [key: string]: unknown;
@@ -774,6 +778,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            ai_status: components["schemas"]["AiStatus"] | null;
         };
         /** FindingTechniqueOut */
         FindingTechniqueOut: {
@@ -1746,10 +1751,12 @@ export interface operations {
     findings_api_v1_orgs__org_id__findings_get: {
         parameters: {
             query?: {
-                status?: components["schemas"]["FindingStatus"] | null;
+                status?: components["schemas"]["FindingStatus"][] | null;
                 severity?: components["schemas"]["FindingSeverity"] | null;
                 detector?: string | null;
                 upload?: string | null;
+                assignee?: ("me" | "none") | null;
+                since?: string | null;
                 sort?: "newest" | "severity";
                 limit?: number;
                 cursor?: string | null;

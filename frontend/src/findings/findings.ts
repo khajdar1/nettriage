@@ -61,6 +61,8 @@ export function searchFrom(filters: FindingFilters): URLSearchParams {
 }
 
 export function useFindings(orgId: string, filters: FindingFilters) {
+  // The API takes any of several statuses (Plan 6d).
+  const { status, ...rest } = filters;
   return useInfiniteQuery({
     queryKey: findingsKey(orgId, filters),
     queryFn: async ({ pageParam }) =>
@@ -68,7 +70,11 @@ export function useFindings(orgId: string, filters: FindingFilters) {
         await api.GET("/api/v1/orgs/{org_id}/findings", {
           params: {
             path: { org_id: orgId },
-            query: { ...filters, ...(pageParam ? { cursor: pageParam } : {}) },
+            query: {
+              ...rest,
+              ...(status ? { status: [status] } : {}),
+              ...(pageParam ? { cursor: pageParam } : {}),
+            },
           },
         }),
       ),

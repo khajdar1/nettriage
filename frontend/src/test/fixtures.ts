@@ -114,6 +114,7 @@ export function findingSummary(fields: Partial<FindingSummary> = {}): FindingSum
     assignee_id: null,
     version: 1,
     created_at: "2026-10-04T09:31:00Z",
+    ai_status: null,
     ...fields,
   };
 }
