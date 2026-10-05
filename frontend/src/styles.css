@@ -908,6 +908,53 @@ select {
   margin: 0.3rem 0 0;
 }
 
+.ai-panel {
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--grid);
+  border-left: 3px solid var(--teal);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--plate);
+}
+
+.ai-panel h3 {
+  margin: 1.1rem 0 0.35rem;
+  font-size: 1rem;
+}
+
+.ai-panel ul,
+.ai-panel ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.ai-by .ai-label {
+  display: inline;
+  margin: 0;
+}
+
+.ai-by {
+  margin: 0 0 0.75rem;
+}
+
+.ai-summary {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.ai-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 1.25rem 0 0.75rem;
+}
+
+.ai-feedback .button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--plate);
+}
+
 .timeline {
   margin: 0 0 1.75rem;
   padding: 0;

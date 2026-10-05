@@ -180,6 +180,22 @@ test("a technique both the detector and the AI name is listed once, with both", 
   ).toBeVisible();
 });
 
+test("opening a finding reads it once, though several parts of the page show it", async () => {
+  const fake = signedInAs(OWNER, {
+    [`GET ${FINDING}`]: { body: finding() },
+    "GET /api/v1/attack-techniques/T1046": technique("T1046"),
+  });
+
+  renderAt(PAGE);
+
+  await screen.findByRole("region", { name: "AI explanation" });
+  await screen.findByRole("region", { name: "Activity" });
+  const reads = fake.requests.filter(
+    (request) => request.method === "GET" && request.url.endsWith(`/findings/${FINDING_ID}`),
+  );
+  expect(reads).toHaveLength(1);
+});
+
 test("a finding that isn't there, or isn't the organization's, says so", async () => {
   signedInAs(OWNER, { [`GET ${FINDING}`]: { status: 404, body: { title: "Not Found" } } });
 

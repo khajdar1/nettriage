@@ -8,6 +8,7 @@ import { Loading } from "../../../ui/Loading";
 import { Severity } from "../../../ui/Severity";
 import { usePageTitle } from "../../../ui/usePageTitle";
 import { Activity } from "./Activity";
+import { AiPanel } from "./AiPanel";
 import { EvidenceMap } from "./EvidenceMap";
 import { EvidenceTable } from "./EvidenceTable";
 import { FindingFacts } from "./FindingFacts";
@@ -64,6 +65,7 @@ export function FindingPage() {
       <h1 className="finding-title">{found.title}</h1>
       <div className="finding-grid">
         <div className="finding-main">
+          <AiPanel org={org} finding={found} />
           <section aria-labelledby="evidence-title">
             <h2 id="evidence-title">Evidence</h2>
             <EvidenceMap finding={found} />

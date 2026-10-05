@@ -12,9 +12,19 @@ export function findingKey(orgId: string, findingId: string) {
   return ["finding", orgId, findingId] as const;
 }
 
-export function useFinding(orgId: string, findingId: string) {
+/**
+ * The finding. A second reader on the same page, such as the AI panel checking back while an
+ * explanation is queued, passes `watch`: it shares the page's copy instead of reading it again.
+ */
+export function useFinding(
+  orgId: string,
+  findingId: string,
+  watch?: { refetchInterval: () => number | false },
+) {
   return useQuery({
     queryKey: findingKey(orgId, findingId),
+    refetchInterval: watch?.refetchInterval ?? false,
+    refetchOnMount: watch === undefined,
     queryFn: async () =>
       unwrap(
         await api.GET("/api/v1/orgs/{org_id}/findings/{finding_id}", {

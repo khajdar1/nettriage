@@ -2,6 +2,7 @@
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
 import type { Member } from "../orgs/members";
+import type { AiAnalysis } from "../findings/explanation";
 import type { Finding } from "../findings/finding";
 import type { FindingSummary } from "../findings/findings";
 import type { Upload } from "../uploads/uploads";
@@ -164,6 +165,45 @@ export function finding(fields: Partial<Finding> = {}): Finding {
     ],
     events_total: 1,
     ai_analysis: null,
+    ...fields,
+  };
+}
+
+export const EXPLANATION = {
+  summary: "10.0.3.17 tried 150 ports on 10.0.0.5 in five minutes, and every attempt was refused.",
+  why_it_matters: "A host inside the network looking for services is often an attack's first step.",
+  likely_benign_explanations: ["An inventory or vulnerability scanner your team runs."],
+  recommended_next_steps: ["Check what else 10.0.3.17 reached.", "Ask who owns 10.0.3.17."],
+  attack_techniques: [{ id: "T1046", rationale: "One source probed many ports on one host." }],
+  severity_assessment: {
+    agrees_with_detector: true,
+    suggested_severity: "high",
+    reason: "Internal and fast.",
+  },
+  confidence: "medium",
+  insufficient_evidence: false,
+};
+
+export const ANALYSIS_ID = "01a10800-0000-7000-8000-000000000001";
+
+export function aiAnalysis(fields: Partial<AiAnalysis> = {}): AiAnalysis {
+  return {
+    id: ANALYSIS_ID,
+    status: "succeeded",
+    provider: "bedrock",
+    model_id: "openai.gpt-oss-20b-1:0",
+    prompt_version: "v1",
+    output_schema_version: "v1",
+    output: EXPLANATION,
+    error_code: null,
+    input_tokens: 900,
+    output_tokens: 300,
+    cost_usd: "0.0003",
+    latency_ms: 2100,
+    feedback: null,
+    feedback_by: null,
+    created_at: "2026-10-04T09:32:00Z",
+    updated_at: "2026-10-04T09:32:02Z",
     ...fields,
   };
 }
