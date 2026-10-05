@@ -3033,6 +3033,20 @@
               }
             ],
             "title": "Processed At"
+          },
+          "findings": {
+            "type": "integer",
+            "title": "Findings"
+          },
+          "worst_severity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FindingSeverity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3051,7 +3065,9 @@
           "flow_end",
           "uploaded_by",
           "created_at",
-          "processed_at"
+          "processed_at",
+          "findings",
+          "worst_severity"
         ],
         "title": "UploadOut"
       },

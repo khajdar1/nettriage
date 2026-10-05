@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from nettriage.adapters.findings import FindingSeverity
 from nettriage.adapters.uploads import Upload
 from nettriage.application.uploads import MAX_FILENAME, MAX_UPLOAD_BYTES, UploadStatus
 from nettriage.entrypoints.api.schemas import Strict
@@ -46,6 +47,9 @@ class UploadOut(BaseModel):
     uploaded_by: UUID
     created_at: datetime
     processed_at: datetime | None
+    # The findings stored for it, and the most severe of them (Plan 6d).
+    findings: int
+    worst_severity: FindingSeverity | None
 
     @classmethod
     def of(cls, upload: Upload) -> UploadOut:
@@ -65,6 +69,8 @@ class UploadOut(BaseModel):
             uploaded_by=upload.uploaded_by,
             created_at=upload.created_at,
             processed_at=upload.processed_at,
+            findings=upload.findings,
+            worst_severity=upload.worst_severity,
         )
 
 

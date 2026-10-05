@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy import Engine, Row, text
 
+from nettriage.adapters.findings import FindingSeverity
 from nettriage.adapters.organizations import lock_org_for
 from nettriage.adapters.postgres import tenant_transaction
 from nettriage.application.organizations import NotFound, require
@@ -21,6 +22,15 @@ _COLUMNS = (
     "rows_parsed, rows_rejected, rejected_samples, findings_truncated, "
     "lower(flow_time_range) AS flow_start, upper(flow_time_range) AS flow_end, processed_at, "
     "created_at"
+)
+# The findings stored for an upload, and the most severe of them (Plan 6d).
+_FINDINGS = (
+    "(SELECT count(*) FROM findings f WHERE f.org_id = uploads.org_id "
+    "AND f.upload_id = uploads.id) AS findings, "
+    "(SELECT f.severity FROM findings f WHERE f.org_id = uploads.org_id "
+    "AND f.upload_id = uploads.id ORDER BY "
+    "array_position(ARRAY['low', 'medium', 'high', 'critical'], f.severity) DESC "
+    "LIMIT 1) AS worst_severity"
 )
 
 
@@ -42,6 +52,8 @@ class Upload:
     flow_end: datetime | None
     processed_at: datetime | None
     created_at: datetime
+    findings: int
+    worst_severity: FindingSeverity | None
 
 
 def create_upload(
@@ -63,7 +75,7 @@ def create_upload(
             text(
                 "INSERT INTO uploads (id, org_id, uploaded_by, original_filename, s3_key, "  # noqa: S608
                 "size_bytes, sha256) VALUES (:id, :org, :user, :filename, :key, :size, :sha256) "
-                f"RETURNING {_COLUMNS}"
+                f"RETURNING {_COLUMNS}, 0 AS findings, NULL AS worst_severity"
             ),
             {
                 "id": upload_id,
@@ -81,7 +93,10 @@ def create_upload(
 def get_upload(engine: Engine, org_id: UUID, user_id: UUID, upload_id: UUID) -> Upload:
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
         row = connection.execute(
-            text(f"SELECT {_COLUMNS} FROM uploads WHERE org_id = :org AND id = :id"),  # noqa: S608
+            text(
+                f"SELECT {_COLUMNS}, {_FINDINGS} FROM uploads "  # noqa: S608
+                "WHERE org_id = :org AND id = :id"
+            ),
             {"org": org_id, "id": upload_id},
         ).one_or_none()
     if row is None:
@@ -102,7 +117,7 @@ def list_uploads(
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
         rows = connection.execute(
             text(
-                f"SELECT {_COLUMNS} FROM uploads WHERE org_id = :org "  # noqa: S608
+                f"SELECT {_COLUMNS}, {_FINDINGS} FROM uploads WHERE org_id = :org "  # noqa: S608
                 "AND (CAST(:before_at AS timestamptz) IS NULL OR (created_at, id) < "
                 "(CAST(:before_at AS timestamptz), CAST(:before_id AS uuid))) "
                 "ORDER BY created_at DESC, id DESC LIMIT :limit"
@@ -130,4 +145,6 @@ def _upload(row: Row[Any]) -> Upload:
         flow_end=row.flow_end,
         processed_at=row.processed_at,
         created_at=row.created_at,
+        findings=row.findings,
+        worst_severity=row.worst_severity,
     )

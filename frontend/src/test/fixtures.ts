@@ -90,6 +90,8 @@ export function upload(fields: Partial<Upload> = {}): Upload {
     uploaded_by: ME.user.id,
     created_at: "2026-10-04T09:30:00Z",
     processed_at: "2026-10-04T09:31:00Z",
+    findings: 0,
+    worst_severity: null,
     ...fields,
   };
 }

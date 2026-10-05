@@ -1052,6 +1052,9 @@ export interface components {
             created_at: string;
             /** Processed At */
             processed_at: string | null;
+            /** Findings */
+            findings: number;
+            worst_severity: components["schemas"]["FindingSeverity"] | null;
         };
         /** UploadsOut */
         UploadsOut: {

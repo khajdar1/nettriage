@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind
 from sqlalchemy import text
-from tenantdata import add_member, add_org, add_user
+from tenantdata import add_finding, add_member, add_org, add_upload, add_user
 
 from nettriage.adapters.kill_switch import KillSwitch
 from nettriage.application.uploads import MAX_UPLOAD_BYTES, checksum_header
@@ -213,6 +213,29 @@ def test_uploads_are_listed_newest_first_page_by_page(
     listed = [upload["id"] for upload in first["uploads"] + rest["uploads"]]
     assert listed == ids[::-1]
     assert rest["next_cursor"] is None
+
+
+def test_an_upload_says_how_many_findings_it_has_and_the_most_severe(
+    database_client: TestClient,
+    headers: dict[str, str],
+    org: tuple[UUID, UUID],
+    database: Database,
+) -> None:
+    created = post(database_client, org[0], headers).json()["upload"]
+    with database.admin.begin() as connection:
+        analyzed = add_upload(connection, org[0], org[1], status="analyzed")
+        for severity in ("low", "high", "medium"):
+            add_finding(connection, org[0], analyzed, severity=severity)
+
+    listed = database_client.get(f"/api/v1/orgs/{org[0]}/uploads").json()["uploads"]
+    one = database_client.get(f"/api/v1/orgs/{org[0]}/uploads/{analyzed}").json()
+
+    assert (created["findings"], created["worst_severity"]) == (0, None)
+    assert {upload["id"]: (upload["findings"], upload["worst_severity"]) for upload in listed} == {
+        created["id"]: (0, None),
+        str(analyzed): (3, "high"),
+    }
+    assert (one["findings"], one["worst_severity"]) == (3, "high")
 
 
 def test_an_upload_is_read_by_id_but_not_through_another_org(
