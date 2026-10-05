@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../../api/client";
 import { unwrap } from "../../../api/problem";
 import {
   type AiAnalysis,
   type Explanation,
+  WAIT_MS,
   failureMessage,
   pollInterval,
   readExplanation,
@@ -124,16 +125,32 @@ export function AiPanel({ org, finding }: { org: Org; finding: Finding }) {
   const contributor = canContribute(org.role);
   const analysis = finding.ai_analysis;
   const [openedAt] = useState(() => Date.now());
+  // A re-run of the same input is stored in the same analysis (spec §8.3), so the answer is the
+  // analysis updated after the request, whether it is new or the same one again.
   const [waiting, setWaiting] = useState<{ after: string | null; since: number } | null>(null);
   const [current, setCurrent] = useState(false);
   const answered =
     waiting !== null &&
     analysis !== null &&
-    analysis.id !== waiting.after &&
+    analysis.updated_at !== waiting.after &&
     analysis.status !== "pending";
   const queued = waiting !== null && !answered;
   const since = queued ? waiting.since : analysis?.status === "pending" ? openedAt : null;
   useFinding(org.id, finding.id, { refetchInterval: () => pollInterval(since, Date.now()) });
+  // When the checking stops, the panel says so instead of waiting in silence.
+  const [overdue, setOverdue] = useState(false);
+  useEffect(() => {
+    if (!queued) {
+      return;
+    }
+    const timer = window.setTimeout(() => setOverdue(true), waiting.since + WAIT_MS - Date.now());
+    return () => window.clearTimeout(timer);
+  }, [queued, waiting]);
+  function checkAgain() {
+    setOverdue(false);
+    setWaiting((last) => last && { ...last, since: Date.now() });
+    void queryClient.invalidateQueries({ queryKey: key });
+  }
   const rerun = useMutation({
     mutationFn: async () =>
       unwrap(
@@ -149,13 +166,23 @@ export function AiPanel({ org, finding }: { org: Org; finding: Finding }) {
         return;
       }
       setCurrent(false);
-      setWaiting({ after: analysis?.id ?? null, since: Date.now() });
+      setOverdue(false);
+      setWaiting({ after: analysis?.updated_at ?? null, since: Date.now() });
       await queryClient.invalidateQueries({ queryKey: key });
     },
   });
   const explanation = analysis === null || queued ? null : readExplanation(analysis);
   let body;
-  if (queued) {
+  if (queued && overdue) {
+    body = (
+      <>
+        <p>No explanation yet: it's taking longer than usual, as the AI service may be busy.</p>
+        <button type="button" className="button" onClick={checkAgain}>
+          Check again
+        </button>
+      </>
+    );
+  } else if (queued) {
     body = <p>Queued. The explanation appears here when it's ready.</p>;
   } else if (analysis === null) {
     body = (

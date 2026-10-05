@@ -24,7 +24,8 @@ export interface Explanation {
 }
 
 const POLL_MS = 5000;
-const WAIT_MS = 5 * 60_000;
+/** How long a queued explanation is checked for before the panel says it's taking longer. */
+export const WAIT_MS = 5 * 60_000;
 
 function isText(value: unknown): value is string {
   return typeof value === "string";
@@ -69,19 +70,32 @@ export function readExplanation(analysis: AiAnalysis): Explanation | null {
   return valid ? (output as unknown as Explanation) : null;
 }
 
-/** Why there's no explanation to show, in words the person can act on. */
+const FAILURES: Record<string, string> = {
+  ai_disabled: "AI explanations are switched off right now.",
+  budget_exhausted_org:
+    "Not explained: the organization's AI budget for today is used up. It resets at midnight UTC.",
+  budget_exhausted_global:
+    "Not explained: NetTriage's AI budget for today, shared by every organization, is used up. It resets at midnight UTC.",
+  budget_unavailable:
+    "Not explained: NetTriage couldn't check the AI budget, so it didn't ask the AI. Try again later.",
+  checks_failed: "The AI's answer didn't pass NetTriage's checks, so it isn't shown.",
+  provider_throttled: "The AI service was busy. Try again later.",
+};
+
+/**
+ * Why there's no explanation to show, in words the person can act on. The error code says why:
+ * a skipped explanation (`skipped_budget`) can be the switch or either budget (explainer.py).
+ */
 export function failureMessage(analysis: AiAnalysis): string {
+  const known = analysis.error_code === null ? undefined : FAILURES[analysis.error_code];
+  if (known !== undefined) {
+    return known;
+  }
+  if (analysis.status === "invalid_output") {
+    return FAILURES.checks_failed ?? "";
+  }
   if (analysis.status === "skipped_budget") {
-    return "Not explained: the organization's AI budget for today is used up. It resets at midnight UTC.";
-  }
-  if (analysis.status === "invalid_output" || analysis.error_code === "checks_failed") {
-    return "The AI's answer didn't pass NetTriage's checks, so it isn't shown.";
-  }
-  if (analysis.error_code === "ai_disabled") {
-    return "AI explanations are switched off right now.";
-  }
-  if (analysis.error_code === "provider_throttled") {
-    return "The AI service was busy. Try again later.";
+    return "Not explained: an AI budget is used up. Try again later.";
   }
   return "The AI service didn't answer. Try again later.";
 }

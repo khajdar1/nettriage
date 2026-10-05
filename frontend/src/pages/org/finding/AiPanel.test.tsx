@@ -1,5 +1,5 @@
-import { screen, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { act, screen, within } from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
 import {
   ANALYSIS_ID,
   EXPLANATION,
@@ -16,6 +16,10 @@ import { renderAt } from "../../../test/render";
 const FINDING = `${ORG}/findings/${FINDING_ID}`;
 const PAGE = `/app/orgs/${ORG_ID}/findings/${FINDING_ID}`;
 const RERUN = `POST ${FINDING}/ai-analyses`;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 async function panel() {
   return screen.findByRole("region", { name: "AI explanation" });
@@ -77,7 +81,8 @@ test("a contributor rates an explanation, and their rating shows", async () => {
 test("asking again queues the finding, and the new explanation appears when it's ready", async () => {
   let reads = 0;
   const failed = aiAnalysis({ status: "failed", output: null, error_code: "provider_throttled" });
-  const fresh = aiAnalysis({ id: "01a10800-0000-7000-8000-000000000002" });
+  // The worker stores a re-run of the same input in the same analysis: same ID, newer update.
+  const fresh = aiAnalysis({ updated_at: "2026-10-04T10:15:00Z" });
   signedInAs(OWNER, {
     [`GET ${FINDING}`]: () =>
       ++reads === 1
@@ -92,6 +97,53 @@ test("asking again queues the finding, and the new explanation appears when it's
   ).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Explain again" }));
 
+  expect(await screen.findByText(EXPLANATION.summary)).toBeInTheDocument();
+});
+
+test("asking again that fails the same way again says so, and can be asked again", async () => {
+  let reads = 0;
+  const busy = (updated_at: string) =>
+    aiAnalysis({ status: "failed", output: null, error_code: "provider_throttled", updated_at });
+  signedInAs(OWNER, {
+    [`GET ${FINDING}`]: () =>
+      ++reads === 1
+        ? { body: finding({ ai_analysis: busy("2026-10-04T09:32:02Z") }) }
+        : { body: finding({ ai_analysis: busy("2026-10-04T10:15:00Z") }) },
+    [RERUN]: { status: 202, body: { status: "queued", ai_analysis: null } },
+  });
+  const { user } = renderAt(PAGE);
+
+  await user.click(within(await panel()).getByRole("button", { name: "Explain again" }));
+
+  expect(await screen.findByRole("button", { name: "Explain again" })).toBeInTheDocument();
+  expect(screen.getByText("The AI service was busy. Try again later.")).toBeVisible();
+  expect(screen.queryByText(/Queued/)).toBeNull();
+});
+
+test("a queued explanation that takes longer than five minutes says so, and can be checked again", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  let answered = false;
+  const busy = aiAnalysis({ status: "failed", output: null, error_code: "provider_throttled" });
+  const fresh = aiAnalysis({ updated_at: "2026-10-04T10:40:00Z" });
+  signedInAs(OWNER, {
+    [`GET ${FINDING}`]: () => ({ body: finding({ ai_analysis: answered ? fresh : busy }) }),
+    [RERUN]: { status: 202, body: { status: "queued", ai_analysis: null } },
+  });
+  const { user } = renderAt(PAGE);
+  await user.click(within(await panel()).getByRole("button", { name: "Explain again" }));
+  expect(await screen.findByText(/^Queued/)).toBeInTheDocument();
+
+  act(() => {
+    vi.advanceTimersByTime(5 * 60_000 + 1000);
+  });
+
+  expect(
+    await screen.findByText(
+      "No explanation yet: it's taking longer than usual, as the AI service may be busy.",
+    ),
+  ).toBeInTheDocument();
+  answered = true;
+  await user.click(screen.getByRole("button", { name: "Check again" }));
   expect(await screen.findByText(EXPLANATION.summary)).toBeInTheDocument();
 });
 
