@@ -1,6 +1,15 @@
 import { screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { ADMIN, FINDING_ID, ORG_ID, OWNER, VIEWER, finding } from "../../../test/fixtures";
+import { overviewKey } from "../../../orgs/overview";
+import {
+  ADMIN,
+  FINDING_ID,
+  ORG_ID,
+  OWNER,
+  VIEWER,
+  finding,
+  overview,
+} from "../../../test/fixtures";
 import { ORG, signedInAs } from "../../../test/orgApi";
 import { renderAt } from "../../../test/render";
 
@@ -41,6 +50,22 @@ test("a contributor changes the status and assignee, naming the version they rea
   expect(await patch?.json()).toEqual({ status: "investigating", assignee_id: ADMIN.user_id });
   expect(await screen.findByRole("button", { name: "Save changes" })).toBeDisabled();
   expect(screen.getByRole("combobox", { name: "Status" })).toHaveValue("investigating");
+});
+
+test("a saved change marks the organization's overview out of date", async () => {
+  signedInAs(OWNER, {
+    [`GET ${FINDING}`]: { body: finding() },
+    [`PATCH ${FINDING}`]: { body: finding({ status: "resolved", version: 2 }) },
+  });
+  const { user, client } = renderAt(PAGE);
+  client.setQueryData(overviewKey(ORG_ID), overview());
+
+  await user.selectOptions(await screen.findByRole("combobox", { name: "Status" }), "Resolved");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+  await vi.waitFor(() =>
+    expect(client.getQueryState(overviewKey(ORG_ID))?.isInvalidated).toBe(true),
+  );
 });
 
 test("only what changed is sent, and unassigning sends no one", async () => {
@@ -150,6 +175,9 @@ test("the history reads as sentences, oldest first, with comments as they were w
   expect(within(activity).getByText(/Checked: our own scanner\./)).toHaveTextContent(
     "Checked: our own scanner. Closing.",
   );
+  const when = within(activity).getAllByRole("listitem")[0]?.querySelector("time");
+  expect(when).toHaveClass("ago");
+  expect(when).toHaveAttribute("dateTime", "2026-10-04T09:31:00Z");
 });
 
 test("a comment joins the history, sent once", async () => {

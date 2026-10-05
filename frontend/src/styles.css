@@ -926,7 +926,52 @@ select {
 
 .finding-title {
   max-width: 48rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.2rem;
+}
+
+/* Under the title, where the finding stands: one line of terms (Plan 6d). */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.6rem;
+  margin: 0 0 2rem;
+  padding: 0.85rem 1.1rem;
+  border-top: 1px solid var(--grid);
+  border-bottom: 1px solid var(--grid);
+  background: var(--plate);
+}
+
+.strip div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.strip dt {
+  font-stretch: 75%;
+  font-weight: 650;
+  font-size: 0.92rem;
+  color: var(--graphite);
+}
+
+.strip dd {
+  display: flex;
+  align-items: center;
+  min-height: 1.6rem;
+  margin: 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A long file name keeps the line: it is cut short, and its title holds the whole name. */
+.strip-file {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.verdict {
+  color: var(--teal);
 }
 
 .finding-grid {
@@ -1701,6 +1746,15 @@ select {
 
   .org-facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strip dd {
+    white-space: normal;
   }
 
   .ladder {

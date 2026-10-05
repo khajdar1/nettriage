@@ -1,7 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import { api } from "../../api/client";
-import { unwrap } from "../../api/problem";
 import { useMe } from "../../auth/session";
 import {
   type FindingFilters as Filters,
@@ -23,20 +20,13 @@ import { Loading } from "../../ui/Loading";
 import { Person, Unassigned } from "../../ui/Person";
 import { Severity } from "../../ui/Severity";
 import { usePageTitle } from "../../ui/usePageTitle";
+import { useUpload } from "../../uploads/uploads";
 import { FindingFilters } from "./FindingFilters";
 import { Glance } from "./Glance";
 
 /** Which upload the list is narrowed to, by its file name, and the way back to all of them. */
 function UploadScope({ orgId, filters }: { orgId: string; filters: Filters & { upload: string } }) {
-  const upload = useQuery({
-    queryKey: ["upload", orgId, filters.upload],
-    queryFn: async () =>
-      unwrap(
-        await api.GET("/api/v1/orgs/{org_id}/uploads/{upload_id}", {
-          params: { path: { org_id: orgId, upload_id: filters.upload } },
-        }),
-      ),
-  });
+  const upload = useUpload(orgId, filters.upload);
   const everyUpload = searchFrom({ ...filters, upload: undefined }).toString();
   return (
     <p className="scope">

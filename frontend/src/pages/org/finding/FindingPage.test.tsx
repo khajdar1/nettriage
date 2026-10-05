@@ -55,7 +55,7 @@ test("a finding shows its severity, title, details and numbers", async () => {
     within(details).getByRole("link", { name: "Other findings from this upload" }),
   ).toHaveAttribute(
     "href",
-    `/app/orgs/${ORG_ID}/findings?upload=01a10500-0000-7000-8000-000000000001`,
+    `/app/orgs/${ORG_ID}/findings?status=any&upload=01a10500-0000-7000-8000-000000000001`,
   );
   expect(screen.getByRole("link", { name: "All findings" })).toHaveAttribute(
     "href",

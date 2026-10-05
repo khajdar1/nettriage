@@ -1,5 +1,5 @@
 /** An organization's uploads (spec §7), newest first, a page at a time. */
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { unwrap } from "../api/problem";
 import type { components } from "../api/schema";
@@ -35,6 +35,19 @@ export function isBusy(upload: Upload, now: number): boolean {
     return age < ANALYSIS_MS;
   }
   return upload.status === "pending_upload" && age < WAIT_FOR_FILE_MS;
+}
+
+/** One upload, read on its own: a list scoped to it, or a finding's summary, names its file. */
+export function useUpload(orgId: string, uploadId: string) {
+  return useQuery({
+    queryKey: ["upload", orgId, uploadId],
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/v1/orgs/{org_id}/uploads/{upload_id}", {
+          params: { path: { org_id: orgId, upload_id: uploadId } },
+        }),
+      ),
+  });
 }
 
 /** The uploads, rechecked every few seconds while one of them is still changing. */

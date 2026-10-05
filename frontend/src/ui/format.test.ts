@@ -7,6 +7,7 @@ import {
   formatDay,
   formatTime,
   formatUsd,
+  formatWindow,
 } from "./format";
 
 test("a moment is written with its date and its time", () => {
@@ -35,6 +36,14 @@ test("times of day are written to the minute, or to the second for flows", () =>
 test("a UTC day is written as that day, whatever the time zone", () => {
   expect(formatDay("2026-10-04")).toMatch(/4/);
   expect(formatDay("2026-10-04")).not.toMatch(/3/);
+});
+
+test("a window within one day is written as two times, and one across days with its dates", () => {
+  const start = "2026-10-01T12:00:00Z";
+  const end = "2026-10-01T12:05:00Z";
+  expect(formatWindow(start, end)).toBe(`${formatTime(start)} to ${formatTime(end)}`);
+  const later = "2026-10-03T12:05:00Z";
+  expect(formatWindow(start, later)).toBe(`${formatDateTime(start)} to ${formatDateTime(later)}`);
 });
 
 test("a recent moment is said as how long ago it was, and an older one as its date", () => {

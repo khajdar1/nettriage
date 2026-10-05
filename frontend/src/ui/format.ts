@@ -45,6 +45,13 @@ export function formatClock(iso: string): string {
   return CLOCK.format(new Date(iso));
 }
 
+/** A finding's window: "14:00 to 14:05", with the dates when it starts and ends on different days. */
+export function formatWindow(start: string, end: string): string {
+  return formatDate(start) === formatDate(end)
+    ? `${formatTime(start)} to ${formatTime(end)}`
+    : `${formatDateTime(start)} to ${formatDateTime(end)}`;
+}
+
 const UTC_DAY = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
 
 /** A UTC day such as "2026-10-04", written as a date that never shifts with the time zone. */
