@@ -119,7 +119,7 @@ export function Glance({ filters, overview }: { filters: Filters; overview: Over
                 key={severity}
                 to={view(filters, { severity })}
                 className={count === 0 ? "rung zero" : "rung"}
-                aria-label={`${count} unresolved ${severityLabel(severity)} findings`}
+                aria-label={`${count} ${severityLabel(severity)} findings, unresolved`}
               >
                 <SeverityBars level={severityLevel(severity)} />
                 <b>{formatNumber(count)}</b>
@@ -149,7 +149,7 @@ export function Glance({ filters, overview }: { filters: Filters; overview: Over
             <Link
               key={status}
               to={view(filters, { status })}
-              aria-label={`${overview.by_status[status]} ${statusLabel(status)} findings`}
+              aria-label={`${statusLabel(status)}: ${overview.by_status[status]} findings`}
             >
               <span className="legend-key">
                 <span className={`key ${TRACK_CLASSES[status]}`} aria-hidden="true" />

@@ -20,7 +20,7 @@ function SeverityCounts({ base, overview }: { base: string; overview: Overview }
             key={severity}
             to={`${base}/findings?severity=${severity}`}
             className={count === 0 ? "zero" : undefined}
-            aria-label={`${count} unresolved ${severityLabel(severity)} findings`}
+            aria-label={`${count} ${severityLabel(severity)} findings, unresolved`}
           >
             <SeverityBars level={severityLevel(severity)} />
             <b>{formatNumber(count)}</b> {severityLabel(severity)}
@@ -38,7 +38,10 @@ function Facts({ base, overview }: { base: string; overview: Overview }) {
       <div>
         <dt>Unassigned</dt>
         <dd>
-          <Link to={`${base}/findings?assignee=none`}>
+          <Link
+            to={`${base}/findings?assignee=none`}
+            aria-label={`${overview.unresolved_unassigned} unresolved findings, unassigned`}
+          >
             {formatNumber(overview.unresolved_unassigned)}
           </Link>
         </dd>
@@ -46,7 +49,12 @@ function Facts({ base, overview }: { base: string; overview: Overview }) {
       <div>
         <dt>Yours</dt>
         <dd>
-          <Link to={`${base}/findings?assignee=me`}>{formatNumber(overview.unresolved_mine)}</Link>
+          <Link
+            to={`${base}/findings?assignee=me`}
+            aria-label={`${overview.unresolved_mine} unresolved findings, assigned to you`}
+          >
+            {formatNumber(overview.unresolved_mine)}
+          </Link>
         </dd>
       </div>
       <div>

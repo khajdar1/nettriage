@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ORG_ID, OWNER, UPLOAD_ID, overview, upload } from "../../test/fixtures";
 import { ORG, signedInAs } from "../../test/orgApi";
+import { namedAsShown } from "../../test/names";
 import { renderAt } from "../../test/render";
 
 const PAGE = `/app/orgs/${ORG_ID}/findings`;
@@ -37,10 +38,10 @@ test("each severity's tile counts its unresolved findings and lists them", async
 
   const glance = await screen.findByRole("region", { name: "Findings at a glance" });
   const critical = await within(glance).findByRole("link", {
-    name: "2 unresolved Critical findings",
+    name: "2 Critical findings, unresolved",
   });
   expect(critical).toHaveClass("rung");
-  expect(within(glance).getByRole("link", { name: "0 unresolved Medium findings" })).toHaveClass(
+  expect(within(glance).getByRole("link", { name: "0 Medium findings, unresolved" })).toHaveClass(
     "zero",
   );
   await user.click(critical);
@@ -91,7 +92,7 @@ test("an organization with no findings shows its counts at zero, and an empty tr
   renderAt(PAGE);
 
   expect(await screen.findByText("All 0, by status")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "0 unresolved Critical findings" })).toHaveClass("zero");
+  expect(screen.getByRole("link", { name: "0 Critical findings, unresolved" })).toHaveClass("zero");
   expect(document.querySelectorAll("svg.status-track > rect")).toHaveLength(0);
 });
 
@@ -101,11 +102,11 @@ test("the status track splits every finding by status, and its legend links to e
   renderAt(PAGE);
 
   expect(await screen.findByText("All 45, by status")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "9 Open findings" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Open: 9 findings" })).toHaveAttribute(
     "href",
     `${PAGE}?status=open`,
   );
-  expect(screen.getByRole("link", { name: "3 False positive findings" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "False positive: 3 findings" })).toHaveAttribute(
     "href",
     `${PAGE}?status=false_positive`,
   );
@@ -152,6 +153,17 @@ test("an upload still being analyzed says so instead of its findings", async () 
   expect(
     (await screen.findByRole("link", { name: "port-scan.log" })).closest("p"),
   ).toHaveTextContent("Last upload port-scan.log, 2 min ago: analyzing.");
+});
+
+test("each count's name begins with what it shows, so it can be said as seen", async () => {
+  showing();
+
+  renderAt(PAGE);
+
+  const glance = await screen.findByRole("region", { name: "Findings at a glance" });
+  const links = await within(glance).findAllByRole("link");
+  expect(links.length).toBeGreaterThan(10);
+  expect(links.filter((link) => !namedAsShown(link)).map((link) => link.textContent)).toEqual([]);
 });
 
 test("with no uploads, the glance says so", async () => {

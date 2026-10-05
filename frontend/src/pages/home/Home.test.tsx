@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { fakeApi } from "../../test/fakeApi";
 import { ACME, ORG_ID, findingSummary, memberOf, overview, upload } from "../../test/fixtures";
+import { namedAsShown } from "../../test/names";
 import { renderAt } from "../../test/render";
 
 const LAB_ID = "01a10333-0000-7000-8000-000000000002";
@@ -135,10 +136,10 @@ test("each organization's card shows where its findings stand, and links to them
   );
   expect(within(card).getByText("Owner")).toBeInTheDocument();
   const critical = await within(card).findByRole("link", {
-    name: "2 unresolved Critical findings",
+    name: "2 Critical findings, unresolved",
   });
   expect(critical).toHaveAttribute("href", `/app/orgs/${ORG_ID}/findings?severity=critical`);
-  expect(within(card).getByRole("link", { name: "0 unresolved Medium findings" })).toHaveClass(
+  expect(within(card).getByRole("link", { name: "0 Medium findings, unresolved" })).toHaveClass(
     "zero",
   );
   const fact = (name: string) => within(card).getByText(name).nextElementSibling;
@@ -146,6 +147,18 @@ test("each organization's card shows where its findings stand, and links to them
   expect(fact("Yours")).toHaveTextContent("2");
   expect(fact("Members")).toHaveTextContent("4");
   expect(fact("Last upload")).toHaveTextContent("2 h ago, analyzed");
+  expect(
+    within(card).getByRole("link", { name: "7 unresolved findings, unassigned" }),
+  ).toHaveAttribute("href", `/app/orgs/${ORG_ID}/findings?assignee=none`);
+  expect(
+    within(card).getByRole("link", { name: "2 unresolved findings, assigned to you" }),
+  ).toHaveAttribute("href", `/app/orgs/${ORG_ID}/findings?assignee=me`);
+  expect(
+    within(card)
+      .getAllByRole("link")
+      .filter((link) => !namedAsShown(link))
+      .map((link) => link.textContent),
+  ).toEqual([]);
   expect(within(card).getByText("31 resolved or false positive")).toBeInTheDocument();
   expect(within(card).getByRole("link", { name: "Open findings" })).toHaveAttribute(
     "href",
