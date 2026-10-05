@@ -836,6 +836,41 @@ select {
   color: var(--graphite);
 }
 
+/* Lists that load a page at a time */
+
+.more {
+  margin-top: 1rem;
+}
+
+/* Choosing a file: the browser's picker button, dressed as the app's buttons */
+
+.field input[type="file"] {
+  height: auto;
+  padding: 0.3rem;
+}
+
+.field input[type="file"]::file-selector-button {
+  margin-right: 0.75rem;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--grid);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Sending a file: the browser's own progress bar, in ink */
+
+.upload-status progress {
+  width: 12rem;
+  height: 0.6rem;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  accent-color: var(--ink);
+}
+
 /* An organization: its name and your role, then its tabs */
 
 .org-bar {

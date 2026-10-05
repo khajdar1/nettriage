@@ -2,6 +2,7 @@
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
 import type { Member } from "../orgs/members";
+import type { Upload } from "../uploads/uploads";
 import type { Reply } from "./fakeApi";
 
 export const SIGNED_OUT: Reply = {
@@ -66,3 +67,26 @@ export const VIEWER: Member = {
   role: "viewer",
   joined_at: "2026-10-02T10:00:00Z",
 };
+
+export const UPLOAD_ID = "01a10500-0000-7000-8000-000000000001";
+
+export function upload(fields: Partial<Upload> = {}): Upload {
+  return {
+    id: UPLOAD_ID,
+    original_filename: "port-scan.log",
+    size_bytes: 13_312,
+    sha256: "a".repeat(64),
+    status: "analyzed",
+    failure_reason: null,
+    rows_parsed: 1204,
+    rows_rejected: 3,
+    rejected_samples: [],
+    findings_truncated: 0,
+    flow_start: "2026-10-01T12:00:00Z",
+    flow_end: "2026-10-01T12:05:00Z",
+    uploaded_by: ME.user.id,
+    created_at: "2026-10-04T09:30:00Z",
+    processed_at: "2026-10-04T09:31:00Z",
+    ...fields,
+  };
+}

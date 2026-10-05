@@ -5,6 +5,7 @@ import { NotFound } from "../pages/NotFound";
 import { Members } from "../pages/org/Members";
 import { OrgLayout } from "../pages/org/OrgLayout";
 import { OrgSettings } from "../pages/org/OrgSettings";
+import { Uploads } from "../pages/org/Uploads";
 import { Orgs } from "../pages/Orgs";
 import { Settings } from "../pages/Settings";
 import { AppLayout } from "./AppLayout";
@@ -29,6 +30,7 @@ export const routes: RouteObject[] = [
         element: <OrgLayout />,
         children: [
           { index: true, element: <Navigate to="members" replace /> },
+          { path: "uploads", element: <Uploads /> },
           { path: "members", element: <Members /> },
           { path: "settings", element: <OrgSettings /> },
         ],
