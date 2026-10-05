@@ -115,9 +115,14 @@ test("asking again that fails the same way again says so, and can be asked again
 
   await user.click(within(await panel()).getByRole("button", { name: "Explain again" }));
 
-  expect(await screen.findByRole("button", { name: "Explain again" })).toBeInTheDocument();
+  // Wait for the panel to have read the re-run's result: until then the button it found could be
+  // the one clicked, about to make way for "Queued".
+  await vi.waitFor(() => {
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/Queued/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Explain again" })).toBeEnabled();
+  });
   expect(screen.getByText("The AI service was busy. Try again later.")).toBeVisible();
-  expect(screen.queryByText(/Queued/)).toBeNull();
 });
 
 test("a queued explanation that takes longer than five minutes says so, and can be checked again", async () => {
