@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Design approved by the owner on 2026-10-05; this written spec awaits the owner's review |
+| **Status** | Design and written spec approved by the owner on 2026-10-05; Plan 6d implements it |
 | **Amends** | `2026-09-26-nettriage-m1-design.md` (revision 2): §7 (API) and §10 (frontend). Plan 6d's docs task copies the decisions below into those sections |
 | **Mockups** | https://claude.ai/artifact/YYqKhQxaipQBttbVKms73K (private), approved |
 
