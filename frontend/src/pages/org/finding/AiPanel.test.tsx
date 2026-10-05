@@ -67,9 +67,9 @@ test("a contributor rates an explanation, and their rating shows", async () => {
 
   await user.click(within(await panel()).getByRole("button", { name: "Useful" }));
 
-  expect(await screen.findByRole("button", { name: "Useful" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  // The button is there before the rating is saved; wait for it to show the saved rating.
+  await vi.waitFor(() =>
+    expect(screen.getByRole("button", { name: "Useful" })).toHaveAttribute("aria-pressed", "true"),
   );
   expect(screen.getByRole("button", { name: "Not useful" })).toHaveAttribute(
     "aria-pressed",
