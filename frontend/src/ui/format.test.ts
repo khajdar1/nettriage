@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatClock, formatDateTime, formatTime, formatUsd } from "./format";
+import { formatClock, formatDateTime, formatDay, formatTime, formatUsd } from "./format";
 
 test("a moment is written with its date and its time", () => {
   const written = formatDateTime("2026-10-03T14:05:00Z");
@@ -22,4 +22,9 @@ test("times of day are written to the minute, or to the second for flows", () =>
   expect(formatTime("2026-10-03T14:05:09Z")).toMatch(/:05/);
   expect(formatTime("2026-10-03T14:05:09Z")).not.toMatch(/:09/);
   expect(formatClock("2026-10-03T14:05:09Z")).toMatch(/:05:09/);
+});
+
+test("a UTC day is written as that day, whatever the time zone", () => {
+  expect(formatDay("2026-10-04")).toMatch(/4/);
+  expect(formatDay("2026-10-04")).not.toMatch(/3/);
 });

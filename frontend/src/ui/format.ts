@@ -44,3 +44,10 @@ export function formatTime(iso: string): string {
 export function formatClock(iso: string): string {
   return CLOCK.format(new Date(iso));
 }
+
+const UTC_DAY = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
+
+/** A UTC day such as "2026-10-04", written as a date that never shifts with the time zone. */
+export function formatDay(day: string): string {
+  return UTC_DAY.format(new Date(`${day}T00:00:00Z`));
+}

@@ -9,6 +9,7 @@ import { Members } from "../pages/org/Members";
 import { OrgLayout } from "../pages/org/OrgLayout";
 import { OrgSettings } from "../pages/org/OrgSettings";
 import { Uploads } from "../pages/org/Uploads";
+import { Usage } from "../pages/org/Usage";
 import { Orgs } from "../pages/Orgs";
 import { Settings } from "../pages/Settings";
 import { AppLayout } from "./AppLayout";
@@ -38,6 +39,7 @@ export const routes: RouteObject[] = [
           { path: "uploads", element: <Uploads /> },
           { path: "members", element: <Members /> },
           { path: "audit", element: <AuditLog /> },
+          { path: "usage", element: <Usage /> },
           { path: "settings", element: <OrgSettings /> },
         ],
       },

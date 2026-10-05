@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet, useParams } from "react-router";
 import { ApiError } from "../../api/problem";
 import { useOrgQuery } from "../../orgs/org";
-import { canReadAudit } from "../../orgs/permissions";
+import { canReadAudit, canReadUsage } from "../../orgs/permissions";
 import { roleLabel } from "../../orgs/roles";
 import { ErrorNotice } from "../../ui/ErrorNotice";
 import { Loading } from "../../ui/Loading";
@@ -52,6 +52,7 @@ export function OrgLayout() {
             <NavLink to="uploads">Uploads</NavLink>
             <NavLink to="members">Members</NavLink>
             {canReadAudit(org.data.role) && <NavLink to="audit">Audit log</NavLink>}
+            {canReadUsage(org.data.role) && <NavLink to="usage">AI usage</NavLink>}
             <NavLink to="settings">Settings</NavLink>
           </nav>
         </div>

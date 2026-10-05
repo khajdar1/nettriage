@@ -1052,6 +1052,39 @@ select {
   white-space: nowrap;
 }
 
+/* AI usage: cost per day in ink (amber stays the detectors') */
+
+.usage-chart {
+  margin: 0 0 1.5rem;
+}
+
+.usage-chart svg {
+  display: block;
+  width: 100%;
+  height: 8rem;
+}
+
+.usage-chart .bar {
+  fill: var(--ink);
+}
+
+.usage-chart .baseline {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.usage-chart figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.92rem;
+  color: var(--graphite);
+}
+
+.table tfoot th,
+.table tfoot td {
+  border-top: 1px solid var(--grid);
+  font-weight: 650;
+}
+
 /* Lists that load a page at a time, narrowed by filters above them */
 
 .more {
