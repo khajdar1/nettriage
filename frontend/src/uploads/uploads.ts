@@ -12,6 +12,15 @@ const WAIT_FOR_FILE_MS = 10 * 60_000;
 const ANALYSIS_MS = 2 * 60 * 60_000;
 const POLL_MS = 3000;
 
+/** How an upload's state reads on screen. */
+export const UPLOAD_STATUS_LABELS: Record<Upload["status"], string> = {
+  pending_upload: "Waiting for the file",
+  processing: "Analyzing",
+  analyzed: "Analyzed",
+  failed: "Failed",
+  expired: "Expired",
+};
+
 export function uploadsKey(orgId: string) {
   return ["uploads", orgId] as const;
 }

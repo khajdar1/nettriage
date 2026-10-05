@@ -5,16 +5,8 @@ import { ErrorNotice } from "../../ui/ErrorNotice";
 import { formatDateTime, formatNumber } from "../../ui/format";
 import { Loading } from "../../ui/Loading";
 import { usePageTitle } from "../../ui/usePageTitle";
-import { type Upload, useUploads } from "../../uploads/uploads";
+import { type Upload, UPLOAD_STATUS_LABELS, useUploads } from "../../uploads/uploads";
 import { UploadPanel } from "./UploadPanel";
-
-const STATUS_LABELS: Record<Upload["status"], string> = {
-  pending_upload: "Waiting for the file",
-  processing: "Analyzing",
-  analyzed: "Analyzed",
-  failed: "Failed",
-  expired: "Expired",
-};
 
 function UploadRow({ upload }: { upload: Upload }) {
   const rejected = upload.rows_rejected ?? 0;
@@ -22,7 +14,7 @@ function UploadRow({ upload }: { upload: Upload }) {
     <tr>
       <td className="mono">{upload.original_filename}</td>
       <td>
-        <span className="state">{STATUS_LABELS[upload.status]}</span>
+        <span className="state">{UPLOAD_STATUS_LABELS[upload.status]}</span>
         {upload.failure_reason !== null && <div className="muted">{upload.failure_reason}</div>}
         {upload.findings_truncated > 0 && (
           <div className="muted">

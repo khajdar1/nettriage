@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { api, idempotencyKey } from "../api/client";
 import { unwrap } from "../api/problem";
 import { ME_KEY, useMe } from "../auth/session";
-import { roleLabel } from "../orgs/roles";
 import { ErrorNotice } from "../ui/ErrorNotice";
 import { usePageTitle } from "../ui/usePageTitle";
+import { AssignedToYou } from "./home/AssignedToYou";
+import { OrgCard } from "./home/OrgCard";
 
 /** A person belongs to at most three organizations (spec §2.1, §7). */
 export const MAX_ORGS = 3;
@@ -62,29 +63,34 @@ function CreateOrg() {
   );
 }
 
-/** `/app`: the person's organizations, and creating one (spec §10). */
+/**
+ * `/app`, the home: the findings assigned to the person across their organizations, then each
+ * organization at a glance, and creating one (spec §10, Plan 6d).
+ */
 export function Orgs() {
-  usePageTitle("Your organizations");
+  usePageTitle("Home");
   const me = useMe();
   const memberships = me.data?.memberships ?? [];
   return (
-    <main id="main" className="page">
-      <h1>Your organizations</h1>
-      {memberships.length === 0 ? (
-        <p>Create your first organization, or open an invitation link someone sent you.</p>
-      ) : (
-        <ul className="org-list">
-          {memberships.map((membership) => (
-            <li key={membership.org_id}>
-              <span className="org-who">
-                <Link to={`/app/orgs/${membership.org_id}`}>{membership.name}</Link>
-                <span className="mono muted">{membership.slug}</span>
-              </span>
-              <span className="badge">{roleLabel(membership.role)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <main id="main" className="page home">
+      <h1 className="visually-hidden">Home</h1>
+      {memberships.length > 0 && <AssignedToYou memberships={memberships} />}
+      <section className="home-section" aria-labelledby="orgs-title">
+        <div className="page-head">
+          <h2 id="orgs-title" className="page-title">
+            Organizations
+          </h2>
+        </div>
+        {memberships.length === 0 ? (
+          <p>Create your first organization, or open an invitation link someone sent you.</p>
+        ) : (
+          <div className="org-cards">
+            {memberships.map((membership) => (
+              <OrgCard key={membership.org_id} membership={membership} />
+            ))}
+          </div>
+        )}
+      </section>
       {memberships.length < MAX_ORGS ? (
         <CreateOrg />
       ) : (

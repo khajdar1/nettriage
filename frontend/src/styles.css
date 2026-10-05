@@ -345,6 +345,25 @@ code,
   background: transparent;
 }
 
+/* Under a finding's title in a list: its detector, its flow and the AI's mark */
+
+.subline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.9rem;
+  margin-top: 0.2rem;
+  font-size: 0.86rem;
+  color: var(--graphite);
+}
+
+.subline .flow {
+  font-family: var(--mono);
+  font-stretch: 87.5%;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
 /* Pages and their parts */
 
 .page {
@@ -1257,47 +1276,122 @@ select {
   color: var(--ink);
 }
 
-/* Your organizations */
+/* Home: your work across organizations, then each organization at a glance (Plan 6d) */
 
-.org-list {
-  margin: 1.25rem 0 2rem;
-  padding: 0;
-  border: 1px solid var(--grid);
-  border-radius: var(--radius);
-  background: var(--plate);
-  list-style: none;
+.page-title {
+  font-stretch: 112%;
+  font-size: 1.95rem;
 }
 
-.org-list li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+.home-section + .home-section,
+.home-section + .setting {
+  margin-top: 2.5rem;
+}
+
+.org-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
   gap: 1rem;
-  padding: 0.9rem 1.1rem;
-  border-bottom: 1px solid var(--row);
 }
 
-.org-list li:last-child {
-  border-bottom: 0;
+.org-card {
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--grid);
+  border-radius: 10px;
+  background: var(--plate);
 }
 
-.org-who {
+.org-card-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.25rem 0.9rem;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
 }
 
-.org-list a {
-  color: var(--ink);
+.org-card-head h3 {
   font-stretch: 108%;
-  font-weight: 700;
-  font-size: 1.1rem;
+  font-weight: 750;
+  font-size: 1.15rem;
+}
+
+.org-card-head a {
+  color: var(--ink);
   text-decoration: none;
 }
 
-.org-list a:hover {
+.org-card-head a:hover {
   text-decoration: underline;
+}
+
+.mini-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.mini-counts a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-counts a:hover {
+  text-decoration: underline;
+}
+
+.mini-counts b {
+  font-stretch: 112%;
+  font-size: 1.15rem;
+}
+
+/* A severity with nothing unresolved stays in its place, greyed, so the four always line up. */
+.mini-counts a.zero {
+  color: var(--graphite);
+}
+
+.mini-counts a.zero .sev i.on {
+  background: var(--signal-tint);
+}
+
+.org-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1rem;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.org-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--row);
+}
+
+.org-facts dt {
+  color: var(--graphite);
+}
+
+.org-facts dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.org-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
 }
 
 /* A new invitation's link, shown once */
@@ -1390,6 +1484,10 @@ select {
   }
 
   .setting {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .org-facts {
     grid-template-columns: minmax(0, 1fr);
   }
 }

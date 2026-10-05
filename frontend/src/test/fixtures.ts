@@ -2,6 +2,7 @@
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
 import type { Member } from "../orgs/members";
+import type { Overview } from "../orgs/overview";
 import type { AiAnalysis } from "../findings/explanation";
 import type { Finding } from "../findings/finding";
 import type { FindingSummary } from "../findings/findings";
@@ -207,6 +208,19 @@ export function aiAnalysis(fields: Partial<AiAnalysis> = {}): AiAnalysis {
     feedback_by: null,
     created_at: "2026-10-04T09:32:00Z",
     updated_at: "2026-10-04T09:32:02Z",
+    ...fields,
+  };
+}
+
+export function overview(fields: Partial<Overview> = {}): Overview {
+  return {
+    unresolved_by_severity: { critical: 2, high: 9, medium: 0, low: 3 },
+    by_status: { open: 9, investigating: 5, resolved: 28, false_positive: 3 },
+    unresolved_unassigned: 7,
+    unresolved_mine: 2,
+    new_last_day: 5,
+    member_count: 4,
+    last_upload: upload(),
     ...fields,
   };
 }
