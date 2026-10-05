@@ -612,7 +612,9 @@ until then you read the explanation from the API.
    then labels appear for 22 ssh, 80 http and 443 https. (If your system asks apps to reduce
    motion, the grid shows up already lit.) Below it, **How a finding is made** shows four steps.
 2. Click **Sign in or sign up** and sign in with your password and a fresh code from the
-   authenticator app. You land on the home: **Assigned to you**, then **Organizations**.
+   authenticator app. You land on the home. With no organization yet, it shows
+   **Organizations**, which says **Create your first organization, or open an invitation link
+   someone sent you.**, and **Create an organization** below it.
 3. Under **Create an organization**, type `Web Test` and click **Create organization**. The
    organization opens on its **Findings** page, which has none yet, with you as its Owner. Click
    the **Members** tab.
@@ -672,13 +674,14 @@ then **The AI service was busy. Try again later.**; that's expected.
 
 ### B13. Findings at a glance
 What's yours, and where each organization's findings stand (Plan 6d).
-1. Sign in as in B11 step 2. The home says **Nothing is assigned to you.** under
-   **Assigned to you**. Create an organization named `Glance Test`. It opens on **Findings**: the
-   heading reads **0 unresolved of 0**, every tile reads 0, and the panel says
-   **No uploads yet.**
+1. Sign in as in B11 step 2, and create an organization named `Glance Test`. It opens on
+   **Findings**: the heading reads **0 unresolved of 0**, every tile reads 0, and the panel says
+   **No uploads yet.** Click **NetTriage** at the top left. The home now starts with
+   **Assigned to you**, which says **Nothing is assigned to you.**, and the **Glance Test** card
+   reads 0 at each severity and **None yet** beside **Last upload**. Click **Open findings**.
 2. Upload `docs/samples/port-scan.log` as in B12 step 2. Once it's **Analyzed**, its
-   **Findings** reads **1 finding, High**, and **Uploaded** reads **just now** (hover over it for
-   the exact time).
+   **Findings** reads **1 finding, High**, and **Uploaded** reads **just now** or **1 min ago**
+   (hover over it for the exact time).
 3. Click the **Findings** tab. The heading reads **1 unresolved of 1**. The **High** tile reads 1,
    and the other three read 0, dimmed. **Unassigned** and **New in the last day** read 1, and
    the panel ends **Last upload port-scan.log, … ago: 1 finding.** The finding's row shows
