@@ -8,20 +8,24 @@ export type Upload = components["schemas"]["UploadOut"];
 
 /** A file the API signed for but never received is watched only this long. */
 const WAIT_FOR_FILE_MS = 10 * 60_000;
+/** An analysis still running after this long has stopped; the daily check fails it (Plan 7). */
+const ANALYSIS_MS = 2 * 60 * 60_000;
 const POLL_MS = 3000;
 
 export function uploadsKey(orgId: string) {
   return ["uploads", orgId] as const;
 }
 
-/** Still changing: being analyzed, or waiting a few minutes for its file. */
+/**
+ * Still changing: being analyzed (for at most two hours), or waiting a few minutes for its file.
+ * Each check reads the whole list, so a stuck upload mustn't be watched for ever.
+ */
 export function isBusy(upload: Upload, now: number): boolean {
+  const age = now - Date.parse(upload.created_at);
   if (upload.status === "processing") {
-    return true;
+    return age < ANALYSIS_MS;
   }
-  return (
-    upload.status === "pending_upload" && now - Date.parse(upload.created_at) < WAIT_FOR_FILE_MS
-  );
+  return upload.status === "pending_upload" && age < WAIT_FOR_FILE_MS;
 }
 
 /** The uploads, rechecked every few seconds while one of them is still changing. */

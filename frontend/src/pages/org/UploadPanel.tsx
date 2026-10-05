@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { errorMessage } from "../../api/problem";
 import type { Org } from "../../orgs/org";
 import { type Progress, UploadProblem, sendUpload } from "../../uploads/sendUpload";
@@ -15,12 +15,18 @@ function problemText(error: unknown): string {
  */
 export function UploadPanel({ org }: { org: Org }) {
   const queryClient = useQueryClient();
+  const form = useRef<HTMLFormElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const send = useMutation({
     mutationFn: (chosen: File) => sendUpload(org.id, chosen, setProgress),
     onSettled: () => setProgress(null),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: uploadsKey(org.id) }),
+    onSuccess: () => {
+      // The file is sent: clear it, so a second click can't upload it twice.
+      form.current?.reset();
+      setFile(null);
+      return queryClient.invalidateQueries({ queryKey: uploadsKey(org.id) });
+    },
   });
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -38,7 +44,7 @@ export function UploadPanel({ org }: { org: Org }) {
         </p>
       </div>
       <div className="setting-how">
-        <form className="inline-form" onSubmit={submit}>
+        <form ref={form} className="inline-form" onSubmit={submit}>
           <div className="field">
             <label htmlFor="upload-file">Flow log file</label>
             <input

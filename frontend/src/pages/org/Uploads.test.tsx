@@ -99,6 +99,20 @@ test("a contributor uploads a file: it's fingerprinted, sent to storage as signe
   expect(await screen.findByText("Analyzing")).toBeInTheDocument();
 });
 
+test("once a file is uploaded it's cleared, so a second click can't send it twice", async () => {
+  const fake = signedInAs(OWNER, { [UPLOADS]: NONE, [`POST ${ORG}/uploads`]: created() });
+  fakeStorage();
+  const { user } = renderAt(PAGE);
+  const input = await screen.findByLabelText("Flow log file");
+
+  await user.upload(input, new File(["x\n"], "port-scan.log"));
+  await user.click(screen.getByRole("button", { name: "Upload" }));
+
+  expect(await screen.findByText(/Uploaded port-scan\.log/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
+  expect(fake.requests.filter((request) => request.method === "POST")).toHaveLength(1);
+});
+
 test("a file over 25 MB, or an empty one, is refused before anything is sent", async () => {
   const fake = signedInAs(OWNER, { [UPLOADS]: NONE });
   const { user } = renderAt(PAGE);
