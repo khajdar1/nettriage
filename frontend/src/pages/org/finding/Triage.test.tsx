@@ -82,7 +82,10 @@ test("a change someone else made first is shown, and nothing is overwritten", as
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Someone changed this finding while you had it open. It now shows their change; make yours again if it still applies.",
   );
-  expect(await screen.findByRole("combobox", { name: "Status" })).toHaveValue("resolved");
+  // The message shows before the finding is read again; wait for the newer version to arrive.
+  await vi.waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Status" })).toHaveValue("resolved"),
+  );
 });
 
 test("only owners, admins and analysts can be assigned", async () => {
