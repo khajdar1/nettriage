@@ -16,6 +16,7 @@ from nettriage.application.organizations import NotFound
 
 type FindingStatus = Literal["open", "investigating", "resolved", "false_positive"]
 type FindingSeverity = Literal["low", "medium", "high", "critical"]
+type FindingSort = Literal["newest", "severity"]
 
 # A finding's detail lists at most this many of its latest events.
 MAX_EVENTS = 100
@@ -26,6 +27,22 @@ _SUMMARY = (
     "lower(f.time_window) AS window_start, upper(f.time_window) AS window_end, "
     "f.assignee_id, f.version, f.created_at"
 )
+
+# Severity as a number to sort by, most severe highest (Plan 6b).
+_RANK = "array_position(ARRAY['low', 'medium', 'high', 'critical'], {})"
+_ORDERS: dict[FindingSort, tuple[str, str]] = {
+    # (the rows after the cursor, the sort order)
+    "newest": (
+        "(f.created_at, f.id) < (CAST(:before_at AS timestamptz), CAST(:before_id AS uuid))",
+        "f.created_at DESC, f.id DESC",
+    ),
+    "severity": (
+        f"({_RANK.format('f.severity')}, f.created_at, f.id) < "
+        f"({_RANK.format('CAST(:before_severity AS text)')}, "
+        "CAST(:before_at AS timestamptz), CAST(:before_id AS uuid))",
+        f"{_RANK.format('f.severity')} DESC, f.created_at DESC, f.id DESC",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -131,10 +148,15 @@ def list_findings(
     filters: FindingFilters,
     *,
     limit: int,
+    sort: FindingSort = "newest",
     before: tuple[datetime, UUID] | None = None,
+    before_severity: FindingSeverity | None = None,
 ) -> list[FindingSummary]:
-    """The org's findings, newest first, narrowed by the filters that are set."""
+    """The org's findings, newest first or most severe first (then newest), narrowed by the
+    filters that are set. A page continues after `before`, and after `before_severity` too when
+    sorted by severity."""
     before_at, before_id = before or (None, None)
+    after_cursor, order = _ORDERS[sort]
     with tenant_transaction(engine, org_id=org_id, user_id=user_id) as connection:
         rows = connection.execute(
             text(
@@ -143,9 +165,8 @@ def list_findings(
                 "AND (CAST(:severity AS text) IS NULL OR f.severity = :severity) "
                 "AND (CAST(:detector AS text) IS NULL OR f.detector_id = :detector) "
                 "AND (CAST(:upload AS uuid) IS NULL OR f.upload_id = :upload) "
-                "AND (CAST(:before_at AS timestamptz) IS NULL OR (f.created_at, f.id) < "
-                "(CAST(:before_at AS timestamptz), CAST(:before_id AS uuid))) "
-                "ORDER BY f.created_at DESC, f.id DESC LIMIT :limit"
+                f"AND (CAST(:before_at AS timestamptz) IS NULL OR {after_cursor}) "
+                f"ORDER BY {order} LIMIT :limit"
             ),
             {
                 "org": org_id,
@@ -155,6 +176,7 @@ def list_findings(
                 "upload": filters.upload_id,
                 "before_at": before_at,
                 "before_id": before_id,
+                "before_severity": before_severity,
                 "limit": limit,
             },
         ).all()

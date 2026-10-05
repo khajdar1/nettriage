@@ -3,7 +3,7 @@ techniques and history. Triage (status, assignee, comments) is Plan 4c."""
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -16,7 +16,12 @@ from nettriage.adapters.findings import (
     list_findings,
 )
 from nettriage.entrypoints.api.access import OrgContext, OrgMember
-from nettriage.entrypoints.api.cursors import decode_cursor, encode_cursor
+from nettriage.entrypoints.api.cursors import (
+    decode_cursor,
+    decode_severity_cursor,
+    encode_cursor,
+    encode_severity_cursor,
+)
 from nettriage.entrypoints.api.finding_schemas import FindingOut, FindingsOut, FindingSummaryOut
 from nettriage.entrypoints.api.org_errors import org_rules
 from nettriage.entrypoints.api.services import get_services
@@ -33,11 +38,20 @@ def findings(
     severity: FindingSeverity | None = None,
     detector: Annotated[str | None, Query(max_length=50)] = None,
     upload: UUID | None = None,
+    sort: Literal["newest", "severity"] = "newest",
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
 ) -> FindingsOut:
-    """The org's findings, newest first. Filters: status, severity, detector, upload."""
-    before = decode_cursor(cursor) if cursor else None
+    """The org's findings, newest first, or most severe first and then newest with
+    `sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only
+    with the order it was made for."""
+    before_severity: FindingSeverity | None = None
+    before = None
+    if cursor and sort == "severity":
+        last_severity, last_at, last_id = decode_severity_cursor(cursor)
+        before_severity, before = cast(FindingSeverity, last_severity), (last_at, last_id)
+    elif cursor:
+        before = decode_cursor(cursor)
     filters = FindingFilters(status=status, severity=severity, detector=detector, upload_id=upload)
     with org_rules(request, "The finding list"):
         found = list_findings(
@@ -46,13 +60,21 @@ def findings(
             org.user_id,
             filters,
             limit=limit + 1,
+            sort=sort,
             before=before,
+            before_severity=before_severity,
         )
     page = found[:limit]
-    more = len(found) > limit
+    next_cursor = None
+    if len(found) > limit:
+        last = page[-1]
+        next_cursor = (
+            encode_severity_cursor(last.severity, last.created_at, last.id)
+            if sort == "severity"
+            else encode_cursor(last.created_at, last.id)
+        )
     return FindingsOut(
-        findings=[FindingSummaryOut.of(finding) for finding in page],
-        next_cursor=encode_cursor(page[-1].created_at, page[-1].id) if more else None,
+        findings=[FindingSummaryOut.of(finding) for finding in page], next_cursor=next_cursor
     )
 
 
