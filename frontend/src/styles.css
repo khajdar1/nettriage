@@ -286,6 +286,65 @@ code,
   white-space: nowrap;
 }
 
+/* People, moments and the AI's mark, as lists show them (Plan 6d) */
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.initials {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--plate);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.initials-none {
+  border: 1px dashed var(--graphite);
+  background: transparent;
+}
+
+.ago {
+  white-space: nowrap;
+}
+
+.ai-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--teal);
+  white-space: nowrap;
+}
+
+.ai-mark::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--teal);
+}
+
+.ai-mark-none {
+  color: var(--graphite);
+}
+
+.ai-mark-none::before {
+  border: 1px solid var(--graphite);
+  background: transparent;
+}
+
 /* Pages and their parts */
 
 .page {

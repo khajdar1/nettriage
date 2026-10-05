@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
-import { formatClock, formatDateTime, formatDay, formatTime, formatUsd } from "./format";
+import {
+  formatAgo,
+  formatClock,
+  formatDate,
+  formatDateTime,
+  formatDay,
+  formatTime,
+  formatUsd,
+} from "./format";
 
 test("a moment is written with its date and its time", () => {
   const written = formatDateTime("2026-10-03T14:05:00Z");
@@ -27,4 +35,20 @@ test("times of day are written to the minute, or to the second for flows", () =>
 test("a UTC day is written as that day, whatever the time zone", () => {
   expect(formatDay("2026-10-04")).toMatch(/4/);
   expect(formatDay("2026-10-04")).not.toMatch(/3/);
+});
+
+test("a recent moment is said as how long ago it was, and an older one as its date", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  const ago = (iso: string) => formatAgo(iso, now);
+
+  expect(ago("2026-10-05T11:59:30Z")).toBe("just now");
+  expect(ago("2026-10-05T12:05:00Z")).toBe("just now");
+  expect(ago("2026-10-05T11:59:00Z")).toBe("1 min ago");
+  expect(ago("2026-10-05T11:01:00Z")).toBe("59 min ago");
+  expect(ago("2026-10-05T11:00:00Z")).toBe("1 h ago");
+  expect(ago("2026-10-04T12:00:01Z")).toBe("23 h ago");
+  expect(ago("2026-10-04T12:00:00Z")).toBe("yesterday");
+  expect(ago("2026-10-03T12:00:00Z")).toBe("2 days ago");
+  expect(ago("2026-09-28T12:00:01Z")).toBe("6 days ago");
+  expect(ago("2026-09-28T12:00:00Z")).toBe(formatDate("2026-09-28T12:00:00Z"));
 });
