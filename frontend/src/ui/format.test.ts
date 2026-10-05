@@ -56,8 +56,17 @@ test("a recent moment is said as how long ago it was, and an older one as its da
   expect(ago("2026-10-05T11:01:00Z")).toBe("59 min ago");
   expect(ago("2026-10-05T11:00:00Z")).toBe("1 h ago");
   expect(ago("2026-10-04T12:00:01Z")).toBe("23 h ago");
-  expect(ago("2026-10-04T12:00:00Z")).toBe("yesterday");
-  expect(ago("2026-10-03T12:00:00Z")).toBe("2 days ago");
-  expect(ago("2026-09-28T12:00:01Z")).toBe("6 days ago");
-  expect(ago("2026-09-28T12:00:00Z")).toBe(formatDate("2026-09-28T12:00:00Z"));
+});
+
+test("a day or more ago is counted in calendar days, so yesterday is always the day before", () => {
+  // Local times, so the calendar is the person's whatever the time zone. 5 October 2026 is a Monday.
+  const at = (month: number, day: number, hour: number) =>
+    new Date(2026, month - 1, day, hour).toISOString();
+  const ago = (iso: string) => formatAgo(iso, Date.parse(at(10, 5, 9)));
+
+  expect(ago(at(10, 4, 23))).toBe("10 h ago");
+  expect(ago(at(10, 4, 8))).toBe("yesterday");
+  expect(ago(at(10, 3, 10))).toBe("2 days ago");
+  expect(ago(at(9, 29, 10))).toBe("6 days ago");
+  expect(ago(at(9, 28, 23))).toBe(formatDate(at(9, 28, 23)));
 });

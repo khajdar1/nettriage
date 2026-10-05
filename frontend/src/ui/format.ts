@@ -63,12 +63,21 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
+/** Midnight, in the person's time zone, of the day a moment falls on. */
+function startOfDay(moment: number): number {
+  const day = new Date(moment);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
 /**
- * How long ago a moment was (Plan 6d): "just now", "5 min ago", "2 h ago", "yesterday",
- * "3 days ago", then its date from a week on. A moment slightly ahead of this clock is "just now".
+ * How long ago a moment was (Plan 6d): "just now", "5 min ago", "2 h ago", then in calendar days,
+ * "yesterday" and "3 days ago", then its date from a week on. Days are counted between midnights,
+ * so "yesterday" is always the day before today. A moment slightly ahead of this clock is "just now".
  */
 export function formatAgo(iso: string, now: number): string {
-  const elapsed = now - Date.parse(iso);
+  const moment = Date.parse(iso);
+  const elapsed = now - moment;
   if (elapsed < MINUTE) {
     return "just now";
   }
@@ -78,11 +87,13 @@ export function formatAgo(iso: string, now: number): string {
   if (elapsed < DAY) {
     return `${Math.floor(elapsed / HOUR)} h ago`;
   }
-  if (elapsed < 2 * DAY) {
+  // Rounded: a day with a daylight saving change is 23 or 25 hours long.
+  const days = Math.round((startOfDay(now) - startOfDay(moment)) / DAY);
+  if (days <= 1) {
     return "yesterday";
   }
-  if (elapsed < 7 * DAY) {
-    return `${Math.floor(elapsed / DAY)} days ago`;
+  if (days < 7) {
+    return `${days} days ago`;
   }
   return formatDate(iso);
 }
