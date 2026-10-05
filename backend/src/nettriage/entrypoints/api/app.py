@@ -19,6 +19,7 @@ from nettriage.entrypoints.api.routes import (
     me,
     members,
     orgs,
+    overview,
     triage,
     uploads,
     usage,
@@ -66,6 +67,7 @@ def create_app(
         triage,
         ai,
         usage,
+        overview,
         attack_techniques,
     ):
         app.include_router(module.router, prefix="/api")

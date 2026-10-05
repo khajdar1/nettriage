@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Engine, Row, text
+from sqlalchemy import Connection, Engine, Row, text
 
 from nettriage.adapters.findings import FindingSeverity
 from nettriage.adapters.organizations import lock_org_for
@@ -125,6 +125,18 @@ def list_uploads(
             {"org": org_id, "before_at": before_at, "before_id": before_id, "limit": limit},
         ).all()
     return [_upload(row) for row in rows]
+
+
+def latest_upload(connection: Connection, org_id: UUID) -> Upload | None:
+    """The org's newest upload, whatever its status, inside the caller's transaction (Plan 6d)."""
+    row = connection.execute(
+        text(
+            f"SELECT {_COLUMNS}, {_FINDINGS} FROM uploads WHERE org_id = :org "  # noqa: S608
+            "ORDER BY created_at DESC, id DESC LIMIT 1"
+        ),
+        {"org": org_id},
+    ).one_or_none()
+    return None if row is None else _upload(row)
 
 
 def _upload(row: Row[Any]) -> Upload:

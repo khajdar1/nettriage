@@ -1465,6 +1465,47 @@
         }
       }
     },
+    "/api/v1/orgs/{org_id}/overview": {
+      "get": {
+        "summary": "Overview",
+        "description": "Unresolved findings by severity, all findings by status, the unresolved ones unassigned\nand the caller's, those detected in the last 24 hours, the members and the last upload.",
+        "operationId": "overview_api_v1_orgs__org_id__overview_get",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Org Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/attack-techniques/{technique_id}": {
       "get": {
         "summary": "Technique",
@@ -2731,6 +2772,54 @@
         ],
         "title": "OrgOut"
       },
+      "OverviewOut": {
+        "properties": {
+          "unresolved_by_severity": {
+            "$ref": "#/components/schemas/SeverityCounts"
+          },
+          "by_status": {
+            "$ref": "#/components/schemas/StatusCounts"
+          },
+          "unresolved_unassigned": {
+            "type": "integer",
+            "title": "Unresolved Unassigned"
+          },
+          "unresolved_mine": {
+            "type": "integer",
+            "title": "Unresolved Mine"
+          },
+          "new_last_day": {
+            "type": "integer",
+            "title": "New Last Day"
+          },
+          "member_count": {
+            "type": "integer",
+            "title": "Member Count"
+          },
+          "last_upload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "unresolved_by_severity",
+          "by_status",
+          "unresolved_unassigned",
+          "unresolved_mine",
+          "new_last_day",
+          "member_count",
+          "last_upload"
+        ],
+        "title": "OverviewOut",
+        "description": "Unresolved means Open or Investigating; `new_last_day` counts the findings detected in the\nlast 24 hours, whatever their status."
+      },
       "RerunOut": {
         "properties": {
           "status": {
@@ -2779,6 +2868,62 @@
           "role"
         ],
         "title": "RoleIn"
+      },
+      "SeverityCounts": {
+        "properties": {
+          "critical": {
+            "type": "integer",
+            "title": "Critical"
+          },
+          "high": {
+            "type": "integer",
+            "title": "High"
+          },
+          "medium": {
+            "type": "integer",
+            "title": "Medium"
+          },
+          "low": {
+            "type": "integer",
+            "title": "Low"
+          }
+        },
+        "type": "object",
+        "required": [
+          "critical",
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "SeverityCounts"
+      },
+      "StatusCounts": {
+        "properties": {
+          "open": {
+            "type": "integer",
+            "title": "Open"
+          },
+          "investigating": {
+            "type": "integer",
+            "title": "Investigating"
+          },
+          "resolved": {
+            "type": "integer",
+            "title": "Resolved"
+          },
+          "false_positive": {
+            "type": "integer",
+            "title": "False Positive"
+          }
+        },
+        "type": "object",
+        "required": [
+          "open",
+          "investigating",
+          "resolved",
+          "false_positive"
+        ],
+        "title": "StatusCounts"
       },
       "TechniqueOut": {
         "properties": {
