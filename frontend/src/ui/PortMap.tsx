@@ -51,11 +51,14 @@ export function PortMap({
   caption,
   callouts = [],
   sweep = false,
+  tallyLabel = "probed",
 }: {
   ports: readonly number[];
   caption: string;
   callouts?: Callout[];
   sweep?: boolean;
+  /** What the count beside the caption counts: "150 probed", or "50 in the sample". */
+  tallyLabel?: string;
 }) {
   const grid = useRef<SVGSVGElement>(null);
   const count = useRef<HTMLElement>(null);
@@ -168,7 +171,7 @@ export function PortMap({
       <figcaption>
         <span id={captionId}>{caption}</span>
         <span>
-          <b ref={count} /> probed
+          <b ref={count} /> {tallyLabel}
         </span>
       </figcaption>
     </figure>

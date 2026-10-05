@@ -3,18 +3,12 @@ import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { api } from "../../api/client";
 import { unwrap } from "../../api/problem";
-import type { components } from "../../api/schema";
+import { type Member, membersKey } from "../../orgs/members";
 import type { Org } from "../../orgs/org";
 import { assignableRoles, canManage } from "../../orgs/permissions";
 import { ROLE_LABELS, type Role, roleLabel } from "../../orgs/roles";
 import { ErrorNotice } from "../../ui/ErrorNotice";
 import { formatDate } from "../../ui/format";
-
-export type Member = components["schemas"]["MemberOut"];
-
-export function membersKey(orgId: string) {
-  return ["members", orgId] as const;
-}
 
 /**
  * One member: their role, which an Owner or Admin may choose and then save, and removing them.

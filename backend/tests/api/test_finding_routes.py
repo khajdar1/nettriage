@@ -94,9 +94,54 @@ def test_the_list_is_narrowed_by_status_severity_detector_and_upload(
     assert listed(signed_in, org[0], status="open", severity="high") == [elsewhere, brute]
 
 
+def test_findings_are_listed_most_severe_first_and_newest_first_within_page_by_page(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    low = add(database, org, severity="low")
+    older_high = add(database, org, severity="high")
+    critical = add(database, org, severity="critical")
+    medium = add(database, org, severity="medium")
+    newer_high = add(database, org, severity="high")
+
+    pages = []
+    cursor = None
+    for _ in range(3):
+        params: dict[str, str | int] = {"sort": "severity", "limit": 2}
+        if cursor is not None:
+            params["cursor"] = cursor
+        page = signed_in.get(f"/api/v1/orgs/{org[0]}/findings", params=params).json()
+        pages.append([finding["id"] for finding in page["findings"]])
+        cursor = page["next_cursor"]
+
+    assert pages == [[critical, newer_high], [older_high, medium], [low]]
+    assert cursor is None
+
+
+def test_a_cursor_from_one_order_is_a_422_in_the_other(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    for _ in range(2):
+        add(database, org)
+    url = f"/api/v1/orgs/{org[0]}/findings"
+    by_severity = signed_in.get(url, params={"sort": "severity", "limit": 1}).json()
+    newest = signed_in.get(url, params={"limit": 1}).json()
+
+    assert signed_in.get(url, params={"cursor": by_severity["next_cursor"]}).status_code == 422
+    assert (
+        signed_in.get(url, params={"sort": "severity", "cursor": newest["next_cursor"]}).status_code
+        == 422
+    )
+
+
 @pytest.mark.parametrize(
     "params",
-    [{"status": "closed"}, {"severity": "urgent"}, {"upload": "nope"}, {"limit": 101}],
+    [
+        {"status": "closed"},
+        {"severity": "urgent"},
+        {"upload": "nope"},
+        {"limit": 101},
+        {"sort": "oldest"},
+    ],
 )
 def test_a_filter_outside_its_values_is_a_422(
     signed_in: TestClient, org: tuple[UUID, UUID, UUID], params: dict[str, str | int]

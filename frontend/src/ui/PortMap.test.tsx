@@ -60,6 +60,14 @@ test("a port probed twice, or one outside 0 to 1023, is drawn and counted once o
   expect(tally(container)).toBe("2");
 });
 
+test("its count can say what it counts", () => {
+  const { container } = render(
+    <PortMap ports={[22, 80, 443]} caption={CAPTION} tallyLabel="in the sample" />,
+  );
+
+  expect(container.querySelector("figcaption")).toHaveTextContent("3 in the sample");
+});
+
 test("well-known ports are named beside the map", () => {
   const { container } = render(
     <PortMap

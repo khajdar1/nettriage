@@ -318,7 +318,9 @@ export interface paths {
         };
         /**
          * Findings
-         * @description The org's findings, newest first. Filters: status, severity, detector, upload.
+         * @description The org's findings, newest first, or most severe first and then newest with
+         *     `sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only
+         *     with the order it was made for.
          */
         get: operations["findings_api_v1_orgs__org_id__findings_get"];
         put?: never;
@@ -1748,6 +1750,7 @@ export interface operations {
                 severity?: components["schemas"]["FindingSeverity"] | null;
                 detector?: string | null;
                 upload?: string | null;
+                sort?: "newest" | "severity";
                 limit?: number;
                 cursor?: string | null;
             };

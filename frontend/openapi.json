@@ -905,7 +905,7 @@
     "/api/v1/orgs/{org_id}/findings": {
       "get": {
         "summary": "Findings",
-        "description": "The org's findings, newest first. Filters: status, severity, detector, upload.",
+        "description": "The org's findings, newest first, or most severe first and then newest with\n`sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only\nwith the order it was made for.",
         "operationId": "findings_api_v1_orgs__org_id__findings_get",
         "parameters": [
           {
@@ -982,6 +982,20 @@
                 }
               ],
               "title": "Upload"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "newest",
+                "severity"
+              ],
+              "type": "string",
+              "default": "newest",
+              "title": "Sort"
             }
           },
           {

@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import type { Member } from "./MemberRow";
+import type { Member } from "../../orgs/members";
 import { ACME, ADMIN, ORG_ID, OWNER, SIGNED_OUT, VIEWER, memberOf, org } from "../../test/fixtures";
 import { ORG, signedInAs } from "../../test/orgApi";
 import { renderAt } from "../../test/render";

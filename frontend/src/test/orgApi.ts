@@ -1,6 +1,6 @@
 /** The fake API for a person signed in to Acme Security as one of its members. */
 import type { Me } from "../auth/session";
-import type { Member } from "../pages/org/MemberRow";
+import type { Member } from "../orgs/members";
 import { type FakeApi, type Handler, fakeApi } from "./fakeApi";
 import { ACME, ADMIN, ME, ORG_ID, OWNER, VIEWER, memberOf, org } from "./fixtures";
 

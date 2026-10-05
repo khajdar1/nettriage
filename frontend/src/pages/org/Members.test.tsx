@@ -19,10 +19,10 @@ function row(name: string): HTMLElement {
   return screen.getByRole("row", { name: new RegExp(name) });
 }
 
-test("an organization opens on its members, under its name and the person's role", async () => {
+test("an organization's members sit under its name and the person's role", async () => {
   signedInAs(OWNER);
 
-  renderAt(`/app/orgs/${ORG_ID}`);
+  renderAt(`/app/orgs/${ORG_ID}/members`);
 
   expect(await screen.findByRole("heading", { level: 1, name: "Members" })).toBeInTheDocument();
   expect(screen.getByText("Acme Security", { selector: ".org-name" })).toBeInTheDocument();
