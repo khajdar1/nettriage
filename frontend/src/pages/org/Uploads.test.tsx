@@ -1,5 +1,5 @@
 import { screen, within } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { sha256Hex } from "../../api/client";
 import { fakeStorage } from "../../test/fakeStorage";
 import { ORG_ID, OWNER, UPLOAD_ID, VIEWER, upload } from "../../test/fixtures";
@@ -12,6 +12,15 @@ const SIGNED_URL =
   "https://nettriage-dev-uploads.s3.eu-north-1.amazonaws.com/o/u?X-Amz-Signature=1";
 const SIGNED_HEADERS = { "x-amz-checksum-sha256": "c2hh", "x-amz-meta-traceparent": "00-ab-cd-01" };
 const NONE = { body: { uploads: [], next_cursor: null } };
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-05T12:00:00Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function created(filename = "port-scan.log") {
   return {
@@ -30,12 +39,12 @@ function created(filename = "port-scan.log") {
   };
 }
 
-test("uploads are listed with their status, rows and a link to their findings", async () => {
+test("uploads are listed with their status, rows, findings and how long ago they came", async () => {
   signedInAs(OWNER, {
     [UPLOADS]: {
       body: {
         uploads: [
-          upload(),
+          upload({ findings: 6, worst_severity: "high" }),
           upload({
             id: "01a10500-0000-7000-8000-000000000002",
             original_filename: "notes.txt",
@@ -55,13 +64,45 @@ test("uploads are listed with their status, rows and a link to their findings", 
   expect(within(analyzed).getByText("Analyzed")).toBeInTheDocument();
   expect(within(analyzed).getByText("3 rejected")).toBeInTheDocument();
   expect(
-    within(analyzed).getByRole("link", { name: "Findings from port-scan.log" }),
-  ).toHaveAttribute("href", `/app/orgs/${ORG_ID}/findings?upload=${UPLOAD_ID}`);
+    within(analyzed).getByRole("link", { name: "6 findings, worst High, from port-scan.log" }),
+  ).toHaveAttribute("href", `/app/orgs/${ORG_ID}/findings?status=any&upload=${UPLOAD_ID}`);
+  expect(within(analyzed).getByText("yesterday")).toHaveAttribute(
+    "dateTime",
+    "2026-10-04T09:30:00Z",
+  );
+  expect(screen.getByRole("columnheader", { name: "Findings" })).toBeInTheDocument();
   const failed = screen.getByRole("row", { name: /notes\.txt/ });
   expect(within(failed).getByText("Failed")).toBeInTheDocument();
   expect(within(failed).getByText("No line in this file is a VPC flow log record.")).toBeVisible();
   expect(within(failed).queryByRole("link")).toBeNull();
   expect(document.title).toBe("Uploads · Acme Security · NetTriage");
+});
+
+test("an upload's findings are counted as they read: one, none, or many with the worst", async () => {
+  signedInAs(OWNER, {
+    [UPLOADS]: {
+      body: {
+        uploads: [
+          upload({ original_filename: "one.log", findings: 1, worst_severity: "critical" }),
+          upload({
+            id: "01a10500-0000-7000-8000-000000000002",
+            original_filename: "quiet.log",
+          }),
+        ],
+        next_cursor: null,
+      },
+    },
+  });
+
+  renderAt(PAGE);
+
+  const one = await screen.findByRole("row", { name: /one\.log/ });
+  expect(
+    within(one).getByRole("link", { name: "1 finding, Critical, from one.log" }),
+  ).toBeVisible();
+  const quiet = screen.getByRole("row", { name: /quiet\.log/ });
+  expect(within(quiet).getByText("No findings")).toBeInTheDocument();
+  expect(within(quiet).queryByRole("link")).toBeNull();
 });
 
 test("a contributor uploads a file: it's fingerprinted, sent to storage as signed, and listed", async () => {

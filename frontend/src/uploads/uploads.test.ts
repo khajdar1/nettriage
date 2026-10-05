@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { upload } from "../test/fixtures";
-import { isBusy } from "./uploads";
+import { findingsOf, isBusy } from "./uploads";
 
 const NOW = Date.parse("2026-10-04T10:00:00Z");
 
@@ -26,4 +26,17 @@ test("an upload that finished, or whose file never came, is not watched", () => 
   expect(
     isBusy(upload({ status: "pending_upload", created_at: "2026-10-04T09:40:00Z" }), NOW),
   ).toBe(false);
+});
+
+test("an analyzed upload's findings read as a count, with the worst when there are several", () => {
+  expect(findingsOf(upload({ findings: 0 }))).toBe("No findings");
+  expect(findingsOf(upload({ findings: 1, worst_severity: "low" }))).toBe("1 finding, Low");
+  expect(findingsOf(upload({ findings: 1204, worst_severity: "high" }))).toBe(
+    "1,204 findings, worst High",
+  );
+});
+
+test("an upload that isn't analyzed has no findings to count", () => {
+  expect(findingsOf(upload({ status: "processing" }))).toBeNull();
+  expect(findingsOf(upload({ status: "failed" }))).toBeNull();
 });

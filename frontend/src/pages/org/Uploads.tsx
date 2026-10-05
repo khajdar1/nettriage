@@ -2,11 +2,31 @@ import { Link } from "react-router";
 import { useOrg } from "../../orgs/org";
 import { canContribute } from "../../orgs/permissions";
 import { ErrorNotice } from "../../ui/ErrorNotice";
-import { formatDateTime, formatNumber } from "../../ui/format";
+import { Ago } from "../../ui/Ago";
+import { formatNumber } from "../../ui/format";
 import { Loading } from "../../ui/Loading";
 import { usePageTitle } from "../../ui/usePageTitle";
-import { type Upload, UPLOAD_STATUS_LABELS, useUploads } from "../../uploads/uploads";
+import { findingsOf, type Upload, UPLOAD_STATUS_LABELS, useUploads } from "../../uploads/uploads";
 import { UploadPanel } from "./UploadPanel";
+
+/** How many findings an analyzed upload had, linking to all of them whatever their status. */
+function UploadFindings({ upload }: { upload: Upload }) {
+  const found = findingsOf(upload);
+  if (found === null) {
+    return null;
+  }
+  if (upload.findings === 0) {
+    return <span className="muted">{found}</span>;
+  }
+  return (
+    <Link
+      to={`../findings?status=any&upload=${upload.id}`}
+      aria-label={`${found}, from ${upload.original_filename}`}
+    >
+      {found}
+    </Link>
+  );
+}
 
 function UploadRow({ upload }: { upload: Upload }) {
   const rejected = upload.rows_rejected ?? 0;
@@ -26,16 +46,11 @@ function UploadRow({ upload }: { upload: Upload }) {
         {upload.rows_parsed === null ? "—" : formatNumber(upload.rows_parsed)}
         {rejected > 0 && <div className="muted">{formatNumber(rejected)} rejected</div>}
       </td>
-      <td className="date">{formatDateTime(upload.created_at)}</td>
       <td>
-        {upload.status === "analyzed" && (
-          <Link
-            to={`../findings?upload=${upload.id}`}
-            aria-label={`Findings from ${upload.original_filename}`}
-          >
-            Findings
-          </Link>
-        )}
+        <UploadFindings upload={upload} />
+      </td>
+      <td>
+        <Ago iso={upload.created_at} />
       </td>
     </tr>
   );
@@ -62,10 +77,8 @@ export function Uploads() {
               <th scope="col">File</th>
               <th scope="col">Status</th>
               <th scope="col">Rows</th>
+              <th scope="col">Findings</th>
               <th scope="col">Uploaded</th>
-              <th scope="col">
-                <span className="visually-hidden">Findings</span>
-              </th>
             </tr>
           </thead>
           <tbody>

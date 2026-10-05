@@ -3,6 +3,8 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { unwrap } from "../api/problem";
 import type { components } from "../api/schema";
+import { severityLabel } from "../findings/vocabulary";
+import { formatNumber } from "../ui/format";
 
 export type Upload = components["schemas"]["UploadOut"];
 
@@ -20,6 +22,20 @@ export const UPLOAD_STATUS_LABELS: Record<Upload["status"], string> = {
   failed: "Failed",
   expired: "Expired",
 };
+
+/** An analyzed upload's findings (Plan 6d): "No findings", "1 finding, Low", "6 findings, worst High". */
+export function findingsOf(upload: Upload): string | null {
+  if (upload.status !== "analyzed") {
+    return null;
+  }
+  const worst = upload.worst_severity === null ? "" : severityLabel(upload.worst_severity);
+  if (upload.findings === 0) {
+    return "No findings";
+  }
+  return upload.findings === 1
+    ? `1 finding, ${worst}`
+    : `${formatNumber(upload.findings)} findings, worst ${worst}`;
+}
 
 export function uploadsKey(orgId: string) {
   return ["uploads", orgId] as const;
