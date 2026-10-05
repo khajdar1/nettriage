@@ -614,13 +614,14 @@ until then you read the explanation from the API.
 2. Click **Sign in or sign up** and sign in with your password and a fresh code from the
    authenticator app. You land on **Your organizations**.
 3. Under **Create an organization**, type `Web Test` and click **Create organization**. The
-   organization opens on its **Members** page, with you as its Owner.
+   organization opens on its **Findings** page, which has none yet, with you as its Owner. Click
+   the **Members** tab.
 4. Under **Invitations**, type an email address that has no NetTriage account yet, keep
    **Viewer**, and click **Invite**. The invitation's link appears once; click **Copy link**.
 5. Optional, to try accepting it: open a private window, paste the link, and sign up with that
    email address (it needs a password and an authenticator app of its own). You land on
-   **Web Test**'s **Members** page as a Viewer, with nothing you can change. Close the private
-   window. If you skip this, click **Revoke** next to the invitation.
+   **Web Test**'s **Findings** page as a Viewer; on **Members** there's nothing you can change.
+   Close the private window. If you skip this, click **Revoke** next to the invitation.
 6. Click the **Settings** tab. Rename the organization to `Web Test (2) & Bob's` and click
    **Save**: the new name shows at the top at once. (The punctuation checks that the name gets
    through CloudFront's signing when you delete.)
@@ -628,6 +629,41 @@ until then you read the explanation from the API.
    **Delete organization**. You're back on **Your organizations**, without it.
 8. Click **Account settings** at the top: your email address shows. Click **Sign out**: you're
    signed out of NetTriage and of Cognito, and the landing page offers **Sign in or sign up**.
+
+### B12. Triage in the web app
+Uploads, findings, triage, the AI explanation, the audit log and the AI usage (Plan 6b). Until AWS
+lifts the new account's Bedrock limits, the AI panel says the AI service was busy, or that the AI
+is working on it; that's expected.
+1. Sign in as in B11 step 2, and create an organization named `Triage Test`. It opens on
+   **Findings**, which says **No findings yet.** with a link to **Upload a flow log**.
+2. Click **Upload a flow log**. Under **Flow log file**, click **Choose File** and pick
+   `docs/samples/port-scan.log` from your copy of the repository: the landing page's example, 150
+   rejected TCP probes from 10.0.3.17 to 10.0.0.5. Click **Upload**. You see **Reading the
+   file…**, a progress bar, then **Uploaded port-scan.log.** The file is listed as **Analyzing**,
+   and within about a minute it turns **Analyzed** with 150 rows, without reloading the page.
+3. Click **Findings** on its row. One finding: **High**, `Port scan of 10.0.0.5 from 10.0.3.17:
+   150 TCP ports in 5 minutes`, **Open**, **Unassigned**. Set **Severity** to **Low**: **No
+   findings match these filters.** Click **Clear filters**.
+4. Click the finding's title, and check its page:
+   - **AI explanation**: an explanation labeled **AI-generated** with its model and prompt
+     version, or, while Bedrock is limited, **The AI service was busy. Try again later.**
+   - **Evidence**: the port map with 50 amber cells, captioned `Ports 0 to 1023 of 10.0.0.5. The
+     scan probed 150 ports; the evidence keeps a sample.`, then the 50 flows, all `REJECT`.
+   - **ATT&CK techniques**: **T1046 Network Service Discovery**, from the detector; the link
+     opens attack.mitre.org in a new tab.
+5. Under **Triage**, set **Status** to **Investigating** and **Assignee** to yourself, and click
+   **Save changes**. **Activity** gains two lines: you changed the status from Open to
+   Investigating, and you took it on.
+6. Under **Add a comment**, type `Checking with the owner of 10.0.3.17.` and click **Comment**. It
+   joins the activity, as written.
+7. Optional, to see that a change never overwrites a newer one: open the same page in a second
+   tab, set **Status** to **Resolved** there and save. Back in the first tab, choose **False
+   positive** and save. The first tab says someone changed the finding while you had it open,
+   and now shows **Resolved**.
+8. Click **Audit log**: the upload, the status change, the assignment and the comment, newest
+   first, each in words with its code beneath. Click **AI usage**: the AI's calls and cost per
+   UTC day, or **No AI calls in the last 30 days.** until Bedrock answers.
+9. Delete the organization as in B11 steps 6 and 7, typing `Triage Test`.
 
 ## Part C: when things go wrong
 
@@ -677,7 +713,7 @@ redrive** on that queue, as for the analyze queue in "An upload isn't analyzed".
    | `budget_unavailable` | DynamoDB couldn't be read; send Claude the time |
    | `provider_denied` | Bedrock refused the worker: the $5 budget action ran (next section), or the role lacks a permission. Send Claude the time |
    | `provider_rejected` | Bedrock refused the request itself; send Claude the time |
-   | `provider_throttled`, `provider_timeout`, `provider_unavailable` | Bedrock failed three times in a row. Ask for the explanation again as in B10 step 2; the app's button comes in Plan 6. If every finding fails with `provider_throttled`, see "Bedrock refuses every call" below |
+   | `provider_throttled`, `provider_timeout`, `provider_unavailable` | Bedrock failed three times in a row. Ask for the explanation again with **Explain again** on the finding's page (B12 step 4), or as in B10 step 2. If every finding fails with `provider_throttled`, see "Bedrock refuses every call" below |
    | `checks_failed` (with `status: "invalid_output"`) | The model's answer failed the checks twice, so nothing was added to the finding. Send Claude the finding's `id` |
 
 ### Bedrock refuses every call: "Too many tokens per day"

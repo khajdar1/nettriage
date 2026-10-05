@@ -782,18 +782,18 @@ CI adds a deploy annotation for every deploy.
 - `/demo`: the read-only demo workspace, rendered from the static snapshot, with a clear "demo" banner (Plan 6c, written once Bedrock answers, so the demo's explanations are real; the owner's decision).
 - `/invite`: reads the token from the URL fragment, signs the user in if needed, then accepts. The token leaves the address bar at once and waits in the tab's `sessionStorage` while the person signs in (Plan 6a).
 - `/app`: an org switcher (the list of the person's organizations, which the product name in the top bar returns to), plus onboarding (create an org or accept an invitation).
-- `/app/orgs/:org/uploads`: the uploads list and an upload dialog with progress. The browser computes the file's SHA-256 before requesting a slot.
-- `/app/orgs/:org/findings`: a table with filters (severity, status, detector, upload) and sorting by severity or newest, done by the API (the owner's decision; Plan 6b adds `sort` to `GET …/findings`).
+- `/app/orgs/:org/uploads`: the uploads list, and an upload panel with progress. The panel sits on the page, since the app has no modal dialogs (Plan 6a). The browser computes the file's SHA-256 before requesting a slot, and puts the file in S3 with an `XMLHttpRequest`, the one browser API that reports upload progress. The list checks back every few seconds while an upload is being analyzed (Plan 6b).
+- `/app/orgs/:org/findings`, where an organization opens (the owner's decision, Plan 6b): a table with filters (severity, status, detector, upload) and sorting, done by the API with `sort`. It opens most severe first, then newest (the owner's decision); newest first is one choice away. The filters and the order live in the address.
 - `/app/orgs/:org/findings/:id`:
   - summary and metrics,
-  - an evidence table,
-  - ATT&CK techniques, linking to attack.mitre.org,
-  - an AI explanation panel with the "AI-generated" label, model and prompt version, feedback and re-run,
+  - an evidence table; a port scan of one host also draws its evidence on the port map, captioned as the sample it is (at most 50 flows; the owner's decision, Plan 6b),
+  - ATT&CK techniques, linking to attack.mitre.org, each listed once with who named it (the detector, the AI or both), and MITRE's notice,
+  - an AI explanation panel with the "AI-generated" label, model and prompt version, feedback and re-run. After a re-run it checks back every few seconds for five minutes. An answer whose shape doesn't match output schema v1 isn't shown,
   - an activity timeline with comments,
-  - status and assignee controls.
+  - status and assignee controls, saved together with `If-Match`. A 412 shows the newer version and says someone changed the finding meanwhile.
 - `/app/orgs/:org/members`: members, roles, invitations. An invitation's link is shown once, ready to copy.
 - `/app/orgs/:org/settings`: rename (Owner, Admin), leave (anyone), and delete after typing the org's name (Owner) (Plan 6a).
-- `/app/orgs/:org/audit` and `/app/orgs/:org/usage`: Owner and Admin only.
+- `/app/orgs/:org/audit` and `/app/orgs/:org/usage`: Owner and Admin only. Usage draws the cost per UTC day as ink bars above the table of days and totals, for the last 7, 30 or 90 days (the owner's decision, Plan 6b).
 - `/app/settings`: account settings: who is signed in, and "sign out everywhere".
 
 **Libraries:**
