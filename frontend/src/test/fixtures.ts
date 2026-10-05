@@ -2,6 +2,7 @@
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
 import type { Member } from "../orgs/members";
+import type { Finding } from "../findings/finding";
 import type { FindingSummary } from "../findings/findings";
 import type { Upload } from "../uploads/uploads";
 import type { Reply } from "./fakeApi";
@@ -112,6 +113,57 @@ export function findingSummary(fields: Partial<FindingSummary> = {}): FindingSum
     assignee_id: null,
     version: 1,
     created_at: "2026-10-04T09:31:00Z",
+    ...fields,
+  };
+}
+
+export const SCAN_METRICS = {
+  variant: "vertical",
+  peak_distinct: 150,
+  distinct_total: 150,
+  flows: 150,
+  rejected: 150,
+  scan_like_percent: 100,
+  source_internal: true,
+};
+
+export function finding(fields: Partial<Finding> = {}): Finding {
+  return {
+    ...findingSummary(),
+    metrics: SCAN_METRICS,
+    evidence: [22, 80, 443].map((port, index) => ({
+      src_ip: "10.0.3.17",
+      dst_ip: "10.0.0.5",
+      src_port: 40000 + index,
+      dst_port: port,
+      protocol: 6,
+      packets: 1,
+      bytes: 40,
+      start: `2026-10-01T12:00:0${index}Z`,
+      end: `2026-10-01T12:00:0${index}Z`,
+      action: "REJECT",
+      line_no: index + 1,
+    })),
+    techniques: [
+      {
+        id: "T1046",
+        name: "Network Service Discovery",
+        url: "https://attack.mitre.org/techniques/T1046/",
+        source: "detector",
+        rationale: null,
+      },
+    ],
+    events: [
+      {
+        id: "01a10700-0000-7000-8000-000000000001",
+        type: "created",
+        actor_id: null,
+        payload: {},
+        created_at: "2026-10-04T09:31:00Z",
+      },
+    ],
+    events_total: 1,
+    ai_analysis: null,
     ...fields,
   };
 }

@@ -840,6 +840,105 @@ select {
   color: var(--graphite);
 }
 
+/* A finding: its kind and title, then the evidence beside what's known about it */
+
+.back {
+  margin: 0 0 1.5rem;
+}
+
+.finding-title {
+  max-width: 48rem;
+  margin-bottom: 2rem;
+}
+
+.finding-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 21rem);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.finding-main > section + section,
+.finding-side > section + section {
+  margin-top: 2.5rem;
+}
+
+.finding-main .port-map {
+  max-width: 34rem;
+  margin: 0 0 1.5rem;
+}
+
+.facts dl {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+  gap: 0.45rem 1rem;
+  margin: 0;
+}
+
+.facts dt {
+  font-stretch: 75%;
+  font-weight: 650;
+  color: var(--graphite);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.techniques ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.techniques li + li {
+  margin-top: 1rem;
+}
+
+.techniques li p {
+  margin: 0.3rem 0 0;
+}
+
+.mitre {
+  margin-top: 1.25rem;
+  font-size: 0.82rem;
+  color: var(--graphite);
+}
+
+.table caption {
+  padding: 0 0 0.6rem;
+  caption-side: top;
+  text-align: left;
+  font-stretch: 75%;
+  font-weight: 650;
+  color: var(--graphite);
+}
+
+/* Fifty flows would push the rest of the page far down: the table scrolls in place, under its
+   own column names. */
+.table-scroll {
+  max-height: 30rem;
+  overflow: auto;
+  border-radius: var(--radius);
+}
+
+.evidence {
+  font-size: 0.9rem;
+}
+
+.evidence thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.evidence th,
+.evidence td {
+  padding: 0.5rem 0.6rem;
+  white-space: nowrap;
+}
+
 /* Lists that load a page at a time, narrowed by filters above them */
 
 .more {
@@ -1018,6 +1117,10 @@ select {
 /* Narrow screens */
 
 @media (max-width: 62rem) {
+  .finding-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .hero {
     grid-template-columns: minmax(0, 1fr);
     gap: 3rem;

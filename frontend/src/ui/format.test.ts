@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatDateTime, formatUsd } from "./format";
+import { formatClock, formatDateTime, formatTime, formatUsd } from "./format";
 
 test("a moment is written with its date and its time", () => {
   const written = formatDateTime("2026-10-03T14:05:00Z");
@@ -16,4 +16,10 @@ test("AI costs keep the fractions of a cent they are made of", () => {
     "$12.50",
   ]);
   expect(formatUsd("0.00004")).toBe("under $0.0001");
+});
+
+test("times of day are written to the minute, or to the second for flows", () => {
+  expect(formatTime("2026-10-03T14:05:09Z")).toMatch(/:05/);
+  expect(formatTime("2026-10-03T14:05:09Z")).not.toMatch(/:09/);
+  expect(formatClock("2026-10-03T14:05:09Z")).toMatch(/:05:09/);
 });
