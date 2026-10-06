@@ -6,6 +6,8 @@ locals {
   database_url_parameter         = "/nettriage/dev/db/app-api-url"
   analyze_database_url_parameter = "/nettriage/dev/db/app-analyze-url"
   triage_database_url_parameter  = "/nettriage/dev/db/app-triage-url"
+  ops_database_url_parameter     = "/nettriage/dev/db/app-ops-url"
+  backup_database_url_parameter  = "/nettriage/dev/db/app-backup-url"
 }
 
 module "data" {
@@ -51,6 +53,24 @@ module "app" {
   triage_queue_url          = module.pipeline.triage_queue_url
   triage_queue_arn          = module.pipeline.triage_queue_arn
   bedrock_model_id          = var.bedrock_model_id
+}
+
+# Keeping it running (Plan 7a): the probe, the hourly check, the nightly backup, the daily
+# cleanup and the weekly restore drill.
+module "ops" {
+  source                        = "../../modules/ops"
+  stage                         = "dev"
+  lambda_zip_path               = var.lambda_zip_path
+  pg_client_zip_path            = var.pg_client_zip_path
+  app_version                   = var.app_version
+  otel_collector_layer_arn      = var.otel_collector_layer_arn
+  grafana_otlp_endpoint         = var.grafana_otlp_endpoint
+  grafana_otlp_auth             = var.grafana_otlp_auth
+  database_url_parameter        = local.ops_database_url_parameter
+  backup_database_url_parameter = local.backup_database_url_parameter
+  runtime_table_name            = module.data.table_name
+  runtime_table_arn             = module.data.table_arn
+  app_url                       = "https://${module.edge.distribution_domain}"
 }
 
 module "identity" {
