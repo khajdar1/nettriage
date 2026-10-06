@@ -174,9 +174,10 @@ Each decision becomes an ADR in `docs/adr/`.
 | `api` | 1024 MB | 29 s | Function URL | Account default |
 | `analyze` | 2048 MB | 300 s | SQS `analyze`, batch size 1 | Event source mapping maximum concurrency 2 |
 | `triage` | 512 MB | 240 s | SQS `triage`, batch size 1, partial batch responses | Event source mapping maximum concurrency 2 |
-| `ops` | 256 MB | 60 s | EventBridge Scheduler | None needed |
+| `ops` | 1024 MB, 2 GB of `/tmp` | 600 s | EventBridge Scheduler, five schedules (9.7) | None needed |
 
 - The SQS visibility timeout is 6 × the function timeout.
+- `ops` holds a database dump and its restore drill, which 256 MB and 60 s couldn't (Plan 7a). Its Postgres 17 client and server are a Lambda layer of their own, so the other functions' packages don't grow.
 - The triage worker explains one finding per run, and 240 s fits its worst case: an answer and its repair, each a 20-second call with 3 retries (the owner's decision in Plan 5b; batch size 5 and 60 s couldn't fit one slow call).
 - Worker concurrency is capped through the event source mapping's maximum concurrency, not reserved concurrency, because new accounts can have a low Lambda concurrency quota (see 13.2).
 
@@ -310,12 +311,12 @@ A dedicated test runs a query with no org filter and must receive zero rows from
 | `app_api` | `api` Lambda | The SELECT/INSERT/UPDATE its endpoints need; INSERT only on `audit_log`; DELETE only on `memberships`, `invitations`, `organizations`. On findings it may UPDATE only `status`, `assignee_id` and `version`, and `finding_events` is insert-only (Plan 4c). On `ai_analyses` it may UPDATE only `feedback` and `feedback_by`, and it reads `ai_usage` (Plan 5c) |
 | `app_analyze` | `analyze` Lambda | SELECT `uploads`, `detectors`, `attack_techniques`; UPDATE of `uploads` status and statistics columns only; INSERT `findings`, `finding_evidence`, `finding_techniques`, `finding_events`; SELECT of a finding's `id`, `org_id`, `upload_id` and `severity`, to queue the most severe for AI triage (Plan 5b). No `audit_log` until the worker records an event worth auditing (Plan 4b) |
 | `app_triage` | `triage` Lambda | SELECT `findings`, `finding_evidence`, `finding_techniques`, `attack_techniques`, `detectors`, `ai_analyses`; INSERT/UPDATE `ai_analyses` (column grants: never `feedback`); INSERT `finding_techniques`, UPDATE of their `rationale`, and DELETE of the AI's own (`source = 'ai'`, a restrictive row policy); INSERT `finding_events` without an actor; INSERT `audit_log`, for `budget.exhausted` (Plan 5b); INSERT and UPDATE of `ai_usage`'s counts (Plan 5c) |
-| `app_ops` | `ops` Lambda | `SELECT 1` health checks; retention through `SECURITY DEFINER` functions only (purge `audit_log` rows older than 180 days, expire invitations, expire stale pending uploads) |
-| `app_backup` | Nightly backup | Read-only with `BYPASSRLS` (needed for a complete dump); used only by the backup workflow |
+| `app_ops` | `ops` Lambda | `SELECT 1` health checks, and the maintenance rules (9.7) through narrow grants and a row policy per rule: SELECT and UPDATE of `status`, `failure_reason` and `processed_at` on `uploads`, only of uploads still `pending_upload` or `processing` after 2 hours and only to `expired` or `failed`; SELECT and DELETE of `invitations` never accepted and past their date, and of `audit_log` rows over 180 days old. Not `SECURITY DEFINER` functions: every tenant table forces row-level security on its owner too, so a function running as the owner would see no rows (Plan 7a) |
+| `app_backup` | `ops` Lambda's nightly backup | SELECT on every table and sequence, and a SELECT policy `USING (true)` on every row-secured table, so `pg_dump --enable-row-security` reads every row. Not `BYPASSRLS`: no role skips row-level security, and Neon's owner may not be able to grant it. A test fails if a table lacks the grant or the policy, so a new table can't drop out of the backups (Plan 7a) |
 
 - Column-level grants limit UPDATEs to the columns each role needs.
-- Apart from the read-only backup role, no application role is a superuser, the schema owner, or has `BYPASSRLS`.
-- A trigger on `audit_log` rejects UPDATE and DELETE except through the retention function.
+- No application role, the backup's included, is a superuser, the schema owner, or has `BYPASSRLS` (Plan 7a).
+- A trigger on `audit_log` rejects UPDATE and DELETE, except DELETE by `app_ops`, whose row policy limits it to rows over 180 days old (Plan 7a).
 
 ### 5.5 DynamoDB `runtime` table
 
@@ -344,10 +345,10 @@ The partition key is `pk` (string), and the TTL attribute is `expires_at`.
 |---|---|---|
 | `nettriage-<stage>-web` | SPA assets; `demo/*.json` | Private; read only by CloudFront through OAC |
 | `nettriage-<stage>-uploads-<suffix>` | `orgs/{org_id}/uploads/{upload_id}/raw` | Private, TLS-only, SSE-S3, public access blocked. CORS allows `PUT` from the app origin only. Lifecycle: delete after 30 days, abort incomplete multipart uploads after 1 day. Event notification → SQS `analyze` |
-| `nettriage-backups-<suffix>` | `pg/<stage>/<date>.dump` | Private, SSE-S3, deleted after 7 days |
+| `nettriage-<stage>-backups-<suffix>` | `pg/<date>.dump`, and `pg/<date>.json`, its manifest | Private, TLS-only, SSE-S3, public access blocked. Lifecycle: delete after 7 days, abort incomplete multipart uploads after 1 day. One per stage, made by the stage's deploy, so the bootstrap doesn't change; only `ops` writes to it (Plan 7a) |
 | `nettriage-tfstate-<suffix>` | Terraform state | Versioned, encrypted, TLS-only, native locking |
 
-The uploads bucket's `<suffix>` is the first 8 hex characters of the account ID's SHA-256, like the sign-in domain's (Plan 4a): bucket names are global, and this one appears in every page's CSP header, so it can't hold the account ID.
+The uploads bucket's `<suffix>` is the first 8 hex characters of the account ID's SHA-256, like the sign-in domain's (Plan 4a): bucket names are global, and this one appears in every page's CSP header, so it can't hold the account ID. The backups bucket's `<suffix>` is the same (Plan 7a).
 
 ### 5.7 Retention, quotas and storage budget
 
@@ -712,7 +713,8 @@ Metric names follow OTel conventions where they exist:
 - `nettriage.ai.cost.usd`, `nettriage.ai.outcome` {outcome} and `nettriage.ai.cache.hits`
 - `nettriage.authz.denied` {permission}, `nettriage.ratelimit.limited` {policy}, `nettriage.csrf.failed` and `nettriage.upload.rejected` {reason}
 - `nettriage.signups`
-- `nettriage.probe.success` {check}
+- `nettriage.probe.success` {check}, where `check` is `health`, `database` or `dynamodb` (Plan 7a)
+- `nettriage.ops.runs` {job, outcome}, one per run of each `ops` job, so a backup or drill that failed, or didn't run, can be alerted on (Plan 7a)
 
 **Cardinality rule:** no user IDs, org IDs, IPs or free text as metric attributes. Grafana's free tier allows 10k active series.
 
@@ -755,17 +757,20 @@ CI adds a deploy annotation for every deploy.
   They notify by email through SNS.
 - **Budgets** alerts as in 6.7.
 - **Runbooks:** every alert links to `docs/runbooks/<alert>.md`.
-- **Probe:** the `ops` Lambda runs every 5 minutes and fetches the demo page and `/api/health` through CloudFront. Hourly, it also runs `SELECT 1` against Neon and a DynamoDB read. Frequent database checks would keep Neon awake and use up its free compute hours.
+- **Probe:** the `ops` Lambda fetches `/api/health` through CloudFront every 5 minutes; the health route never touches the database, so the probe never wakes Neon. The demo page joins the probe once it exists (Plan 6c). Hourly, at :17, it also runs `SELECT 1` against Neon as `app_ops` and reads one DynamoDB key. Frequent database checks would keep Neon awake and use up its free compute hours. A failed probe or check is a 0 in `nettriage.probe.success`, not an error, and isn't retried: the next one comes soon (Plan 7a).
 
 ### 9.7 Operations
 
 - **Kill switches:** `ai_enabled` and `uploads_enabled` live in SSM (`/nettriage/<stage>/kill/ai-enabled` and `…/uploads-enabled`, `true` or anything else) and are re-read every 60 seconds. The owner flips them with `just pause-ai` / `just resume-ai` and `just pause-uploads` / `just resume-uploads`. A switch that can't be read keeps its last value, and counts as off until it has been read once (Plan 4a). Terraform only creates them, so a deploy never turns a paused switch back on.
-- **Maintenance:** the `ops` Lambda runs daily. It expires `pending_upload` rows older than 1 hour and invitations past their date, fails uploads left `processing` for more than 2 hours (a crash or timeout on the last delivery; Plan 4b), and purges audit rows older than 180 days.
+- **Schedules:** EventBridge Scheduler invokes `ops` with the job's name, in UTC, through a role that may only invoke it (Plan 7a): `probe` every 5 minutes, `check` hourly at :17 (9.6), `backup` at 02:00, `cleanup` at 03:00, and `restore_drill` on Sundays at 04:00. `backup`, `cleanup` and `restore_drill` are idempotent and keep Lambda's two retries.
+- **Maintenance:** the daily `cleanup`, as `app_ops`, each rule in its own transaction, recording counts only (Plan 7a). It expires `pending_upload` rows older than 2 hours, fails uploads left `processing` for more than 2 hours with the analyze worker's own sentence (a crash or timeout on the last delivery; Plan 4b), deletes invitations never accepted and past their date (accepted ones stay as history), and purges audit rows older than 180 days. Pending uploads wait 2 hours, not 1: an analysis message can be delivered three times, 30 minutes apart, and each delivery may claim an upload that is still pending, so at 1 hour a valid file could be refused on its third try (Plan 7a).
 - **Backups:**
-  - A nightly `pg_dump -Fc` to S3, kept for 7 days. Plan 7 decides the runner: the `ops` Lambda, or an owner-run command if packaging `pg_dump` for Lambda proves impractical (Revision 2, D7).
+  - A nightly `pg_dump -Fc` to S3 by the `ops` Lambda, kept for 7 days (Revision 2, D7; Plan 7a). It connects as `app_backup` to Neon's direct endpoint, since `pg_dump` needs a session and the pooler works by transaction. In one `REPEATABLE READ` transaction it exports a snapshot and counts every table's rows, then dumps that same snapshot (`--snapshot`, `--enable-row-security`), so the dump and the counts see the same moment. It writes `pg/<date>.dump`, then `pg/<date>.json`, the manifest: `created_at`, the server's and `pg_dump`'s versions, and each table's count. A rerun the same day replaces both.
+  - Its Postgres 17 client and server are built from the PostgreSQL project's source, pinned by checksum, in Amazon Linux 2023 for arm64, and proven in CI inside AWS's own Lambda image (Plan 7a). If Neon's server passes the client's major version, `pg_dump` refuses, the backup fails loudly, and the client is updated.
   - Neon's 6-hour point-in-time restore on top of that.
   - Targets: RPO ≤ 24 h (≤ 6 h with point-in-time restore) and RTO ≤ 1 h.
-  - One restore drill is performed and documented in M1.
+  - **Restore drill:** weekly, and on demand with the owner's `just restore-drill-<stage>`. The `ops` Lambda restores the newest dump into a throwaway Postgres 17 inside the function (in `/tmp`, on a Unix socket, with `mmap` shared memory, since Lambda has no `/dev/shm`), as a non-superuser owner with `pg_restore --no-owner --no-privileges --exit-on-error`, as a recovery into Neon would be. It then compares every table's count with the manifest. A difference or any error fails the drill, naming the tables, never their rows; nothing leaves AWS (Plan 7a).
+  - One restore drill is performed and documented in M1: the owner's first `just restore-drill-dev` (runbook B14).
 - **Cost watch:**
   - Every resource is tagged.
   - A live AI-spend metric covers the gap while AWS billing data lags.

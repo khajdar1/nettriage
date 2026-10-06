@@ -231,12 +231,15 @@ Wait until the `ci` and `codeql` runs for the merge commit are green on GitHub f
 command:
 1. refuses anything but a clean `main` that matches GitHub and whose CI and CodeQL passed;
 2. runs the preflight;
-3. downloads that commit's CI-built artifacts;
+3. downloads that commit's CI-built artifacts: the functions' package, the `ops` function's
+   Postgres layer and the site;
 4. migrates the database and prints `Database migrated.`, then
    `Reference data synced: 3 detectors, 12 ATT&CK techniques.` When a function's database role
    is new, it also gives it a login and adds `New logins: <role>.` to the first line (Plan 4b
-   added `app_analyze`, Plan 5b adds `app_triage`);
-5. shows the Terraform plan, and you type `yes`;
+   added `app_analyze`, Plan 5b `app_triage`, and Plan 7a's first deploy prints
+   `Database migrated. New logins: app_ops, app_backup.`);
+5. shows the Terraform plan, and you type `yes`. Plan 7a's first deploy adds `module.ops`: the
+   `ops` function, its `pg-client` layer, five schedules and their role, and the backups bucket;
 6. publishes the site;
 7. runs the smoke tests.
 
@@ -698,6 +701,32 @@ What's yours, and where each organization's findings stand (Plan 6d).
    listed as **Resolved**, and **Status** reads **Any status**.
 7. Delete the organization as in B11 steps 6 and 7, typing `Glance Test`.
 
+### B14. Backups and the restore drill
+Every night at 02:00 UTC the `ops` function dumps the database into the backups bucket, and
+every Sunday at 04:00 UTC it restores the newest dump into a throwaway database and checks every
+table's rows (Plan 7a). Do this once, the morning after Plan 7a's deploy: it is the restore
+drill Milestone 1 asks for.
+1. See last night's backup. Open https://console.aws.amazon.com/s3/ and click **Buckets**.
+   Click `nettriage-dev-backups-` followed by 8 characters, then the `pg/` folder. It holds two
+   objects named for today's date (UTC), such as `2026-10-08.dump` and `2026-10-08.json`. Each
+   night adds two more, and objects older than 7 days disappear on their own.
+2. In a terminal at the repository's root, sign in and start the drill:
+   ```bash
+   aws login --profile nettriage
+   just restore-drill-dev
+   ```
+   It takes a minute or two. Success is one line:
+   `The restore drill restored the backup of <date>: 15 tables and <n> rows, every table's count matching its manifest.`
+   `<date>` is today's (UTC), or yesterday's before 02:00 UTC. Anything starting with `STOP:`
+   is in Part C's table.
+3. Send Claude that line. Claude adds it to **Drills performed** below, which is the record
+   Milestone 1 asks for.
+4. Sign out: `aws logout --profile nettriage`.
+
+From then on the drill repeats every Sunday by itself.
+
+**Drills performed:** none yet.
+
 ## Part C: when things go wrong
 
 ### Pause uploads in an emergency
@@ -811,7 +840,12 @@ passes, then run B2 again.
 | `STOP: That isn't a Postgres connection string …`, `STOP: The database must be a Neon project in AWS Europe Central 1 (Frankfurt) …` or `STOP: Use the direct connection string …` | Copy the string again as in A7 step 3, then rerun `just store-database-url dev` |
 | `STOP: Can't read /nettriage/dev/db/owner-url from SSM. …` | Run A7 |
 | `STOP: Database migrations failed; nothing was deployed. …` | Send the output to Claude. Nothing in AWS changed |
-| `STOP: Couldn't give the database role app_api a login …` (or `app_analyze`, `app_triage`) | Check the stored string (A7), then send the output to Claude |
+| `STOP: Couldn't give the database role app_api a login …` (or `app_analyze`, `app_triage`, `app_ops`, `app_backup`) | Check the stored string (A7), then send the output to Claude |
+| `STOP: There's no backup to restore yet.` | The first backup runs at 02:00 UTC after Plan 7a's deploy. Run `just restore-drill-dev` again after that |
+| `STOP: The restored backup of <date> differs from its manifest in <tables>.` | The backup or its restore lost rows. Don't delete anything; send the line to Claude. The bucket keeps 7 nights of backups, and Neon's point-in-time restore covers the last 6 hours |
+| `STOP: The restore drill failed with <error>. …` | Send the line to Claude. The function's logs (CloudWatch, `/aws/lambda/nettriage-dev-ops`) say more, without data |
+| `STOP: Couldn't invoke nettriage-dev-ops: …` | Deploy Plan 7a first (B2). If it was deployed, send the output to Claude |
+| A backup object's date is days old, or the newest is missing | The nightly backup failed. Send Claude the date of the newest backup; the logs in `/aws/lambda/nettriage-dev-ops` say why. A new Neon major version (Postgres 18) stops `pg_dump` until its client is updated |
 | `STOP: Syncing reference data failed; nothing in AWS changed. …` | The migrations ran, but the detectors and ATT&CK techniques weren't loaded. Send the output to Claude |
 | `FAIL  Grafana OTLP endpoint in terraform.tfvars` | Put your endpoint in `terraform.tfvars` (A3) |
 | `FAIL  Triage model on Bedrock` … `isn't offered in eu-north-1` or `isn't active and on demand` | Bedrock no longer offers the model there. Send the output to Claude, who picks another model with you |

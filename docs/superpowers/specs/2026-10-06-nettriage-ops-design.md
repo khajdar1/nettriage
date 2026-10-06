@@ -119,8 +119,8 @@ A mismatch, or any error, fails the job. The result is the metric `nettriage.ops
   - **amends §3.5** (256 MB, 60 s): the dump and the drill need more.
 - **The Postgres client:**
   - a Lambda layer used only by `ops`, so the other functions' packages don't grow;
-  - it holds Postgres 17's `pg_dump`, `pg_restore`, `initdb` and server, from the PostgreSQL project's own packages for EL9 arm64, with the libraries they need;
-  - it's downloaded at build time with pinned SHA-256 checksums.
+  - it holds Postgres 17's `pg_dump`, `pg_restore`, `initdb`, `pg_ctl` and server, with `libpq`;
+  - CI builds them from the PostgreSQL project's source, pinned by its SHA-256 checksum, in Amazon Linux 2023 for arm64, with only OpenSSL and zlib. The first task's spike found that the project's EL9 packages need libraries Lambda's image lacks (LDAP, ICU, PAM, systemd).
 - **Schedules:** five EventBridge Scheduler schedules, through a role that may only invoke `ops`. `probe` and `check` aren't retried, because the next run comes soon. `backup`, `cleanup` and `restore_drill` keep Lambda's two retries; they're idempotent.
 - **The backups bucket:**
   - `nettriage-<stage>-backups-<suffix>`, with the uploads bucket's suffix;
