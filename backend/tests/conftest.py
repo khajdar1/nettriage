@@ -46,6 +46,8 @@ BACKEND = Path(__file__).resolve().parents[1]
 APP_API_PASSWORD = "app-api-test-only"  # noqa: S105 - a throwaway password on a test server
 APP_ANALYZE_PASSWORD = "app-analyze-test-only"  # noqa: S105 - the same, for the worker's role
 APP_TRIAGE_PASSWORD = "app-triage-test-only"  # noqa: S105 - the same, for the AI worker's
+APP_OPS_PASSWORD = "app-ops-test-only"  # noqa: S105 - the same, for the ops job's cleanup
+APP_BACKUP_PASSWORD = "app-backup-test-only"  # noqa: S105 - the same, for the nightly backup
 
 
 @pytest.fixture
@@ -62,13 +64,16 @@ def settings() -> Settings:
 class Database:
     """A database with every migration applied and the reference data synced. `admin` is a
     superuser engine that seeds data past row-level security; `app_api` connects as the API's
-    role, `app_analyze` as the analyze worker's and `app_triage` as the AI worker's."""
+    role, `app_analyze` as the analyze worker's, `app_triage` as the AI worker's, `app_ops` as the
+    ops job's cleanup and `app_backup` as its backup (Plan 7a)."""
 
     url: URL
     admin: Engine
     app_api: Engine
     app_analyze: Engine
     app_triage: Engine
+    app_ops: Engine
+    app_backup: Engine
 
 
 def server_url() -> URL:
@@ -118,6 +123,10 @@ def database() -> Iterator[Database]:
         connection.execute(
             text(f"ALTER ROLE app_triage WITH LOGIN PASSWORD '{APP_TRIAGE_PASSWORD}'")
         )
+        connection.execute(text(f"ALTER ROLE app_ops WITH LOGIN PASSWORD '{APP_OPS_PASSWORD}'"))
+        connection.execute(
+            text(f"ALTER ROLE app_backup WITH LOGIN PASSWORD '{APP_BACKUP_PASSWORD}'")
+        )
     app_url = url.set(username="app_api", password=APP_API_PASSWORD)
     app_api = create_database_engine(app_url.render_as_string(hide_password=False), pool_size=1)
     analyze_url = url.set(username="app_analyze", password=APP_ANALYZE_PASSWORD)
@@ -128,9 +137,23 @@ def database() -> Iterator[Database]:
     app_triage = create_database_engine(
         triage_url.render_as_string(hide_password=False), pool_size=1
     )
-    yield Database(
-        url=url, admin=admin, app_api=app_api, app_analyze=app_analyze, app_triage=app_triage
+    ops_url = url.set(username="app_ops", password=APP_OPS_PASSWORD)
+    app_ops = create_database_engine(ops_url.render_as_string(hide_password=False), pool_size=1)
+    backup_url = url.set(username="app_backup", password=APP_BACKUP_PASSWORD)
+    app_backup = create_database_engine(
+        backup_url.render_as_string(hide_password=False), pool_size=1
     )
+    yield Database(
+        url=url,
+        admin=admin,
+        app_api=app_api,
+        app_analyze=app_analyze,
+        app_triage=app_triage,
+        app_ops=app_ops,
+        app_backup=app_backup,
+    )
+    app_backup.dispose()
+    app_ops.dispose()
     app_triage.dispose()
     app_analyze.dispose()
     app_api.dispose()
