@@ -88,3 +88,18 @@ class AiMetrics:
             unit="s",
             description="How long a message waited in its queue, by queue",
         )
+
+
+class OpsMetrics:
+    """The `ops` function's metrics (Plan 7a §6): whether each probe and check answered, and every
+    job's runs by outcome, so 7b's alerts can see a backup or a drill that failed or never ran."""
+
+    def __init__(self, meter_provider: MeterProvider | None = None) -> None:
+        meter = (meter_provider or get_meter_provider()).get_meter("nettriage")
+        self.probe_success = meter.create_gauge(
+            "nettriage.probe.success",
+            description="1 when a probe or check answered, 0 when it didn't, by check",
+        )
+        self.runs = meter.create_counter(
+            "nettriage.ops.runs", description="Ops jobs run, by job and outcome"
+        )
