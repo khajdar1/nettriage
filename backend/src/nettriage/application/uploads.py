@@ -15,6 +15,8 @@ UPLOAD_STATUSES: tuple[UploadStatus, ...] = get_args(UploadStatus)
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 PRESIGNED_PUT_LIFETIME = timedelta(minutes=5)
 MAX_FILENAME = 255
+# Why an analysis failed for good, after the worker's last try or the daily cleanup's (Plan 7a).
+GAVE_UP = "NetTriage couldn't analyze this file after three tries. Upload it again later."
 
 
 def s3_key(org_id: UUID, upload_id: UUID) -> str:
