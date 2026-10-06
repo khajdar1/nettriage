@@ -612,7 +612,9 @@ until then you read the explanation from the API.
    then labels appear for 22 ssh, 80 http and 443 https. (If your system asks apps to reduce
    motion, the grid shows up already lit.) Below it, **How a finding is made** shows four steps.
 2. Click **Sign in or sign up** and sign in with your password and a fresh code from the
-   authenticator app. You land on **Your organizations**.
+   authenticator app. You land on the home. With no organization yet, it shows
+   **Organizations**, which says **Create your first organization, or open an invitation link
+   someone sent you.**, and **Create an organization** below it.
 3. Under **Create an organization**, type `Web Test` and click **Create organization**. The
    organization opens on its **Findings** page, which has none yet, with you as its Owner. Click
    the **Members** tab.
@@ -626,7 +628,7 @@ until then you read the explanation from the API.
    **Save**: the new name shows at the top at once. (The punctuation checks that the name gets
    through CloudFront's signing when you delete.)
 7. Under **Delete this organization**, type `Web Test (2) & Bob's` and click
-   **Delete organization**. You're back on **Your organizations**, without it.
+   **Delete organization**. You're back on the home, without it.
 8. Click **Account settings** at the top: your email address shows. Click **Sign out**: you're
    signed out of NetTriage and of Cognito, and the landing page offers **Sign in or sign up**.
 
@@ -643,8 +645,8 @@ then **The AI service was busy. Try again later.**; that's expected.
    file…**, a progress bar, then **Uploaded port-scan.log.** The file is listed as **Waiting for
    the file** for a moment, then **Analyzing**, and within about a minute it turns **Analyzed**
    with 150 rows, without reloading the page.
-3. Click **Findings** on its row. One finding: **High**, `Port scan of 10.0.0.5 from 10.0.3.17:
-   150 TCP ports in 5 minutes`, **Open**, **Unassigned**. Set **Severity** to **Low**: **No
+3. Click **1 finding, High** on its row. One finding: **High**, `Port scan of 10.0.0.5 from
+   10.0.3.17: 150 TCP ports in 5 minutes`, **Open**, **Unassigned**. Set **Severity** to **Low**: **No
    findings match these filters.** Click **Clear filters**.
 4. Click the finding's title, and check its page:
    - **AI explanation**: an explanation labeled **AI-generated** with its model and prompt
@@ -669,6 +671,32 @@ then **The AI service was busy. Try again later.**; that's expected.
    first, each in words with its code beneath. Click **AI usage**: the AI's calls and cost per
    UTC day, or **No AI calls in the last 30 days.** until Bedrock answers.
 9. Delete the organization as in B11 steps 6 and 7, typing `Triage Test`.
+
+### B13. Findings at a glance
+What's yours, and where each organization's findings stand (Plan 6d).
+1. Sign in as in B11 step 2, and create an organization named `Glance Test`. It opens on
+   **Findings**: the heading reads **0 unresolved of 0**, every tile reads 0, and the panel says
+   **No uploads yet.** Click **NetTriage** at the top left. The home now starts with
+   **Assigned to you**, which says **Nothing is assigned to you.**, and the **Glance Test** card
+   reads 0 at each severity and **None yet** beside **Last upload**. Click **Open findings**.
+2. Upload `docs/samples/port-scan.log` as in B12 step 2. Once it's **Analyzed**, its
+   **Findings** reads **1 finding, High**, and **Uploaded** reads **just now** or **1 min ago**
+   (hover over it for the exact time).
+3. Click the **Findings** tab. The heading reads **1 unresolved of 1**. The **High** tile reads 1,
+   and the other three read 0, dimmed. **Unassigned** and **New in the last day** read 1, and
+   the panel ends **Last upload port-scan.log, … ago: 1 finding.** The finding's row shows
+   `Port scan`, `10.0.3.17 → 10.0.0.5`, **Unassigned** and when it was detected.
+4. Click the finding's title. Under it, the strip reads **Open**, **Unassigned**, when it was
+   detected, its five-minute window, **port-scan.log**, and **Not explained yet** while Bedrock is
+   limited (once it answers, the AI's verdict, such as **Agrees: High, medium confidence**).
+5. Under **Triage**, set **Assignee** to yourself and click **Save changes**: the strip shows
+   **You**. Click **NetTriage** at the top left. **Assigned to you** lists the finding, with
+   **Glance Test** beside it, and the organization's card shows **Yours** 1 and
+   **Unassigned** 0.
+6. Open the finding again, set **Status** to **Resolved** and save. Click **All findings**: the
+   list says **Nothing here is unresolved.** Click **Show every finding**: the finding is
+   listed as **Resolved**, and **Status** reads **Any status**.
+7. Delete the organization as in B11 steps 6 and 7, typing `Glance Test`.
 
 ## Part C: when things go wrong
 

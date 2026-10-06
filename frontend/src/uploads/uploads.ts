@@ -1,8 +1,10 @@
 /** An organization's uploads (spec §7), newest first, a page at a time. */
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { unwrap } from "../api/problem";
 import type { components } from "../api/schema";
+import { severityLabel } from "../findings/vocabulary";
+import { formatNumber } from "../ui/format";
 
 export type Upload = components["schemas"]["UploadOut"];
 
@@ -11,6 +13,29 @@ const WAIT_FOR_FILE_MS = 10 * 60_000;
 /** An analysis still running after this long has stopped; the daily check fails it (Plan 7). */
 const ANALYSIS_MS = 2 * 60 * 60_000;
 const POLL_MS = 3000;
+
+/** How an upload's state reads on screen. */
+export const UPLOAD_STATUS_LABELS: Record<Upload["status"], string> = {
+  pending_upload: "Waiting for the file",
+  processing: "Analyzing",
+  analyzed: "Analyzed",
+  failed: "Failed",
+  expired: "Expired",
+};
+
+/** An analyzed upload's findings (Plan 6d): "No findings", "1 finding, Low", "6 findings, worst High". */
+export function findingsOf(upload: Upload): string | null {
+  if (upload.status !== "analyzed") {
+    return null;
+  }
+  const worst = upload.worst_severity === null ? "" : severityLabel(upload.worst_severity);
+  if (upload.findings === 0) {
+    return "No findings";
+  }
+  return upload.findings === 1
+    ? `1 finding, ${worst}`
+    : `${formatNumber(upload.findings)} findings, worst ${worst}`;
+}
 
 export function uploadsKey(orgId: string) {
   return ["uploads", orgId] as const;
@@ -26,6 +51,19 @@ export function isBusy(upload: Upload, now: number): boolean {
     return age < ANALYSIS_MS;
   }
   return upload.status === "pending_upload" && age < WAIT_FOR_FILE_MS;
+}
+
+/** One upload, read on its own: a list scoped to it, or a finding's summary, names its file. */
+export function useUpload(orgId: string, uploadId: string) {
+  return useQuery({
+    queryKey: ["upload", orgId, uploadId],
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/v1/orgs/{org_id}/uploads/{upload_id}", {
+          params: { path: { org_id: orgId, upload_id: uploadId } },
+        }),
+      ),
+  });
 }
 
 /** The uploads, rechecked every few seconds while one of them is still changing. */

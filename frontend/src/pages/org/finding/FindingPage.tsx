@@ -12,6 +12,7 @@ import { AiPanel } from "./AiPanel";
 import { EvidenceMap } from "./EvidenceMap";
 import { EvidenceTable } from "./EvidenceTable";
 import { FindingFacts } from "./FindingFacts";
+import { SummaryStrip } from "./SummaryStrip";
 import { Techniques } from "./Techniques";
 import { Triage } from "./Triage";
 
@@ -66,6 +67,7 @@ export function FindingPage() {
         <span>{detectorName(found.detector_id)}</span>
       </p>
       <h1 className="finding-title">{found.title}</h1>
+      <SummaryStrip org={org} finding={found} />
       <div className="finding-grid">
         <div className="finding-main">
           <AiPanel org={org} finding={found} />

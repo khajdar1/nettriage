@@ -76,6 +76,7 @@ ENDPOINTS: dict[str, tuple[str, str, dict[str, Any] | None]] = {
         {"feedback": "up"},
     ),
     "read AI usage": ("GET", "/api/v1/orgs/{org}/usage", None),
+    "read the overview": ("GET", "/api/v1/orgs/{org}/overview", None),
 }
 # Headers an endpoint needs besides the session's: a triage change names the version it read.
 EXTRA_HEADERS: dict[str, dict[str, str]] = {"triage finding": {"If-Match": '"1"'}}
@@ -107,6 +108,7 @@ MATRIX: dict[str, tuple[int, int, int, int, int, int]] = {
     "re-run AI explanation": (202, 202, 202, 403, 404, 401),
     "rate AI explanation": (200, 200, 200, 403, 404, 401),
     "read AI usage": (200, 200, 403, 403, 404, 401),
+    "read the overview": (200, 200, 200, 200, 404, 401),
 }
 
 

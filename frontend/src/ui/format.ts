@@ -45,9 +45,55 @@ export function formatClock(iso: string): string {
   return CLOCK.format(new Date(iso));
 }
 
+/** A finding's window: "14:00 to 14:05", with the dates when it starts and ends on different days. */
+export function formatWindow(start: string, end: string): string {
+  return formatDate(start) === formatDate(end)
+    ? `${formatTime(start)} to ${formatTime(end)}`
+    : `${formatDateTime(start)} to ${formatDateTime(end)}`;
+}
+
 const UTC_DAY = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" });
 
 /** A UTC day such as "2026-10-04", written as a date that never shifts with the time zone. */
 export function formatDay(day: string): string {
   return UTC_DAY.format(new Date(`${day}T00:00:00Z`));
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** Midnight, in the person's time zone, of the day a moment falls on. */
+function startOfDay(moment: number): number {
+  const day = new Date(moment);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+}
+
+/**
+ * How long ago a moment was (Plan 6d): "just now", "5 min ago", "2 h ago", then in calendar days,
+ * "yesterday" and "3 days ago", then its date from a week on. Days are counted between midnights,
+ * so "yesterday" is always the day before today. A moment slightly ahead of this clock is "just now".
+ */
+export function formatAgo(iso: string, now: number): string {
+  const moment = Date.parse(iso);
+  const elapsed = now - moment;
+  if (elapsed < MINUTE) {
+    return "just now";
+  }
+  if (elapsed < HOUR) {
+    return `${Math.floor(elapsed / MINUTE)} min ago`;
+  }
+  if (elapsed < DAY) {
+    return `${Math.floor(elapsed / HOUR)} h ago`;
+  }
+  // Rounded: a day with a daylight saving change is 23 or 25 hours long.
+  const days = Math.round((startOfDay(now) - startOfDay(moment)) / DAY);
+  if (days <= 1) {
+    return "yesterday";
+  }
+  if (days < 7) {
+    return `${days} days ago`;
+  }
+  return formatDate(iso);
 }

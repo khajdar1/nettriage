@@ -17,6 +17,7 @@ from nettriage.application.organizations import NotFound
 type FindingStatus = Literal["open", "investigating", "resolved", "false_positive"]
 type FindingSeverity = Literal["low", "medium", "high", "critical"]
 type FindingSort = Literal["newest", "severity"]
+type AiStatus = Literal["pending", "succeeded", "failed", "skipped_budget", "invalid_output"]
 
 # A finding's detail lists at most this many of its latest events.
 MAX_EVENTS = 100
@@ -25,7 +26,10 @@ _SUMMARY = (
     "f.id, f.upload_id, f.detector_id, f.detector_version, f.severity, f.status, f.title, "
     "host(f.src_ip) AS src_ip, host(f.dst_ip) AS dst_ip, f.dst_port, f.protocol, "
     "lower(f.time_window) AS window_start, upper(f.time_window) AS window_end, "
-    "f.assignee_id, f.version, f.created_at"
+    "f.assignee_id, f.version, f.created_at, "
+    # How the finding's latest AI analysis went, picked as its detail picks it (Plan 6d).
+    "(SELECT a.status FROM ai_analyses a WHERE a.finding_id = f.id "
+    "ORDER BY a.updated_at DESC, a.id DESC LIMIT 1) AS ai_status"
 )
 
 # Severity as a number to sort by, most severe highest (Plan 6b).
@@ -63,6 +67,7 @@ class FindingSummary:
     assignee_id: UUID | None
     version: int
     created_at: datetime
+    ai_status: AiStatus | None
 
 
 @dataclass(frozen=True)
@@ -135,10 +140,15 @@ class FindingDetail:
 
 @dataclass(frozen=True)
 class FindingFilters:
-    status: FindingStatus | None = None
+    # Any of these statuses; none means any status (Plan 6d).
+    statuses: tuple[FindingStatus, ...] = ()
     severity: FindingSeverity | None = None
     detector: str | None = None
     upload_id: UUID | None = None
+    # `me`: assigned to the caller; `none`: unassigned (Plan 6d).
+    assignee: Literal["me", "none"] | None = None
+    # Created at or after this moment (Plan 6d).
+    since: datetime | None = None
 
 
 def list_findings(
@@ -161,19 +171,26 @@ def list_findings(
         rows = connection.execute(
             text(
                 f"SELECT {_SUMMARY} FROM findings f WHERE f.org_id = :org "  # noqa: S608
-                "AND (CAST(:status AS text) IS NULL OR f.status = :status) "
+                "AND (CAST(:statuses AS text[]) IS NULL "
+                "OR f.status = ANY(CAST(:statuses AS text[]))) "
                 "AND (CAST(:severity AS text) IS NULL OR f.severity = :severity) "
                 "AND (CAST(:detector AS text) IS NULL OR f.detector_id = :detector) "
                 "AND (CAST(:upload AS uuid) IS NULL OR f.upload_id = :upload) "
+                "AND (CAST(:assignee AS uuid) IS NULL OR f.assignee_id = :assignee) "
+                "AND (NOT CAST(:unassigned AS boolean) OR f.assignee_id IS NULL) "
+                "AND (CAST(:since AS timestamptz) IS NULL OR f.created_at >= :since) "
                 f"AND (CAST(:before_at AS timestamptz) IS NULL OR {after_cursor}) "
                 f"ORDER BY {order} LIMIT :limit"
             ),
             {
                 "org": org_id,
-                "status": filters.status,
+                "statuses": list(filters.statuses) or None,
                 "severity": filters.severity,
                 "detector": filters.detector,
                 "upload": filters.upload_id,
+                "assignee": user_id if filters.assignee == "me" else None,
+                "unassigned": filters.assignee == "none",
+                "since": filters.since,
                 "before_at": before_at,
                 "before_id": before_id,
                 "before_severity": before_severity,
@@ -329,4 +346,5 @@ def _summary(row: Row[Any]) -> FindingSummary:
         assignee_id=row.assignee_id,
         version=row.version,
         created_at=row.created_at,
+        ai_status=row.ai_status,
     )

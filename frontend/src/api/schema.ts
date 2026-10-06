@@ -319,7 +319,8 @@ export interface paths {
         /**
          * Findings
          * @description The org's findings, newest first, or most severe first and then newest with
-         *     `sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only
+         *     `sort=severity` (Plan 6b). Filters, combined: any of the given statuses, severity, detector,
+         *     upload, the assignee (`me` or `none`) and `since` a moment (Plan 6d). A cursor works only
          *     with the order it was made for.
          */
         get: operations["findings_api_v1_orgs__org_id__findings_get"];
@@ -442,6 +443,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/orgs/{org_id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description Unresolved findings by severity, all findings by status, the unresolved ones unassigned
+         *     and the caller's, those detected in the last 24 hours, the members and the last upload.
+         */
+        get: operations["overview_api_v1_orgs__org_id__overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/attack-techniques/{technique_id}": {
         parameters: {
             query?: never;
@@ -521,6 +543,8 @@ export interface components {
              */
             updated_at: string;
         };
+        /** @enum {string} */
+        AiStatus: "pending" | "succeeded" | "failed" | "skipped_budget" | "invalid_output";
         /** AuditEventOut */
         AuditEventOut: {
             /**
@@ -709,6 +733,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            ai_status: components["schemas"]["AiStatus"] | null;
             /** Metrics */
             metrics: {
                 [key: string]: unknown;
@@ -774,6 +799,7 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            ai_status: components["schemas"]["AiStatus"] | null;
         };
         /** FindingTechniqueOut */
         FindingTechniqueOut: {
@@ -936,6 +962,24 @@ export interface components {
             created_at: string;
         };
         /**
+         * OverviewOut
+         * @description Unresolved means Open or Investigating; `new_last_day` counts the findings detected in the
+         *     last 24 hours, whatever their status.
+         */
+        OverviewOut: {
+            unresolved_by_severity: components["schemas"]["SeverityCounts"];
+            by_status: components["schemas"]["StatusCounts"];
+            /** Unresolved Unassigned */
+            unresolved_unassigned: number;
+            /** Unresolved Mine */
+            unresolved_mine: number;
+            /** New Last Day */
+            new_last_day: number;
+            /** Member Count */
+            member_count: number;
+            last_upload: components["schemas"]["UploadOut"] | null;
+        };
+        /**
          * RerunOut
          * @description `queued` (202): the triage worker explains the finding again. `explained` (200): its
          *     latest analysis for the current model, prompt and input already succeeded, so that answer is
@@ -956,6 +1000,28 @@ export interface components {
              * @enum {string}
              */
             role: "owner" | "admin" | "analyst" | "viewer";
+        };
+        /** SeverityCounts */
+        SeverityCounts: {
+            /** Critical */
+            critical: number;
+            /** High */
+            high: number;
+            /** Medium */
+            medium: number;
+            /** Low */
+            low: number;
+        };
+        /** StatusCounts */
+        StatusCounts: {
+            /** Open */
+            open: number;
+            /** Investigating */
+            investigating: number;
+            /** Resolved */
+            resolved: number;
+            /** False Positive */
+            false_positive: number;
         };
         /** TechniqueOut */
         TechniqueOut: {
@@ -1047,6 +1113,9 @@ export interface components {
             created_at: string;
             /** Processed At */
             processed_at: string | null;
+            /** Findings */
+            findings: number;
+            worst_severity: components["schemas"]["FindingSeverity"] | null;
         };
         /** UploadsOut */
         UploadsOut: {
@@ -1746,10 +1815,12 @@ export interface operations {
     findings_api_v1_orgs__org_id__findings_get: {
         parameters: {
             query?: {
-                status?: components["schemas"]["FindingStatus"] | null;
+                status?: components["schemas"]["FindingStatus"][] | null;
                 severity?: components["schemas"]["FindingSeverity"] | null;
                 detector?: string | null;
                 upload?: string | null;
+                assignee?: ("me" | "none") | null;
+                since?: string | null;
                 sort?: "newest" | "severity";
                 limit?: number;
                 cursor?: string | null;
@@ -1986,6 +2057,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_v1_orgs__org_id__overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewOut"];
                 };
             };
             /** @description Validation Error */

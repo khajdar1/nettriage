@@ -3,6 +3,7 @@ techniques and history. Triage (status, assignee, comments) is Plan 4c."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal, cast
 from uuid import UUID
 
@@ -34,16 +35,19 @@ def findings(
     request: Request,
     org_id: UUID,
     org: Annotated[OrgContext, Depends(OrgMember("findings:read"))],
-    status: FindingStatus | None = None,
+    status: Annotated[list[FindingStatus] | None, Query(max_length=4)] = None,
     severity: FindingSeverity | None = None,
     detector: Annotated[str | None, Query(max_length=50)] = None,
     upload: UUID | None = None,
+    assignee: Literal["me", "none"] | None = None,
+    since: datetime | None = None,
     sort: Literal["newest", "severity"] = "newest",
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=200)] = None,
 ) -> FindingsOut:
     """The org's findings, newest first, or most severe first and then newest with
-    `sort=severity` (Plan 6b). Filters: status, severity, detector, upload. A cursor works only
+    `sort=severity` (Plan 6b). Filters, combined: any of the given statuses, severity, detector,
+    upload, the assignee (`me` or `none`) and `since` a moment (Plan 6d). A cursor works only
     with the order it was made for."""
     before_severity: FindingSeverity | None = None
     before = None
@@ -52,7 +56,14 @@ def findings(
         before_severity, before = cast(FindingSeverity, last_severity), (last_at, last_id)
     elif cursor:
         before = decode_cursor(cursor)
-    filters = FindingFilters(status=status, severity=severity, detector=detector, upload_id=upload)
+    filters = FindingFilters(
+        statuses=tuple(status or ()),
+        severity=severity,
+        detector=detector,
+        upload_id=upload,
+        assignee=assignee,
+        since=since,
+    )
     with org_rules(request, "The finding list"):
         found = list_findings(
             get_services(request).database,

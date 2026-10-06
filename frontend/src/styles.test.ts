@@ -77,3 +77,12 @@ test("amber is the detectors' color: probed ports, severity and the mark, nothin
     expect(selector, selector).toMatch(/\.(lit|sev|step-detect|logo-lit)(?![\w-])/);
   }
 });
+
+test("no grid column needs more room than a 320-pixel screen has (WCAG 1.4.10)", () => {
+  // A column's minimum is 0, or a length capped at the room there is: min(19rem, 100%).
+  const minimums = [...css.matchAll(/minmax\(((?:[^(),]|\([^()]*\))+),/g)].map(([, minimum]) =>
+    (minimum ?? "").trim(),
+  );
+  expect(minimums.length).toBeGreaterThan(5);
+  expect(minimums.filter((minimum) => minimum !== "0" && !minimum.startsWith("min("))).toEqual([]);
+});

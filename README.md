@@ -7,8 +7,8 @@ MITRE ATT&CK, and a checked, plain-English explanation for every finding.
 > deploys, infrastructure as code, telemetry), the detection engine, the Postgres data
 > foundation, sign-in with mandatory MFA, organizations, uploads and their analysis, triage,
 > and AI explanations on Bedrock. In progress: the web app, whose pages for organizations,
-> uploads, findings, triage, the AI's explanations, the audit log and usage are built; the
-> public demo is next.
+> uploads, findings, triage, the AI's explanations, the audit log and usage are built, with
+> a home of your work and each organization's findings at a glance; the public demo is next.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ Regional resources run in eu-north-1 (Stockholm); CloudFront serves the app worl
 - **Event-driven analysis**: each upload queues a worker Lambda that streams and parses the file within size, row and decompression limits, runs three detectors, and stores each finding exactly once with its evidence and MITRE ATT&CK techniques, even when a message arrives twice.
 - **Triage with optimistic concurrency**: a finding's status and assignee change only with `If-Match` naming the version the caller read, so two analysts can't silently overwrite each other (412 instead); every change and comment is in the finding's history and the audit log.
 - **AI explanations with guardrails**: each upload's 20 most severe findings are explained by gpt-oss-20b on Amazon Bedrock from the finding's typed fields only. An answer that names an address, port or technique outside the data is refused, and every call is paid for in advance from a daily token budget per org and a $0.50 daily cap across all orgs, which fail closed. Analysts, Admins and Owners can re-run an explanation and rate it, and Owners and Admins see the AI's calls, tokens and cost per day.
-- **A typed web app**: React and TypeScript, with an API client generated from the API's OpenAPI document, so CI fails when the two drift. It sends CloudFront's body hash, the CSRF token and idempotency keys on its own, and shows every API error with its reference. Files go from the browser straight to S3 with their fingerprint and progress; findings open most severe first; a port scan's evidence is drawn on a map of the host's ports; and triage names the version it read, so a newer change is shown, never overwritten.
+- **A typed web app**: React and TypeScript, with an API client generated from the API's OpenAPI document, so CI fails when the two drift. It sends CloudFront's body hash, the CSRF token and idempotency keys on its own, and shows every API error with its reference. Files go from the browser straight to S3 with their fingerprint and progress; findings open most severe first; a port scan's evidence is drawn on a map of the host's ports; and triage names the version it read, so a newer change is shown, never overwritten. The home lists what's assigned to you across organizations, and every count on it, or above an organization's findings, links to exactly the findings it counts.
 - **Tenant isolation in the database**: row-level security on every tenant table and on users, and a least-privilege database role for each function.
 - **Distributed rate limiting** with GCRA on DynamoDB, exact under concurrency ([ADR 0006](docs/adr/0006-gcra-rate-limiter.md)).
 - **Supply chain**: SHA-pinned actions, CodeQL, dependency review, Dependabot, Checkov and tflint.

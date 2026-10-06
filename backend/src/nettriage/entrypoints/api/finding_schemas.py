@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from nettriage.adapters.attack_techniques import Technique
 from nettriage.adapters.findings import (
     AiAnalysis,
+    AiStatus,
     Evidence,
     FindingDetail,
     FindingEvent,
@@ -41,6 +42,8 @@ class FindingSummaryOut(BaseModel):
     assignee_id: UUID | None
     version: int
     created_at: datetime
+    # How the latest AI analysis went, or null before the first one (Plan 6d).
+    ai_status: AiStatus | None
 
     @classmethod
     def of(cls, finding: FindingSummary) -> FindingSummaryOut:

@@ -42,7 +42,7 @@ def add(database: Database, org: tuple[UUID, UUID, UUID], **fields: str) -> str:
         return str(add_finding(connection, org[0], org[2], **fields))
 
 
-def listed(client: TestClient, org: UUID, **params: str | int) -> list[str]:
+def listed(client: TestClient, org: UUID, **params: str | int | list[str]) -> list[str]:
     response = client.get(f"/api/v1/orgs/{org}/findings", params=params)
     assert response.status_code == 200, response.text
     return [finding["id"] for finding in response.json()["findings"]]
@@ -141,6 +141,10 @@ def test_a_cursor_from_one_order_is_a_422_in_the_other(
         {"upload": "nope"},
         {"limit": 101},
         {"sort": "oldest"},
+        {"status": ["open", "closed"]},
+        {"status": ["open", "investigating", "resolved", "false_positive", "open"]},
+        {"assignee": "bob"},
+        {"since": "yesterday"},
     ],
 )
 def test_a_filter_outside_its_values_is_a_422(
@@ -150,6 +154,112 @@ def test_a_filter_outside_its_values_is_a_422(
 
     assert response.status_code == 422
     assert response.headers["content-type"] == "application/problem+json"
+
+
+def set_finding(database: Database, finding_id: str, **columns: object) -> None:
+    """Changes a finding's columns as the database owner, outside any API rule."""
+    assignments = ", ".join(f"{name} = :{name}" for name in columns)
+    with database.admin.begin() as connection:
+        connection.execute(
+            text(f"UPDATE findings SET {assignments} WHERE id = :id"),  # noqa: S608
+            {"id": finding_id, **columns},
+        )
+
+
+def test_the_list_is_narrowed_to_any_of_several_statuses(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    opened = add(database, org)
+    investigating = add(database, org)
+    resolved = add(database, org)
+    set_finding(database, investigating, status="investigating")
+    set_finding(database, resolved, status="resolved")
+
+    assert listed(signed_in, org[0], status=["open", "investigating"]) == [investigating, opened]
+    assert listed(signed_in, org[0], status="resolved") == [resolved]
+
+
+def test_the_list_is_narrowed_to_the_callers_findings_or_to_unassigned_ones(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    mine = add(database, org)
+    theirs = add(database, org)
+    unassigned = add(database, org)
+    with database.admin.begin() as connection:
+        colleague = add_user(connection)
+        add_member(connection, org[0], colleague, "analyst")
+    set_finding(database, mine, assignee_id=org[1])
+    set_finding(database, theirs, assignee_id=colleague)
+
+    assert listed(signed_in, org[0], assignee="me") == [mine]
+    assert listed(signed_in, org[0], assignee="none") == [unassigned]
+
+
+def test_the_list_is_narrowed_to_findings_detected_since_a_moment(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    older = add(database, org)
+    newer = add(database, org)
+    set_finding(database, older, created_at="2026-09-01T00:00:00Z")
+
+    assert listed(signed_in, org[0], since="2026-09-02T00:00:00Z") == [newer]
+
+
+def test_filters_page_with_the_severity_order_and_its_cursor(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    low = add(database, org, severity="low")
+    high = add(database, org, severity="high")
+    resolved_critical = add(database, org, severity="critical")
+    critical = add(database, org, severity="critical")
+    set_finding(database, resolved_critical, status="resolved")
+
+    pages = []
+    cursor = None
+    for _ in range(3):
+        params: dict[str, str | int | list[str]] = {
+            "sort": "severity",
+            "status": ["open", "investigating"],
+            "limit": 1,
+        }
+        if cursor is not None:
+            params["cursor"] = cursor
+        page = signed_in.get(f"/api/v1/orgs/{org[0]}/findings", params=params).json()
+        pages.append([finding["id"] for finding in page["findings"]])
+        cursor = page["next_cursor"]
+
+    assert pages == [[critical], [high], [low]]
+    assert cursor is None
+
+
+def test_each_listed_finding_says_how_its_latest_ai_analysis_went(
+    signed_in: TestClient, database: Database, org: tuple[UUID, UUID, UUID]
+) -> None:
+    explained = add(database, org)
+    unexplained = add(database, org)
+    add_ai_analysis(
+        database,
+        org[0],
+        explained,
+        status="failed",
+        at="2026-10-01T10:00:00Z",
+        error_code="provider_throttled",
+    )
+    add_ai_analysis(
+        database,
+        org[0],
+        explained,
+        status="succeeded",
+        at="2026-10-01T11:00:00Z",
+        output='{"summary": "A scan from inside."}',
+    )
+
+    response = signed_in.get(f"/api/v1/orgs/{org[0]}/findings")
+
+    statuses = {finding["id"]: finding["ai_status"] for finding in response.json()["findings"]}
+    assert statuses == {explained: "succeeded", unexplained: None}
+    detail = signed_in.get(f"/api/v1/orgs/{org[0]}/findings/{explained}").json()
+    assert detail["ai_status"] == "succeeded"
 
 
 def test_a_finding_is_read_with_its_evidence_techniques_and_history(

@@ -7,6 +7,7 @@ import { findingsKey } from "../../../findings/findings";
 import { STATUSES, type Status, statusLabel } from "../../../findings/vocabulary";
 import { type Member, memberName, useMembers } from "../../../orgs/members";
 import type { Org } from "../../../orgs/org";
+import { overviewKey } from "../../../orgs/overview";
 import { canContribute } from "../../../orgs/permissions";
 import { ErrorNotice } from "../../../ui/ErrorNotice";
 
@@ -46,6 +47,7 @@ function TriageForm({ org, finding, members }: { org: Org; finding: Finding; mem
     onSuccess: (updated) => {
       queryClient.setQueryData(findingKey(org.id, finding.id), updated);
       void queryClient.invalidateQueries({ queryKey: findingsKey(org.id) });
+      void queryClient.invalidateQueries({ queryKey: overviewKey(org.id) });
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 412) {

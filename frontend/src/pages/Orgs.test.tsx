@@ -42,7 +42,8 @@ test("someone new is shown how to start", async () => {
 
   renderAt("/app");
 
-  expect(await screen.findByRole("heading", { name: "Your organizations" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Organizations" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Assigned to you" })).toBeNull();
   expect(
     screen.getByText(
       "Create your first organization, or open an invitation link someone sent you.",

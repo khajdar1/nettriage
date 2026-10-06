@@ -4,7 +4,7 @@ import { isStatus, statusLabel } from "../../../findings/vocabulary";
 import { type Member, memberName, useMembers } from "../../../orgs/members";
 import type { Org } from "../../../orgs/org";
 import { canContribute } from "../../../orgs/permissions";
-import { formatDateTime } from "../../../ui/format";
+import { Ago } from "../../../ui/Ago";
 import { CommentForm } from "./CommentForm";
 
 type FindingEvent = components["schemas"]["FindingEventOut"];
@@ -53,9 +53,9 @@ export function Activity({ org, finding }: { org: Org; finding: Finding }) {
         {finding.events.map((event) => (
           <li key={event.id}>
             <span className="event-what">{sentence(event, members.data)}</span>{" "}
-            <time className="muted" dateTime={event.created_at}>
-              {formatDateTime(event.created_at)}
-            </time>
+            <span className="muted">
+              <Ago iso={event.created_at} />
+            </span>
             {event.type === "commented" && typeof event.payload.text === "string" && (
               <p className="comment">{event.payload.text}</p>
             )}

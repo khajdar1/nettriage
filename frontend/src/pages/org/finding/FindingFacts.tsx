@@ -37,7 +37,7 @@ export function FindingFacts({ finding }: { finding: Finding }) {
         ))}
         <dt>Upload</dt>
         <dd>
-          <Link to={`../findings?upload=${finding.upload_id}`}>
+          <Link to={`../findings?status=any&upload=${finding.upload_id}`}>
             Other findings from this upload
           </Link>
         </dd>

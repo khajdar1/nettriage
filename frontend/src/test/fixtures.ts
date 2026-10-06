@@ -2,6 +2,7 @@
 import type { Me, Membership } from "../auth/session";
 import type { Org } from "../orgs/org";
 import type { Member } from "../orgs/members";
+import type { Overview } from "../orgs/overview";
 import type { AiAnalysis } from "../findings/explanation";
 import type { Finding } from "../findings/finding";
 import type { FindingSummary } from "../findings/findings";
@@ -90,6 +91,8 @@ export function upload(fields: Partial<Upload> = {}): Upload {
     uploaded_by: ME.user.id,
     created_at: "2026-10-04T09:30:00Z",
     processed_at: "2026-10-04T09:31:00Z",
+    findings: 0,
+    worst_severity: null,
     ...fields,
   };
 }
@@ -114,6 +117,7 @@ export function findingSummary(fields: Partial<FindingSummary> = {}): FindingSum
     assignee_id: null,
     version: 1,
     created_at: "2026-10-04T09:31:00Z",
+    ai_status: null,
     ...fields,
   };
 }
@@ -204,6 +208,19 @@ export function aiAnalysis(fields: Partial<AiAnalysis> = {}): AiAnalysis {
     feedback_by: null,
     created_at: "2026-10-04T09:32:00Z",
     updated_at: "2026-10-04T09:32:02Z",
+    ...fields,
+  };
+}
+
+export function overview(fields: Partial<Overview> = {}): Overview {
+  return {
+    unresolved_by_severity: { critical: 2, high: 9, medium: 0, low: 3 },
+    by_status: { open: 9, investigating: 5, resolved: 28, false_positive: 3 },
+    unresolved_unassigned: 7,
+    unresolved_mine: 2,
+    new_last_day: 5,
+    member_count: 4,
+    last_upload: upload(),
     ...fields,
   };
 }
