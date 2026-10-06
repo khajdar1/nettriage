@@ -29,7 +29,9 @@ def test_too_many_sign_ins_from_one_ip_land_on_the_limited_page(
     database_client: TestClient, database: Database, metric_reader: InMemoryMetricReader
 ) -> None:
     """Sign-in is a browser navigation, so a limited one lands on a page, not on JSON."""
-    viewer = {"CloudFront-Viewer-Address": f"198.51.100.{uuid4().int % 250 + 1}:1234"}
+    # Each test here owns its address: the session's database keeps every test's audit rows, so
+    # a shared one would be counted twice (a random .88 once broke the health check's test).
+    viewer = {"CloudFront-Viewer-Address": "198.51.100.66:1234"}
     responses = [
         database_client.get("/api/auth/login", headers=viewer, follow_redirects=False)
         for _ in range(7)
