@@ -79,6 +79,42 @@ jobs:
           path: dist/backend.zip
           retention-days: 7
 
+  # The `ops` function's Postgres client and server (Plan 7a §4): built from source for Lambda's
+  # arm64 Amazon Linux 2023, then proven inside AWS's own Lambda image, as a non-root user
+  # without /dev/shm, against a real Postgres 17. The image is public, so CI still holds no
+  # cloud access.
+  pg-client:
+    runs-on: ubuntu-24.04-arm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build Postgres in Amazon Linux 2023
+        run: >-
+          docker run --rm -v "$PWD:/w" -w /w public.ecr.aws/amazonlinux/amazonlinux:2023
+          bash tools/pg_client/build.sh build
+      - name: Pack the layer
+        run: python3 tools/pack_pg_client.py --src build/pg --out dist/pg-client.zip
+      - name: Check the layer inside AWS's Lambda image
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: ci-only
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null
+          bash tools/pg_client/verify.sh dist/pg-client.zip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pg-client-zip
+          path: dist/pg-client.zip
+          retention-days: 7
+
   frontend:
     runs-on: ubuntu-24.04
     defaults:
