@@ -115,6 +115,75 @@ jobs:
           path: dist/pg-client.zip
           retention-days: 7
 
+  # The ops function end to end (Plan 7a §8): the CI-built Lambda package and Postgres layer,
+  # inside AWS's Lambda image as a non-root user without /dev/shm, against a migrated Postgres 17,
+  # with AWS stood in for by moto's server. The drill must restore what the backup counted.
+  ops-in-lambda:
+    needs: [package, pg-client]
+    runs-on: ubuntu-24.04-arm
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci-only@localhost:5432/postgres
+      # moto's server stands in for AWS. Its throwaway key pair is written to this file by
+      # tools/ops_e2e.py, so no AWS credential is ever named here (ADR 0013).
+      AWS_ENDPOINT_URL: http://localhost:5000
+      AWS_SHARED_CREDENTIALS_FILE: ${{ github.workspace }}/aws/credentials
+      AWS_DEFAULT_REGION: eu-north-1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: backend-zip
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pg-client-zip
+          path: dist
+      - name: Migrate the database, as a deploy would
+        env:
+          NETTRIAGE_MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: uv run --locked --project backend python -m alembic -c backend/alembic.ini upgrade head
+      - name: Stand in for AWS with moto
+        run: |
+          uvx --from "moto[server]==5.2.3" moto_server -p 5000 > moto.log 2>&1 &
+          for attempt in $(seq 30); do curl -s localhost:5000 > /dev/null && break; sleep 1; done
+      - name: Seed the database and the stand-in AWS
+        run: uv run --locked --project backend python tools/ops_e2e.py prepare --database-url "$DATABASE_URL"
+      - name: Run the ops jobs inside AWS's Lambda image
+        run: |
+          mkdir -p task opt out && chmod 777 out
+          unzip -q dist/backend.zip -d task && unzip -q dist/pg-client.zip -d opt
+          for job in check cleanup backup restore_drill; do
+            docker run --rm --network host --ipc=none --user nobody \
+              -v "$PWD/task:/var/task:ro" -v "$PWD/opt:/opt:ro" -v "$PWD/out:/out" \
+              -v "$PWD/aws:/aws:ro" -e AWS_SHARED_CREDENTIALS_FILE=/aws/credentials \
+              -e AWS_ENDPOINT_URL -e AWS_DEFAULT_REGION \
+              -e PYTHONPATH=/var/task -e OTEL_EXPORTER_OTLP_TIMEOUT=1 \
+              -e NETTRIAGE_STAGE=local -e NETTRIAGE_SERVICE_NAME=nettriage-ops \
+              -e NETTRIAGE_DATABASE_URL_PARAMETER=/nettriage/ci/db/app-ops-url \
+              -e NETTRIAGE_BACKUP_DATABASE_URL_PARAMETER=/nettriage/ci/db/app-backup-url \
+              -e NETTRIAGE_BACKUPS_BUCKET=nettriage-ci-backups \
+              -e NETTRIAGE_RUNTIME_TABLE=nettriage-ci-runtime \
+              --entrypoint python public.ecr.aws/lambda/python:3.14 -c "
+          import json, sys
+          from nettriage.entrypoints.ops.handler import handle
+          answer = handle({'job': sys.argv[1]}, None)
+          open(f'/out/{sys.argv[1]}.json', 'w').write(json.dumps(answer))
+          " "$job"
+            cat "out/$job.json" >> results.jsonl && echo >> results.jsonl
+          done
+          cat results.jsonl
+      - name: Check what the jobs did
+        run: uv run --locked --project backend python tools/ops_e2e.py verify results.jsonl
+
   frontend:
     runs-on: ubuntu-24.04
     defaults:
