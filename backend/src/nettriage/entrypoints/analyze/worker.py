@@ -39,6 +39,7 @@ from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_objects import UploadObjects
 from nettriage.application.analysis import UploadKey, analyze_parsed, parse_upload_key
 from nettriage.application.clock import Clock
+from nettriage.application.uploads import GAVE_UP
 from nettriage.domain.parsing.vpc_flow_logs import FlowLogError, ParseLimits, parse_flow_log
 from nettriage.platform.metrics import AnalyzeMetrics
 from nettriage.platform.trace_context import current_traceparent, links_from
@@ -48,7 +49,6 @@ logger = logging.getLogger(__name__)
 type Outcome = Literal["analyzed", "failed", "ignored", "duplicate"]
 
 SIZE_MISMATCH = "The file's size doesn't match the size declared when it was uploaded."
-GAVE_UP = "NetTriage couldn't analyze this file after three tries. Upload it again later."
 # Neon waking up or restarting takes seconds, and SQS would deliver the message again only after
 # its 30-minute visibility timeout, so the worker first retries after these pauses (spec §8.6).
 RETRY_DELAYS = (1.0, 3.0)

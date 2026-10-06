@@ -30,10 +30,10 @@ from nettriage.adapters.postgres import create_database_engine
 from nettriage.adapters.triage_queue import TriageQueue
 from nettriage.adapters.upload_objects import UploadObjects
 from nettriage.application.analysis import UploadKey
-from nettriage.application.uploads import s3_key
+from nettriage.application.uploads import GAVE_UP, s3_key
 from nettriage.domain.parsing.vpc_flow_logs import ParseLimits
 from nettriage.entrypoints.analyze import handler
-from nettriage.entrypoints.analyze.worker import GAVE_UP, SIZE_MISMATCH, AnalysisFailed, Worker
+from nettriage.entrypoints.analyze.worker import SIZE_MISMATCH, AnalysisFailed, Worker
 from nettriage.platform.metrics import AnalyzeMetrics
 
 BUCKET = "nettriage-test-uploads-00000000"
