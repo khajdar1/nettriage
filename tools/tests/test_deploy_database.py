@@ -141,3 +141,46 @@ def test_the_triage_worker_gets_its_own_login() -> None:
     [put] = run.called("aws", "ssm", "put-parameter")
     assert put.args[put.args.index("--name") + 1] == missing
     assert urlsplit(put.args[put.args.index("--value") + 1]).username == "app_triage"
+
+
+def test_the_ops_job_gets_its_own_login_through_the_pooler() -> None:
+    missing = "/nettriage/dev/db/app-ops-url"
+    run = FakeRun().on("aws", "ssm", "describe-parameters", returns=ssm_names(missing=[missing]))
+    run.on("aws", "ssm", "put-parameter")
+
+    created = database.ensure_role_logins(run, {}, "dev", OWNER_URL, set_password=lambda *a: None)
+
+    assert created == ["app_ops"]
+    [put] = run.called("aws", "ssm", "put-parameter")
+    stored = urlsplit(put.args[put.args.index("--value") + 1])
+    assert put.args[put.args.index("--name") + 1] == missing
+    assert stored.username == "app_ops"
+    assert stored.hostname == "ep-quiet-sun-123456-pooler.eu-central-1.aws.neon.tech"
+
+
+def test_the_backup_role_connects_directly_because_pg_dump_needs_a_session() -> None:
+    missing = "/nettriage/dev/db/app-backup-url"
+    run = FakeRun().on("aws", "ssm", "describe-parameters", returns=ssm_names(missing=[missing]))
+    run.on("aws", "ssm", "put-parameter")
+    given: list[tuple[str, str, str]] = []
+
+    created = database.ensure_role_logins(
+        run, {}, "dev", OWNER_URL, set_password=lambda *args: given.append(args)
+    )
+
+    assert created == ["app_backup"]
+    [(_, _, password)] = given
+    [put] = run.called("aws", "ssm", "put-parameter")
+    assert put.args[put.args.index("--name") + 1] == missing
+    assert put.args[put.args.index("--value") + 1] == database.direct_url(
+        OWNER_URL, "app_backup", password
+    )
+
+
+def test_a_direct_connection_keeps_the_owners_endpoint_with_an_escaped_password_and_verified_tls() -> None:
+    url = database.direct_url(OWNER_URL, "app_backup", "p/w+1")
+
+    assert url == (
+        "postgresql://app_backup:p%2Fw%2B1@ep-quiet-sun-123456.eu-central-1.aws.neon.tech/"
+        "neondb?sslmode=verify-full"
+    )

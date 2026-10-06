@@ -101,3 +101,7 @@ plan-dev:
 # Deploy main's CI-built artifacts to dev, then run the smoke tests
 deploy-dev:
     uv run --project backend python -m tools.deploy deploy --stage dev
+
+# AWS: restore dev's newest backup into a throwaway database and check its counts (Plan 7a §2.5)
+restore-drill-dev:
+    uv run --project backend python -m tools.deploy restore-drill --stage dev
