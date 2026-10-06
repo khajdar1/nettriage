@@ -88,7 +88,7 @@ def test_deploy_ships_ci_artifacts_of_a_green_main_commit_then_smoke_tests(stage
     workflows = [call.args[call.args.index("--workflow") + 1] for call in run.called("gh", "run", "list")]
     assert workflows == ["ci.yml", "codeql.yml"]
     assert [call.args[call.args.index("--name") + 1] for call in run.called("gh", "run", "download")] == [
-        "backend-zip", "web-dist",
+        "backend-zip", "pg-client-zip", "web-dist",
     ]
     assert run.first("gh", "run", "download") < run.first("terraform", "apply") < run.first("aws", "s3", "sync")
     [init] = run.called("terraform", "init")
@@ -102,6 +102,7 @@ def test_deploy_ships_ci_artifacts_of_a_green_main_commit_then_smoke_tests(stage
     assert apply.env["TF_VAR_app_version"] == SHA
     assert apply.env["TF_VAR_grafana_otlp_auth"] == "dG9rZW4="
     assert apply.env["TF_VAR_lambda_zip_path"].endswith("backend.zip")
+    assert apply.env["TF_VAR_pg_client_zip_path"].endswith("pg-client.zip")
     assert smoke_argv == [[
         "--base-url", "https://d111.cloudfront.net",
         "--function-url", "https://fn.lambda-url.eu-north-1.on.aws/",
@@ -229,6 +230,19 @@ def test_plan_posts_addresses_only_to_the_pr(stage_dir: Path, capsys: pytest.Cap
     out = capsys.readouterr().out
     assert "### Terraform plan: dev (ddddddd)" in out
     assert "dG9rZW4=" not in out
+
+
+def test_plan_gives_terraform_the_ci_built_postgres_layer(stage_dir: Path) -> None:
+    run = planning(runs((5, "completed", "success", "pull_request")))
+
+    cli.plan(run, {}, "dev", post_comment=False)
+
+    assert [call.args[call.args.index("--name") + 1] for call in run.called("gh", "run", "download")] == [
+        "backend-zip", "pg-client-zip",
+    ]
+    [plan_call] = run.called("terraform", "plan")
+    assert plan_call.env is not None
+    assert plan_call.env["TF_VAR_pg_client_zip_path"].endswith("pg-client.zip")
 
 
 def test_plan_with_no_comment_leaves_the_pr_alone(stage_dir: Path) -> None:

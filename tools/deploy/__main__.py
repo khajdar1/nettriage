@@ -7,6 +7,7 @@
   python -m tools.deploy deploy [--stage dev]
   python -m tools.deploy uploads on|off [--stage dev]
   python -m tools.deploy ai on|off [--stage dev]
+  python -m tools.deploy restore-drill [--stage dev]
 
 Every command uses the owner's short-lived `aws login` session: profile "nettriage", or
 $NETTRIAGE_AWS_PROFILE, or --profile before the command name.
@@ -24,7 +25,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from tools import smoke
-from tools.deploy import database, config, github, gitguards, preflight, publish, secrets, session, terraform
+from tools.deploy import database, config, drill, github, gitguards, preflight, publish, secrets, session, terraform
 from tools.deploy import runner
 from tools.deploy.runner import CommandError, Runner
 
@@ -41,11 +42,18 @@ def run_preflight(run: Runner, env: Mapping[str, str], stage: str | None) -> boo
     return preflight.report(checks)
 
 
-def stage_env(run: Runner, env: Mapping[str, str], stage: str, sha: str, lambda_zip: Path) -> dict[str, str]:
+def download_packages(run: Runner, run_id: int, dest: Path) -> Path:
+    """The CI run's Lambda package and Postgres layer, side by side in dest."""
+    github.download(run, run_id, config.BACKEND_ARTIFACT, dest)
+    return github.download(run, run_id, config.PG_CLIENT_ARTIFACT, dest)
+
+
+def stage_env(run: Runner, env: Mapping[str, str], stage: str, sha: str, dist: Path) -> dict[str, str]:
     """Terraform's inputs for a stage, passed as environment variables, never as arguments."""
     return {
         **env,
-        "TF_VAR_lambda_zip_path": str(lambda_zip),
+        "TF_VAR_lambda_zip_path": str(dist / "backend.zip"),
+        "TF_VAR_pg_client_zip_path": str(dist / "pg-client.zip"),
         "TF_VAR_app_version": sha,
         "TF_VAR_grafana_otlp_auth": secrets.read_otlp_auth(run, env, stage),
     }
@@ -104,8 +112,8 @@ def plan(run: Runner, env: Mapping[str, str], stage: str, post_comment: bool) ->
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
-        dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
-        tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
+        dist = download_packages(run, ci.run_id, Path(scratch) / "dist")
+        tf_env = stage_env(run, env, stage, sha, dist)
         gitguards.require_unchanged_since(run, sha, "plan")
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
         changes = terraform.plan(run, tf_env, workdir)
@@ -127,9 +135,9 @@ def deploy(run: Runner, env: Mapping[str, str], stage: str, smoke_main: SmokeMai
     bucket = config.state_bucket(session.account_id(run, env))
     workdir = config.stage_dir(stage)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
-        dist = github.download(run, ci.run_id, config.BACKEND_ARTIFACT, Path(scratch) / "dist")
+        dist = download_packages(run, ci.run_id, Path(scratch) / "dist")
         web = github.download(run, ci.run_id, config.WEB_ARTIFACT, Path(scratch) / "web")
-        tf_env = stage_env(run, env, stage, sha, dist / "backend.zip")
+        tf_env = stage_env(run, env, stage, sha, dist)
         gitguards.require_unchanged_since(run, sha, "deploy")
         migrate_database(run, env, stage)
         terraform.init(run, tf_env, workdir, bucket, config.state_key(stage))
@@ -223,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--profile", default=os.environ.get("NETTRIAGE_AWS_PROFILE", config.DEFAULT_PROFILE))
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("preflight", "store-grafana-token", "store-database-url", "plan", "deploy"):
+    for name in ("preflight", "store-grafana-token", "store-database-url", "plan", "deploy", "restore-drill"):
         command = commands.add_parser(name)
         command.add_argument("--stage", choices=config.STAGES, default="dev")
     commands.choices["plan"].add_argument("--no-comment", action="store_true")
@@ -255,6 +263,8 @@ def main(argv: list[str] | None = None, run: Runner = runner.run) -> int:
             switch_uploads(run, env, args.stage, on=args.state == "on")
         elif args.command == "ai":
             switch_ai(run, env, args.stage, on=args.state == "on")
+        elif args.command == "restore-drill":
+            print(drill.restore_drill(run, env, args.stage))
         elif args.command == "plan":
             plan(run, env, args.stage, post_comment=not args.no_comment)
         else:

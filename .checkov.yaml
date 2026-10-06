@@ -4,12 +4,12 @@ skip-check:
   - CKV_AWS_18     # S3 access logging: cost; CloudTrail and app telemetry cover it (spec §9)
   - CKV_AWS_144    # S3 cross-region replication: cost; state is versioned (spec §5.6)
   - CKV_AWS_145    # S3 KMS encryption: SSE-S3 by design; KMS customer keys cost money (spec §6.8)
-  - CKV2_AWS_62    # S3 event notifications: not needed for the state or web buckets; the uploads bucket notifies the analyze queue
+  - CKV2_AWS_62    # S3 event notifications: not needed for the state, web or backups buckets; the uploads bucket notifies the analyze queue
   - CKV2_AWS_61    # S3 lifecycle on the web bucket: deploys replace its content
-  - CKV_AWS_21     # S3 versioning: the web bucket is rebuilt from Git on every deploy; raw uploads are never changed and are deleted after 30 days (spec §5.7)
+  - CKV_AWS_21     # S3 versioning: the web bucket is rebuilt from Git on every deploy; raw uploads are never changed and are deleted after 30 days, and backups are replaced nightly and kept 7 days (spec §5.7)
   - CKV_AWS_300    # S3 abort-multipart rule on the web bucket: the owner's deploy uploads small files only
   - CKV_AWS_115    # Lambda reserved concurrency: new accounts may have too low a quota (spec §13.2)
-  - CKV_AWS_116    # Lambda DLQ: the API is synchronous, and the analyze and triage workers are fed by SQS, whose redrive policies are their DLQs (spec §8.6)
+  - CKV_AWS_116    # Lambda DLQ: the API is synchronous, the analyze and triage workers are fed by SQS, whose redrive policies are their DLQs (spec §8.6), and the ops jobs record their failures in nettriage.ops.runs (Plan 7a)
   - CKV_AWS_117    # Lambda in a VPC: no VPC by design (ADR 0009)
   - CKV_AWS_173    # Lambda env var CMK encryption: AWS-managed encryption; CMKs cost money
   - CKV_AWS_272    # Lambda code signing: planned hardening (Milestone 5)
@@ -27,3 +27,4 @@ skip-check:
   - CKV_AWS_119    # DynamoDB KMS customer key: AWS-owned encryption; customer keys cost money (spec §6.8)
   - CKV2_AWS_16    # DynamoDB auto scaling: fixed capacity inside the Always Free units (spec §5.5); scaling could leave them
   - CKV_AWS_337    # SSM KMS customer key: SecureStrings use the AWS-managed key (spec §3.2); customer keys cost money
+  - CKV_AWS_297    # EventBridge Scheduler KMS customer key: a schedule's input is only a job's name; AWS-owned encryption; customer keys cost money (Plan 7a)

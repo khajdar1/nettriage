@@ -30,3 +30,8 @@ variable "bedrock_region" {
 variable "bedrock_model_id" {
   type = string
 }
+
+variable "pg_client_zip_path" {
+  type        = string
+  description = "Path to the CI-built dist/pg-client.zip: Postgres 17 for the ops function's layer."
+}

@@ -54,7 +54,7 @@ edge-test:
 # infra/bootstrap/.terraform, and they need no AWS session.
 tf-check:
     terraform fmt -check -recursive infra
-    for d in infra/bootstrap infra/modules/app infra/modules/data infra/modules/edge infra/modules/identity infra/modules/pipeline; do (cd "$d" && export TF_DATA_DIR=.terraform-check && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
+    for d in infra/bootstrap infra/modules/app infra/modules/data infra/modules/edge infra/modules/identity infra/modules/ops infra/modules/pipeline; do (cd "$d" && export TF_DATA_DIR=.terraform-check && terraform init -backend=false -input=false >/dev/null && terraform validate && terraform test) || exit 1; done
 
 # CI hygiene: every workflow action pinned to a SHA
 pin-check:
@@ -101,3 +101,7 @@ plan-dev:
 # Deploy main's CI-built artifacts to dev, then run the smoke tests
 deploy-dev:
     uv run --project backend python -m tools.deploy deploy --stage dev
+
+# AWS: restore dev's newest backup into a throwaway database and check its counts (Plan 7a §2.5)
+restore-drill-dev:
+    uv run --project backend python -m tools.deploy restore-drill --stage dev

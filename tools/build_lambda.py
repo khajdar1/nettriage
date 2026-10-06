@@ -25,6 +25,7 @@ REQUIRED = (
     "nettriage/entrypoints/api/main.py",
     "nettriage/entrypoints/analyze/handler.py",
     "nettriage/entrypoints/triage/handler.py",
+    "nettriage/entrypoints/ops/handler.py",
     "nettriage/prompts/triage/v1.md",
 )
 ALLOWED_WHEEL_TAG = re.compile(

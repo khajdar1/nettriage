@@ -55,6 +55,15 @@ def pooled_url(owner_url: str, role: str, password: str) -> str:
     return urlunsplit(("postgresql", netloc, parts.path, "sslmode=verify-full", ""))
 
 
+def direct_url(owner_url: str, role: str, password: str) -> str:
+    """The connection string for a role that needs a session (`app_backup`'s pg_dump): its
+    role, on the owner's direct endpoint, verifying TLS."""
+    parts = urlsplit(owner_url)
+    port = f":{parts.port}" if parts.port else ""
+    netloc = f"{quote(role, safe='')}:{quote(password, safe='')}@{parts.hostname}{port}"
+    return urlunsplit(("postgresql", netloc, parts.path, "sslmode=verify-full", ""))
+
+
 def migrate(run: Runner, env: Mapping[str, str], owner_url: str) -> None:
     """`alembic upgrade head` from this checkout, as the database owner."""
     try:
@@ -117,6 +126,7 @@ def ensure_role_logins(
                 f"Couldn't give the database role {role} a login ({type(exc).__name__}). "
                 "Check the connection string with: just store-database-url " + stage
             ) from None
-        ssm.store_parameter(run, env, name, pooled_url(owner_url, role, password))
+        url = direct_url if role in config.DIRECT_DB_ROLES else pooled_url
+        ssm.store_parameter(run, env, name, url(owner_url, role, password))
         created.append(role)
     return created

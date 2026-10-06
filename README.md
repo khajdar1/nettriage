@@ -9,6 +9,8 @@ MITRE ATT&CK, and a checked, plain-English explanation for every finding.
 > and AI explanations on Bedrock. In progress: the web app, whose pages for organizations,
 > uploads, findings, triage, the AI's explanations, the audit log and usage are built, with
 > a home of your work and each organization's findings at a glance; the public demo is next.
+> Operations has begun: nightly backups checked by a weekly restore drill, a daily cleanup,
+> and probes.
 
 ## Architecture
 
@@ -40,6 +42,7 @@ Regional resources run in eu-north-1 (Stockholm); CloudFront serves the app worl
 - **AI explanations with guardrails**: each upload's 20 most severe findings are explained by gpt-oss-20b on Amazon Bedrock from the finding's typed fields only. An answer that names an address, port or technique outside the data is refused, and every call is paid for in advance from a daily token budget per org and a $0.50 daily cap across all orgs, which fail closed. Analysts, Admins and Owners can re-run an explanation and rate it, and Owners and Admins see the AI's calls, tokens and cost per day.
 - **A typed web app**: React and TypeScript, with an API client generated from the API's OpenAPI document, so CI fails when the two drift. It sends CloudFront's body hash, the CSRF token and idempotency keys on its own, and shows every API error with its reference. Files go from the browser straight to S3 with their fingerprint and progress; findings open most severe first; a port scan's evidence is drawn on a map of the host's ports; and triage names the version it read, so a newer change is shown, never overwritten. The home lists what's assigned to you across organizations, and every count on it, or above an organization's findings, links to exactly the findings it counts.
 - **Tenant isolation in the database**: row-level security on every tenant table and on users, and a least-privilege database role for each function.
+- **Backups known to work**: every night a Lambda dumps the database from a consistent snapshot to S3, and every week it restores the newest dump into a throwaway Postgres inside the function and checks every table's rows against the backup's manifest. Its Postgres is built from source in CI and proven inside AWS's own Lambda image, so CI still needs no cloud access. No role, the backup's included, skips row-level security.
 - **Distributed rate limiting** with GCRA on DynamoDB, exact under concurrency ([ADR 0006](docs/adr/0006-gcra-rate-limiter.md)).
 - **Supply chain**: SHA-pinned actions, CodeQL, dependency review, Dependabot, Checkov and tflint.
 
@@ -72,6 +75,7 @@ aws login --profile nettriage   # short-lived session
 just preflight                  # read-only checks of the account
 just plan-dev                   # on a PR: plan and post the changes
 just deploy-dev                 # on main: deploy CI's artifacts, then smoke tests
+just restore-drill-dev          # restore the newest backup and check its counts
 ```
 
 ## License
