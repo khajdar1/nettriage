@@ -202,6 +202,34 @@ def test_ops_reads_nothing_beyond_its_rules(database: Database) -> None:
         connection.execute(text("SELECT count(*) FROM findings"))
 
 
+def test_ops_stays_within_its_rules_inside_an_organizations_transaction(
+    database: Database,
+) -> None:
+    """Once a transaction names its organization, the tenant policies, which apply to every role,
+    would widen the rules' own: permissive policies add up. So each rule is restrictive too."""
+    tenant = add_tenant(database.admin)
+    aged(database.admin, "uploads", tenant.upload_id, "created_at", 600)
+    recent = add_audit_row(database.admin, tenant.org_id, 10)
+
+    with database.app_ops.begin() as connection:
+        connection.execute(
+            text("SELECT set_config('app.org_id', :org, true)"), {"org": str(tenant.org_id)}
+        )
+        changed = connection.execute(
+            text("UPDATE uploads SET status = 'expired' WHERE id = :id"), {"id": tenant.upload_id}
+        ).rowcount
+        deleted = connection.execute(
+            text("DELETE FROM invitations WHERE id = :id"), {"id": tenant.invitation_id}
+        ).rowcount
+        seen: int = connection.execute(
+            text("SELECT count(*) FROM audit_log WHERE id = :id"), {"id": recent}
+        ).scalar_one()
+
+    assert (changed, deleted, seen) == (0, 0, 0)
+    assert status_of(database.admin, tenant.upload_id) == "analyzed"
+    assert exists(database.admin, "invitations", tenant.invitation_id)
+
+
 def public_tables(admin: Engine) -> list[str]:
     with admin.begin() as connection:
         return list(

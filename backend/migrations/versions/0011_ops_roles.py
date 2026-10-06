@@ -3,7 +3,8 @@
 
 Every tenant table forces row-level security, even for its owner (Plan 3a), so neither role gets
 `BYPASSRLS` nor works through `SECURITY DEFINER` functions (amending spec §5.4). Instead:
-- `app_ops` has column grants and one row policy per cleanup rule, so even a broad statement
+- `app_ops` has column grants and one row policy per cleanup rule, permissive and restrictive,
+  so even a broad statement, or one in a transaction that names an organization,
   changes only the rows a rule targets: uploads waiting or analyzing for over 2 hours, which may
   only become expired or failed; invitations nobody accepted, past their date; audit rows over
   180 days old. The audit log's trigger lets `app_ops` delete; everyone else is still refused.
@@ -23,6 +24,12 @@ depends_on = None
 
 STALE_UPLOAD = (
     "status IN ('pending_upload', 'processing') AND created_at < now() - interval '2 hours'"
+)
+# An UPDATE with a WHERE clause checks the new row against the read policy too, so reading
+# covers the states the cleanup sets as well as those it changes.
+READABLE_UPLOAD = (
+    "status IN ('pending_upload', 'processing', 'expired', 'failed') "
+    "AND created_at < now() - interval '2 hours'"
 )
 LAPSED_INVITATION = "accepted_at IS NULL AND expires_at < now()"
 OLD_AUDIT_ROW = "created_at < now() - interval '180 days'"
@@ -62,12 +69,7 @@ def upgrade() -> None:
 
         GRANT SELECT (id, status, created_at), UPDATE (status, failure_reason, processed_at)
             ON uploads TO app_ops;
-        -- An UPDATE with a WHERE clause checks the new row against the read policy too, so
-        -- reading covers the states the cleanup sets as well as those it changes.
-        CREATE POLICY ops_read ON uploads FOR SELECT TO app_ops USING (
-            status IN ('pending_upload', 'processing', 'expired', 'failed')
-            AND created_at < now() - interval '2 hours'
-        );
+        CREATE POLICY ops_read ON uploads FOR SELECT TO app_ops USING ({READABLE_UPLOAD});
         CREATE POLICY ops_update ON uploads FOR UPDATE TO app_ops
             USING ({STALE_UPLOAD}) WITH CHECK (status IN ('expired', 'failed'));
 
@@ -79,6 +81,22 @@ def upgrade() -> None:
         GRANT SELECT (id, created_at), DELETE ON audit_log TO app_ops;
         CREATE POLICY ops_read ON audit_log FOR SELECT TO app_ops USING ({OLD_AUDIT_ROW});
         CREATE POLICY ops_delete ON audit_log FOR DELETE TO app_ops USING ({OLD_AUDIT_ROW});
+
+        -- The tenant policies apply to every role once a transaction names its organization,
+        -- and permissive policies add up. So each rule is also restrictive: it limits app_ops
+        -- whatever another policy allows.
+        CREATE POLICY ops_only_read ON uploads AS RESTRICTIVE FOR SELECT TO app_ops
+            USING ({READABLE_UPLOAD});
+        CREATE POLICY ops_only_update ON uploads AS RESTRICTIVE FOR UPDATE TO app_ops
+            USING ({STALE_UPLOAD}) WITH CHECK (status IN ('expired', 'failed'));
+        CREATE POLICY ops_only_read ON invitations AS RESTRICTIVE FOR SELECT TO app_ops
+            USING ({LAPSED_INVITATION});
+        CREATE POLICY ops_only_delete ON invitations AS RESTRICTIVE FOR DELETE TO app_ops
+            USING ({LAPSED_INVITATION});
+        CREATE POLICY ops_only_read ON audit_log AS RESTRICTIVE FOR SELECT TO app_ops
+            USING ({OLD_AUDIT_ROW});
+        CREATE POLICY ops_only_delete ON audit_log AS RESTRICTIVE FOR DELETE TO app_ops
+            USING ({OLD_AUDIT_ROW});
 
         -- Still append-only for everyone but the cleanup, whose policy limits it to old rows.
         CREATE OR REPLACE FUNCTION audit_log_append_only() RETURNS trigger
@@ -140,6 +158,12 @@ def downgrade() -> None:
         DROP POLICY ops_delete ON invitations;
         DROP POLICY ops_read ON audit_log;
         DROP POLICY ops_delete ON audit_log;
+        DROP POLICY ops_only_read ON uploads;
+        DROP POLICY ops_only_update ON uploads;
+        DROP POLICY ops_only_read ON invitations;
+        DROP POLICY ops_only_delete ON invitations;
+        DROP POLICY ops_only_read ON audit_log;
+        DROP POLICY ops_only_delete ON audit_log;
         REVOKE ALL ON uploads, invitations, audit_log FROM app_ops;
 
         REVOKE ALL ON FUNCTION app_org_id(), app_user_id() FROM app_ops, app_backup;
