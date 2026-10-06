@@ -27,3 +27,4 @@ skip-check:
   - CKV_AWS_119    # DynamoDB KMS customer key: AWS-owned encryption; customer keys cost money (spec §6.8)
   - CKV2_AWS_16    # DynamoDB auto scaling: fixed capacity inside the Always Free units (spec §5.5); scaling could leave them
   - CKV_AWS_337    # SSM KMS customer key: SecureStrings use the AWS-managed key (spec §3.2); customer keys cost money
+  - CKV_AWS_297    # EventBridge Scheduler KMS customer key: a schedule's input is only a job's name; AWS-owned encryption; customer keys cost money (Plan 7a)
