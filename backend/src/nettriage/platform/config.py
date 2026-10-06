@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     bedrock_model_id: str = ""
     # Where the analyze worker queues findings for an AI explanation (spec §4.2).
     triage_queue_url: str = ""
+    # The ops function (Plan 7a): app_backup's direct database URL in SSM (its own
+    # `database_url_parameter` holds app_ops's pooled one), the backups bucket, and the app's
+    # CloudFront URL, which the probe fetches /api/health through.
+    backup_database_url_parameter: str = ""
+    backups_bucket: str = ""
+    app_url: str = ""
 
     @property
     def running_in_lambda(self) -> bool:

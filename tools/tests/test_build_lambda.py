@@ -21,6 +21,7 @@ def make_package(
         "nettriage/entrypoints/api/main.py": b"app = None\n",
         "nettriage/entrypoints/analyze/handler.py": b"def handle(event, context): pass\n",
         "nettriage/entrypoints/triage/handler.py": b"def handle(event, context): pass\n",
+        "nettriage/entrypoints/ops/handler.py": b"def handle(event, context): pass\n",
         "nettriage/prompts/triage/v1.md": b"You explain findings.\n",
         "fastapi-1.0.dist-info/WHEEL": f"Wheel-Version: 1.0\nTag: {wheel_tag}\n".encode(),
         **(extra or {}),
@@ -166,4 +167,14 @@ def test_a_package_without_the_triage_worker_or_its_prompt_is_rejected(
     write_zip(package, out)
 
     with pytest.raises(PackageError, match=f"missing {name}"):
+        validate_zip(out)
+
+
+def test_a_package_without_the_ops_function_is_rejected(tmp_path: Path) -> None:
+    package = make_package(tmp_path)
+    (package / "nettriage/entrypoints/ops/handler.py").unlink()
+    out = tmp_path / "backend.zip"
+    write_zip(package, out)
+
+    with pytest.raises(PackageError, match="missing nettriage/entrypoints/ops/handler.py"):
         validate_zip(out)
